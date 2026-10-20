@@ -53,6 +53,14 @@ function formatDuration(seconds?: number | null) {
   }
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
+
+  // Acima de 1 dia, mostra dias e horas ("105d 7h"), não milhares de horas.
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+  }
+
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
