@@ -7,7 +7,7 @@ function formatTime(date: Date | null) {
 }
 
 export function ConnectionBanner() {
-  const { disconnected, degraded, databaseStatus, lastContactAt } = useApiConnection();
+  const { disconnected, degraded, databaseStatus, issues, lastContactAt } = useApiConnection();
 
   if (disconnected) {
     return (
@@ -31,7 +31,13 @@ export function ConnectionBanner() {
         className="flex shrink-0 items-center gap-2 bg-amber-600 px-4 py-2 text-sm font-medium text-white"
       >
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>API degradada (banco de dados: {databaseStatus ?? "indisponível"}).</span>
+        <span>
+          API com atenção:{" "}
+          {issues.length > 0
+            ? issues.join(" · ")
+            : `banco de dados ${databaseStatus ?? "indisponível"}`}
+          .
+        </span>
       </div>
     );
   }

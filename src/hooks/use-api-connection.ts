@@ -1,7 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api/client";
 
-type HealthPayload = { status?: string; database?: string };
+type HealthComponent = { status?: string };
+type HealthPayload = {
+  status?: string;
+  database?: string;
+  components?: Record<string, HealthComponent>;
+};
+
+const COMPONENT_LABELS: Record<string, string> = {
+  database: "banco de dados",
+  dispatcher: "distribuidor de tasks",
+  watchdog: "watchdog",
+  scheduler_engine: "agendador",
+  scheduler_runtime: "agendador (execução)",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  unknown: "sem sinal",
+  stale: "parado",
+  error: "com erro",
+  down: "fora do ar",
+};
+
+function describeIssues(components: Record<string, HealthComponent> | undefined) {
+  if (!components) return [];
+
+  return Object.entries(components)
+    .filter(([, component]) => component?.status && component.status !== "ok")
+    .map(([name, component]) => {
+      const status = String(component.status);
+      return `${COMPONENT_LABELS[name] ?? name}: ${STATUS_LABELS[status] ?? status}`;
+    });
+}
 
 export function useApiConnection() {
   const query = useQuery({
@@ -21,6 +52,7 @@ export function useApiConnection() {
     disconnected: query.isError,
     degraded: !query.isError && !!query.data && query.data.status !== "ok",
     databaseStatus: query.data?.database,
+    issues: describeIssues(query.data?.components),
     lastContactAt,
   };
 }
