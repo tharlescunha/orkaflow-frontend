@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { withApiDetail } from "@/lib/api-error";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -68,10 +69,10 @@ export function UserDetailPage() {
 
       setConfirmOpen(false);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível alterar o status do usuário.",
+        message: withApiDetail("Não foi possível alterar o status do usuário.", error),
       });
     },
   });

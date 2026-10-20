@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
@@ -99,10 +100,10 @@ export function AutomationDetailPage() {
         message: "Runner vinculado com sucesso.",
       });
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível vincular o runner.",
+        message: withApiDetail("Não foi possível vincular o runner.", error),
       });
     },
   });
@@ -117,10 +118,10 @@ export function AutomationDetailPage() {
         message: "Runner desvinculado com sucesso.",
       });
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível desvincular o runner.",
+        message: withApiDetail("Não foi possível desvincular o runner.", error),
       });
     },
   });

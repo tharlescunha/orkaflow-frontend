@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -13,7 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { getBot, updateBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
-import type { UpdateBotPayload } from "@/types/bot";
+import type { BotUpdatePayload as UpdateBotPayload } from "@/types/bot";
 
 type ToastState = {
   type: "success" | "error";
@@ -152,10 +153,10 @@ export function BotEditPage() {
         navigate(`/bots/${botId}`);
       }, 900);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível atualizar o bot.",
+        message: withApiDetail("Não foi possível atualizar o bot.", error),
       });
     },
   });

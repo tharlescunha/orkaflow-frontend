@@ -355,6 +355,22 @@ export function SchedulesPage() {
                                 <p className="mt-1 text-xs text-slate-500">
                                   ID #{schedule.id}
                                 </p>
+                                {schedule.last_error ? (
+                                  <p
+                                    className="mt-1 max-w-xs truncate text-xs font-medium text-red-700"
+                                    title={schedule.last_error}
+                                  >
+                                    Erro: {schedule.last_error}
+                                  </p>
+                                ) : null}
+                                {schedule.last_skipped_reason ? (
+                                  <p
+                                    className="mt-1 max-w-xs truncate text-xs text-amber-700"
+                                    title={schedule.last_skipped_reason}
+                                  >
+                                    Ignorado: {schedule.last_skipped_reason}
+                                  </p>
+                                ) : null}
                               </div>
                             </div>
                           </td>

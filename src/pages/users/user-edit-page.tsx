@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getApiErrorMessage } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Save, Shield, UserCog } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -89,10 +90,8 @@ export function UserEditPage() {
       await queryClient.invalidateQueries({ queryKey: ["user", userId] });
       navigate(`/users/${user.id}`);
     },
-    onError: (error: any) => {
-      const detail =
-        error?.response?.data?.detail ??
-        "Não foi possível atualizar o usuário. Verifique os dados e tente novamente.";
+    onError: (error) => {
+      const detail = getApiErrorMessage(error, "Não foi possível atualizar o usuário. Verifique os dados e tente novamente.");
 
       setErrors((prev) => ({
         ...prev,

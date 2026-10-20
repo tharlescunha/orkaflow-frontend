@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { getApiErrorMessage } from "@/lib/api-error";
 import { useAuthStore } from "../../store/auth-store";
 import { getUserById, updateUser } from "../../services/api/users";
 
@@ -36,10 +36,8 @@ export function ProfilePage() {
         setRole(user.role || "");
 
         setUser(user);
-      } catch (error: any) {
-        setErrorMessage(
-          error?.response?.data?.detail || "Não foi possível carregar o perfil."
-        );
+      } catch (error) {
+        setErrorMessage(getApiErrorMessage(error, "Não foi possível carregar o perfil."));
       } finally {
         setLoading(false);
       }
@@ -80,10 +78,8 @@ export function ProfilePage() {
       setPassword("");
       setConfirmPassword("");
       setMessage("Perfil atualizado com sucesso.");
-    } catch (error: any) {
-      setErrorMessage(
-        error?.response?.data?.detail || "Não foi possível atualizar o perfil."
-      );
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "Não foi possível atualizar o perfil."));
     } finally {
       setSaving(false);
     }

@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { getRunnerHealth } from "@/lib/health";
+import { RunnerBadges, RunnerHeartbeatText } from "@/components/common/runner-badges";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -365,20 +367,18 @@ export function RunnerDetailPage() {
               <div className="flex flex-wrap gap-2">
                 <span
                   className={`inline-flex min-w-[110px] items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${getStatusClass(
-                    runner.status
+                    getRunnerHealth(runner).noSignal ? "offline" : runner.status
                   )}`}
                 >
-                  {formatStatus(runner.status)}
+                  {getRunnerHealth(runner).noSignal
+                    ? "SEM SINAL"
+                    : formatStatus(runner.status)}
                 </span>
 
-                <span
-                  className={`inline-flex min-w-[90px] items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${
-                    runner.enabled
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-red-200 bg-red-50 text-red-700"
-                  }`}
-                >
-                  {runner.enabled ? "Ativo" : "Inativo"}
+                <RunnerBadges runner={runner} />
+
+                <span className="inline-flex items-center text-xs">
+                  <RunnerHeartbeatText runner={runner} />
                 </span>
               </div>
 

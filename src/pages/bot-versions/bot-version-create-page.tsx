@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Save, X } from "lucide-react";
@@ -84,10 +85,10 @@ export function BotVersionCreatePage() {
         navigate("/bot-versions");
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível cadastrar a versão.",
+        message: withApiDetail("Não foi possível cadastrar a versão.", error),
       });
     },
   });
@@ -119,6 +120,7 @@ export function BotVersionCreatePage() {
       storage_type: form.storage_type.trim(),
       artifact_path: form.artifact_path.trim() || null,
       changelog: form.changelog.trim() || null,
+      checksum: form.checksum.trim() || null,
       is_active: form.is_active,
     };
 

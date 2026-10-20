@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
+import { toast } from "@/store/toast-store";
+import { listRunners, type RunnerRead } from "@/services/api/runners";
+import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Check,
-  CheckCircle2,
   ChevronDown,
   Eye,
   MoreVertical,
   OctagonX,
   RefreshCcw,
+  ShieldCheck,
   Search,
   SquareX,
   X,
@@ -18,6 +22,7 @@ import { api } from "@/services/api/client";
 import {
   cancelTask,
   forceStopTask,
+  requestStopTask,
   type TaskListItem,
   type TaskStatus,
 } from "@/services/api/tasks";
@@ -33,17 +38,12 @@ const statusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: "ready", label: "Pronta" },
   { value: "running", label: "Executando" },
   { value: "stop_requested", label: "Parada solicitada" },
-  { value: "forced_stop", label: "Força parada" },
+  { value: "forced_stop", label: "Parada forçada" },
   { value: "finished", label: "Finalizada" },
   { value: "error", label: "Erro" },
   { value: "timeout", label: "Timeout" },
   { value: "canceled", label: "Cancelada" },
 ];
-
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
 
 type FilterOptionItem = {
   id: number;
@@ -257,7 +257,6 @@ export function TasksPage() {
   const [selectedRunnerIds, setSelectedRunnerIds] = useState<number[]>([]);
   const [openFilterMenu, setOpenFilterMenu] = useState<FilterMenu>(null);
   const [actionMenuTaskId, setActionMenuTaskId] = useState<number | null>(null);
-  const [toast, setToast] = useState<ToastState>(null);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL_SECONDS);
 
   const skip = (page - 1) * PAGE_SIZE;
@@ -294,6 +293,19 @@ export function TasksPage() {
     }
     return statusOptions;
   }, [filterOptionsQuery.data?.statuses]);
+
+  // mesmo cache do banner de saude: usado para explicar tasks paradas
+  const runnersQuery = useQuery({
+    queryKey: ["health", "runners"],
+    queryFn: () => listRunners({ limit: 200 }),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+  });
+
+  const runnersById = useMemo(
+    () => new Map((runnersQuery.data ?? []).map((runner) => [runner.id, runner])),
+    [runnersQuery.data]
+  );
 
   const tasksQuery = useQuery({
     queryKey: [
@@ -355,16 +367,6 @@ export function TasksPage() {
   }, [tasksQuery.dataUpdatedAt]);
 
   useEffect(() => {
-    if (!toast) return;
-
-    const timeout = setTimeout(() => {
-      setToast(null);
-    }, 8000);
-
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
-  useEffect(() => {
     if (page !== 1) {
       setPage(1);
     }
@@ -373,36 +375,35 @@ export function TasksPage() {
   const cancelMutation = useMutation({
     mutationFn: cancelTask,
     onSuccess: async () => {
-      setToast({
-        type: "success",
-        message: "Task cancelada com sucesso.",
-      });
+      toast.success("Task cancelada com sucesso.");
 
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
-    onError: () => {
-      setToast({
-        type: "error",
-        message: "Não foi possível cancelar a task.",
-      });
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível cancelar a task.", error));
+    },
+  });
+
+  const requestStopMutation = useMutation({
+    mutationFn: requestStopTask,
+    onSuccess: async () => {
+      toast.success("Solicitação de parada registrada. O bot será encerrado com segurança.");
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível solicitar a parada.", error));
     },
   });
 
   const forceStopMutation = useMutation({
     mutationFn: forceStopTask,
     onSuccess: async () => {
-      setToast({
-        type: "success",
-        message: "Força parada aplicada com sucesso.",
-      });
+      toast.success("Parada forçada aplicada com sucesso.");
 
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
-    onError: () => {
-      setToast({
-        type: "error",
-        message: "Não foi possível aplicar força parada.",
-      });
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível aplicar a parada forçada.", error));
     },
   });
 
@@ -503,32 +504,6 @@ export function TasksPage() {
       ) : null}
 
       <div className="space-y-5">
-        {toast ? (
-          <div
-            className={`fixed right-6 top-20 z-[80] flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg ${
-              toast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-red-200 bg-red-50 text-red-800"
-            }`}
-          >
-            {toast.type === "success" ? (
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-            ) : (
-              <X className="mt-0.5 h-5 w-5 shrink-0" />
-            )}
-
-            <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-            <button
-              type="button"
-              onClick={() => setToast(null)}
-              className="text-current/70 transition hover:text-current"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : null}
-
         <section className="border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -765,6 +740,9 @@ export function TasksPage() {
                       onOpenInfo={openInfo}
                       onCancel={(taskId) => cancelMutation.mutate(taskId)}
                       onForceStop={(taskId) => forceStopMutation.mutate(taskId)}
+                      onRequestStop={(taskId) => requestStopMutation.mutate(taskId)}
+                      runner={task.runner_id ? runnersById.get(task.runner_id) : null}
+                      loadingRequestStop={requestStopMutation.isPending}
                       loadingCancel={cancelMutation.isPending}
                       loadingForceStop={forceStopMutation.isPending}
                     />
@@ -818,6 +796,9 @@ type TaskRowProps = {
   onOpenInfo: (taskId: number) => void;
   onCancel: (taskId: number) => void;
   onForceStop: (taskId: number) => void;
+  onRequestStop: (taskId: number) => void;
+  runner?: RunnerRead | null;
+  loadingRequestStop: boolean;
   loadingCancel: boolean;
   loadingForceStop: boolean;
 };
@@ -829,13 +810,23 @@ function TaskRow({
   onOpenInfo,
   onCancel,
   onForceStop,
+  onRequestStop,
+  runner,
+  loadingRequestStop,
   loadingCancel,
   loadingForceStop,
 }: TaskRowProps) {
   const isOpen = actionMenuTaskId === task.id;
+  const isFailed = task.status === "error" || task.status === "timeout";
 
   return (
-    <tr className="border-b border-slate-200 transition hover:bg-slate-50/70">
+    <tr
+      className={`border-b border-slate-200 transition ${
+        isFailed
+          ? "border-l-4 border-l-red-600 bg-red-50 hover:bg-red-100/70"
+          : "hover:bg-slate-50/70"
+      }`}
+    >
       <td className="px-4 py-3 text-sm font-medium text-blue-700">
         <button
           type="button"
@@ -850,6 +841,9 @@ function TaskRow({
 
       <td className="px-4 py-3">
         <StatusBadge status={task.status} />
+        <div>
+          <TaskStuckBadge task={task} runner={runner} />
+        </div>
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">
@@ -926,6 +920,21 @@ function TaskRow({
             {canForceStop(task.status) ? (
               <button
                 type="button"
+                disabled={loadingRequestStop || task.status === "stop_requested"}
+                onClick={() => {
+                  onRequestStop(task.id);
+                  setActionMenuTaskId(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Parar com segurança
+              </button>
+            ) : null}
+
+            {canForceStop(task.status) ? (
+              <button
+                type="button"
                 disabled={loadingForceStop}
                 onClick={() => {
                   onForceStop(task.id);
@@ -934,7 +943,7 @@ function TaskRow({
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-700 transition hover:bg-red-50 disabled:opacity-60"
               >
                 <OctagonX className="h-4 w-4" />
-                Força parada
+                Parada forçada
               </button>
             ) : null}
           </div>

@@ -239,6 +239,27 @@ export function ScheduleDetailPage() {
             </div>
           ) : schedule ? (
             <div className="space-y-6">
+              {schedule.last_error ? (
+                <div role="alert" className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  <p className="font-semibold">Último erro do agendamento</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{schedule.last_error}</p>
+                </div>
+              ) : null}
+
+              {schedule.last_skipped_reason ? (
+                <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <p className="font-semibold">
+                    Última execução ignorada
+                    {schedule.last_skipped_at
+                      ? ` em ${formatDateTime(schedule.last_skipped_at)}`
+                      : ""}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">
+                    {schedule.last_skipped_reason}
+                  </p>
+                </div>
+              ) : null}
+
               <section className="border border-slate-200 bg-white">
                 <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
@@ -345,20 +366,6 @@ export function ScheduleDetailPage() {
                 <div className="px-5 py-5">
                   <pre className="overflow-x-auto border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
                     {formatParameters(schedule.runtime_parameters_json)}
-                  </pre>
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Credenciais JSON
-                  </h2>
-                </div>
-
-                <div className="px-5 py-5">
-                  <pre className="overflow-x-auto border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
-                    {formatParameters(schedule.parameters_json)}
                   </pre>
                 </div>
               </section>

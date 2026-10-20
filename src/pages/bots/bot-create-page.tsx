@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -13,7 +14,7 @@ import {
 
 import { createBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
-import type { CreateBotPayload } from "@/types/bot";
+import type { BotCreatePayload as CreateBotPayload } from "@/types/bot";
 
 type ToastState = {
   type: "success" | "error";
@@ -119,10 +120,10 @@ export function BotCreatePage() {
         navigate("/bots");
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível cadastrar o bot.",
+        message: withApiDetail("Não foi possível cadastrar o bot.", error),
       });
     },
   });

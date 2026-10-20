@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { RunnerBadges, RunnerHeartbeatText } from "@/components/common/runner-badges";
+import { getRunnerStatusText } from "@/lib/health";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -291,8 +293,13 @@ export function RunnerConfigsPage() {
                           runner.status
                         )}`}
                       >
-                        {formatRunnerStatus(runner.status)}
+                        {getRunnerStatusText(runner) === "SEM SINAL"
+                          ? "SEM SINAL"
+                          : formatRunnerStatus(runner.status)}
                       </span>
+                      <div className="mt-1.5">
+                        <RunnerBadges runner={runner} showConcurrency={false} />
+                      </div>
                     </td>
 
                     <td className="px-6 py-4 text-sm">
@@ -307,6 +314,11 @@ export function RunnerConfigsPage() {
 
                     <td className="px-6 py-4 text-sm text-slate-700">
                       {runner.running_tasks_count ?? 0}
+                      {runner.config?.max_concurrency ? (
+                        <span className="ml-1 text-xs text-slate-500">
+                          (até {runner.config.max_concurrency} background + 1 foreground)
+                        </span>
+                      ) : null}
                     </td>
 
                     <td className="px-6 py-4 text-sm text-slate-700">
@@ -315,6 +327,9 @@ export function RunnerConfigsPage() {
 
                     <td className="px-6 py-4 text-sm text-slate-700">
                       {formatDateTime(runner.last_heartbeat)}
+                      <div className="text-xs">
+                        <RunnerHeartbeatText runner={runner} />
+                      </div>
                     </td>
 
                     <td className="px-6 py-4 text-right">

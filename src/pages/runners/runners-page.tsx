@@ -22,6 +22,12 @@ import {
   listRunners,
   type RunnerRead,
 } from "@/services/api/runners";
+import { getRunnerHealth, getRunnerStatusText } from "@/lib/health";
+import {
+  RunnerBadges,
+  RunnerHeartbeatText,
+} from "@/components/common/runner-badges";
+import { toast } from "@/store/toast-store";
 
 type EnabledFilter = "true" | "false" | "all";
 
@@ -30,8 +36,10 @@ type MenuState = {
   anchorRect: DOMRect;
 } | null;
 
-function getRunnerStatusDotClass(status?: string) {
-  switch ((status || "").toLowerCase()) {
+function getRunnerStatusDotClass(runner: RunnerRead) {
+  if (getRunnerHealth(runner).noSignal) return "bg-red-500";
+
+  switch ((runner.status || "").toLowerCase()) {
     case "online":
     case "busy":
       return "bg-emerald-500";
@@ -57,7 +65,7 @@ export function RunnersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("true");
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
   const [confirmRunner, setConfirmRunner] = useState<RunnerRead | null>(null);
   const [previewRunner, setPreviewRunner] = useState<RunnerRead | null>(null);
@@ -86,8 +94,10 @@ export function RunnersPage() {
   const activateMutation = useMutation({
     mutationFn: (runnerId: number) => activateRunner(runnerId),
     onSuccess: () => {
+      toast.success("Runner ativado.");
       queryClient.invalidateQueries({ queryKey: ["runners-page"] });
       queryClient.invalidateQueries({ queryKey: ["runners"] });
+      queryClient.invalidateQueries({ queryKey: ["health"] });
       setConfirmRunner(null);
       setOpenMenu(null);
     },
@@ -96,6 +106,7 @@ export function RunnersPage() {
   const disableMutation = useMutation({
     mutationFn: (runnerId: number) => disableRunner(runnerId),
     onSuccess: () => {
+      toast.success("Runner desativado.");
       queryClient.invalidateQueries({ queryKey: ["runners-page"] });
       queryClient.invalidateQueries({ queryKey: ["runners"] });
       setConfirmRunner(null);
@@ -342,11 +353,9 @@ function RunnerCard({
 
           <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-slate-950/80 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
             <span
-              className={`h-2 w-2 rounded-full ${getRunnerStatusDotClass(
-                runner.status
-              )}`}
+              className={`h-2 w-2 rounded-full ${getRunnerStatusDotClass(runner)}`}
             />
-            {String(runner.status || "offline").toUpperCase()}
+            {getRunnerStatusText(runner)}
           </div>
         </div>
 
@@ -354,6 +363,13 @@ function RunnerCard({
           <h3 className="truncate text-sm font-semibold text-slate-900">
             {displayName}
           </h3>
+
+          <div className="mt-2 space-y-1.5">
+            <RunnerBadges runner={runner} />
+            <p className="text-xs">
+              <RunnerHeartbeatText runner={runner} />
+            </p>
+          </div>
         </div>
       </button>
 

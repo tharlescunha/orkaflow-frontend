@@ -1,13 +1,14 @@
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { LockKeyhole, Mail, Orbit } from "lucide-react";
 import { useAuthStore } from "../../store/auth-store";
 import { loginRequest, meRequest } from "@/services/api/auth";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 export function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const setTokens = useAuthStore((state) => state.setTokens);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,10 +26,9 @@ export function LoginPage() {
     try {
       const tokens = await loginRequest(login, password);
 
-      setAuth({
+      setTokens({
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
-        user: null as any,
       });
 
       const user = await meRequest();
@@ -40,16 +40,8 @@ export function LoginPage() {
       });
 
       navigate("/dashboard");
-      } catch (err: any) {
-        console.error("Erro no login:", err);
-        console.error("Resposta da API:", err?.response?.data);
-
-        const message =
-          err?.response?.data?.detail ||
-          err?.response?.data?.message ||
-          "Erro ao realizar login";
-
-        setError(Array.isArray(message) ? "Dados inválidos" : message);
+      } catch (err) {
+        setError(getApiErrorMessage(err, "Erro ao realizar login"));
       } finally {
         setLoading(false);
       }

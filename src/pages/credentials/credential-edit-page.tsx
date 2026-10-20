@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -72,15 +73,10 @@ export function CredentialEditPage() {
 
       try {
         const revealedSecrets = await Promise.all(
-          (credentialQuery.data.items ?? []).map(async (item: any) => {
-            const revealed: any = await revealCredentialItemSecret(credentialId, item.id);
+          (credentialQuery.data.items ?? []).map(async (item) => {
+            const revealed = await revealCredentialItemSecret(credentialId, item.id);
 
-            const resolvedKey =
-              item.key ??
-              item.key_name ??
-              revealed.key ??
-              revealed.key_name ??
-              "";
+            const resolvedKey = item.key ?? revealed.key ?? "";
 
             return {
               id: item.id,
@@ -184,10 +180,10 @@ export function CredentialEditPage() {
         navigate(`/credentials/${credentialId}`);
       }, 900);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível atualizar a credencial.",
+        message: withApiDetail("Não foi possível atualizar a credencial.", error),
       });
     },
   });

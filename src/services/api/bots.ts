@@ -2,8 +2,8 @@ import { api } from "./client";
 import type {
   BotListResponse,
   BotRead,
-  CreateBotPayload,
-  UpdateBotPayload,
+  BotCreatePayload as CreateBotPayload,
+  BotUpdatePayload as UpdateBotPayload,
 } from "@/types/bot";
 
 type ListBotsParams = {

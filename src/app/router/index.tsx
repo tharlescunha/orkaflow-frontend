@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout } from "../../layouts/app-layout";
 import { AuthLayout } from "../../layouts/auth-layout";
@@ -50,7 +51,7 @@ import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore.getState().accessToken;
+  const token = useAuthStore((state) => state.accessToken);
   return token ? children : <Navigate to="/login" replace />;
 }
 

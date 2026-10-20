@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
@@ -94,10 +95,10 @@ export function CredentialCreatePage() {
         navigate(`/credentials/${credential.id}`);
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível cadastrar a credencial.",
+        message: withApiDetail("Não foi possível cadastrar a credencial.", error),
       });
     },
   });

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -85,10 +86,10 @@ export function CredentialsPage() {
       await queryClient.invalidateQueries({ queryKey: ["credentials"] });
       await credentialsQuery.refetch();
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível remover a credencial.",
+        message: withApiDetail("Não foi possível remover a credencial.", error),
       });
     },
   });

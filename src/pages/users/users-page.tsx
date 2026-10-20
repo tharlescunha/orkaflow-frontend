@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -103,10 +104,10 @@ export function UsersPage() {
       await queryClient.invalidateQueries({ queryKey: ["users"] });
       await usersQuery.refetch();
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível atualizar o status do usuário.",
+        message: withApiDetail("Não foi possível atualizar o status do usuário.", error),
       });
     },
   });

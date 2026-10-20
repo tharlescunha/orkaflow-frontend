@@ -1,9 +1,11 @@
-import axios from "axios";
+import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "../../store/auth-store";
-import { refreshRequest } from "./auth";
+
+export const API_TIMEOUT_MS = 20_000;
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
+  timeout: API_TIMEOUT_MS,
 });
 
 api.interceptors.request.use((config) => {
@@ -16,31 +18,67 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+
+type TokenPair = { access_token: string; refresh_token: string };
+
+// Fila unica de refresh: varias 401 simultaneas compartilham a mesma promise.
+let refreshPromise: Promise<string> | null = null;
+
+function forceLogout() {
+  // PrivateRoute assina o store: ao limpar a sessao ele navega para /login.
+  useAuthStore.getState().logout();
+}
+
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  // usa axios "cru" para nao passar pelos interceptors (evita loop de 401)
+  const response = await axios.post<TokenPair>(
+    `${import.meta.env.VITE_API_URL ?? ""}/api/v1/auth/refresh`,
+    { refresh_token: refreshToken },
+    { timeout: API_TIMEOUT_MS }
+  );
+
+  useAuthStore.getState().setTokens({
+    accessToken: response.data.access_token,
+    refreshToken: response.data.refresh_token,
+  });
+
+  return response.data.access_token;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error?.config as RetriableConfig | undefined;
     const refreshToken = useAuthStore.getState().refreshToken;
 
     if (
+      originalRequest &&
       error.response?.status === 401 &&
       refreshToken &&
-      !originalRequest._retry
+      !originalRequest._retry &&
+      !String(originalRequest.url ?? "").includes("/auth/refresh") &&
+      !String(originalRequest.url ?? "").includes("/auth/login")
     ) {
       originalRequest._retry = true;
 
       try {
-        const tokens = await refreshRequest(refreshToken);
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken(refreshToken).finally(() => {
+            refreshPromise = null;
+          });
+        }
 
-        useAuthStore.getState().setTokens({
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-        });
-
-        originalRequest.headers.Authorization = `Bearer ${tokens.access_token}`;
+        const newAccessToken = await refreshPromise;
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
-      } catch {
-        useAuthStore.getState().logout();
+      } catch (refreshError) {
+        // so desloga se o servidor recusou o refresh; falha de rede mantem a sessao
+        if (axios.isAxiosError(refreshError) && !refreshError.response) {
+          return Promise.reject(refreshError);
+        }
+        forceLogout();
+        return Promise.reject(refreshError);
       }
     }
 

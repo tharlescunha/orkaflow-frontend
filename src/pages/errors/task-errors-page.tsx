@@ -129,7 +129,7 @@ function getStatusLabel(value?: string | null) {
     case "stop_requested":
       return "Parada solicitada";
     case "forced_stop":
-      return "Força parada";
+      return "Parada forçada";
     case "finished":
       return "Finalizada";
     case "error":

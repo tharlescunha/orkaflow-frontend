@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Save, X } from "lucide-react";
@@ -72,10 +73,10 @@ export function RepositoryFormPage() {
         navigate(`/repositories/${data.id}`);
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível criar o repositório.",
+        message: withApiDetail("Não foi possível criar o repositório.", error),
       });
     },
   });
@@ -98,10 +99,10 @@ export function RepositoryFormPage() {
         navigate(`/repositories/${data.id}`);
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível atualizar o repositório.",
+        message: withApiDetail("Não foi possível atualizar o repositório.", error),
       });
     },
   });

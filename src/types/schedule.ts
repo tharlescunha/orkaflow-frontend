@@ -39,6 +39,11 @@ export type ScheduleRead = {
   interval_value?: number | null;
   interval_unit?: string | null;
   misfire_policy?: string | null;
+  /** ultimo erro do ciclo do scheduler (o schedule nao vai mais para ERROR automatico) */
+  last_error?: string | null;
+  /** ultimo motivo de skip (ex.: politica ignore_if_running) */
+  last_skipped_reason?: string | null;
+  last_skipped_at?: string | null;
   created_at: string;
   updated_at: string;
 };

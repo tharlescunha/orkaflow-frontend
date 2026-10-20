@@ -1,103 +1,108 @@
-# 🚀 OrkaFlow Frontend - Guia de Execução
+# OrkaFlow Frontend - Guia de Execução
 
-## 📂 Caminhos importantes
+## Configuração
 
-**Projeto:**
-/home/tharles.cunha/Projects/orkaflow-frontend
+1. Copie o modelo de variáveis e ajuste a URL da API:
 
----
+```bash
+cp .env.example .env
+# edite VITE_API_URL (em produção: IP/DNS do servidor do back, ex.: http://IP:8000)
+```
 
-## 🌐 Frontend
+2. Instale as dependências: `npm ci`
 
-**Servidor:** Vite  
-**Host:** 0.0.0.0  
-**Porta:** 5173  
-
-### 🔗 Acesso
-
-- Local:
-http://localhost:5173
-
-- Rede:
-http://10.50.156.202:5173
+> `VITE_API_URL` é embutida no build. Se mudar, gere o build novamente.
 
 ---
 
-## ⚙️ Serviço (systemd)
+## Produção (recomendado): build + nginx
 
-Arquivo: 
-/etc/systemd/system/orkaflow-frontend.service
+```bash
+npm ci
+npm run typecheck   # opcional, mas recomendado
+npm run build       # gera a pasta dist/
+```
 
+Sirva a pasta `dist` com nginx (SPA: todas as rotas caem no `index.html`):
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /var/www/orkaflow-frontend/dist;   # copie o conteúdo de dist/ para cá
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Opcional: proxy da API no mesmo domínio.
+    # Nesse caso use VITE_API_URL vazio/igual ao domínio do front e rebuild.
+    # location /api/ {
+    #     proxy_pass http://IP_DO_BACKEND:8000;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    # }
+}
+```
+
+Depois de publicar uma nova versão: `npm run build`, copie `dist/` para o diretório do nginx
+e recarregue com `sudo nginx -t && sudo systemctl reload nginx`.
 
 ---
 
-## ▶️ Comandos
+## Desenvolvimento (alternativa): Vite dev server
 
-### Iniciar
-sudo systemctl start orkaflow-frontend
+```bash
+npm run dev -- --host 0.0.0.0   # porta 5173
+```
 
-### Parar
-sudo systemctl stop orkaflow-frontend
+- Local: http://localhost:5173
+- Rede: http://IP_DA_MAQUINA:5173
 
-### Reiniciar
-sudo systemctl restart orkaflow-frontend
+Se precisar rodar o modo dev como serviço (apenas para ambientes de teste), use um
+serviço systemd (`/etc/systemd/system/orkaflow-frontend.service`) executando o comando acima
+e os comandos usuais:
 
-### Status
-sudo systemctl status orkaflow-frontend
-
-### Logs
+```bash
+sudo systemctl start|stop|restart|status orkaflow-frontend
 sudo journalctl -u orkaflow-frontend -f
-
----
-
-## 🔄 Atualizar systemd
-sudo systemctl daemon-reload
-
----
-
-## 🔁 Auto start
+sudo systemctl daemon-reload      # após editar o arquivo do serviço
 sudo systemctl enable orkaflow-frontend
+```
+
+O modo dev não é indicado para produção (sem otimização, HMR ativo, mais consumo).
 
 ---
 
-## ❌ Remover serviço
+## Scripts
 
-sudo systemctl stop orkaflow-frontend
-sudo rm /etc/systemd/system/orkaflow-frontend.service
-sudo systemctl daemon-reload
-
----
-
-## 🧪 Execução manual
-
-Rodar frontend:
-npm run dev -- --host 0.0.0.0
+| Script | Descrição |
+| --- | --- |
+| `npm run dev` | Servidor de desenvolvimento (Vite) |
+| `npm run typecheck` | Checagem de tipos (`tsc -b --noEmit`) |
+| `npm run build` | Typecheck + build de produção em `dist/` |
+| `npm run lint` | ESLint |
+| `npm run preview` | Serve o `dist/` localmente para conferência |
 
 ---
 
-## 🌍 Rede
+## Rede
 
-### IP do servidor
-10.50.156.202
+Libere a porta usada (80/443 com nginx, ou 5173 no modo dev) no firewall, por exemplo:
 
-### Liberar porta
-sudo ufw allow 5173/tcp
+```bash
+sudo ufw allow 80/tcp
+```
 
----
-
-## ⚠️ Observações
-
-- Usa Vite (modo dev)
-- Ideal para desenvolvimento
-- Para produção usar build + nginx
-- Ver logs em caso de erro
+O backend precisa aceitar a origem do front (CORS) e estar acessível a partir do navegador
+do usuário no endereço configurado em `VITE_API_URL`.
 
 ---
 
-## ✅ Status esperado
+## Observações
 
-VITE vX.X.X ready
-
-Local:   http://localhost:5173/
-Network: http://10.50.156.202:5173/
-
+- O frontend mostra banners de saúde (erros, runners com problema, tasks paradas) e de
+  conexão com a API; erros de ações aparecem como toast vermelho.
+- Não versione o `.env` (somente `.env.example`).

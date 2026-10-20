@@ -96,6 +96,7 @@ export type RunnerDetailsRead = {
   uuid: string;
   name: string;
   label: string | null;
+  display_name?: string | null;
   host_name: string | null;
   ip: string | null;
   os_name: string | null;
@@ -268,6 +269,11 @@ export async function createTask(payload: CreateTaskPayload) {
 
 export async function cancelTask(taskId: number) {
   const response = await api.post(`/api/v1/tasks/${taskId}/cancel`);
+  return response.data;
+}
+
+export async function requestStopTask(taskId: number) {
+  const response = await api.post(`/api/v1/tasks/${taskId}/request-stop`);
   return response.data;
 }
 

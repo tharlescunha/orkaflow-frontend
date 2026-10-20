@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, KeyRound, Save, X } from "lucide-react";
@@ -191,10 +192,10 @@ export function AutomationFormPage() {
         navigate(`/automations/${data.id}`);
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível criar a automação.",
+        message: withApiDetail("Não foi possível criar a automação.", error),
       });
     },
   });
@@ -212,10 +213,10 @@ export function AutomationFormPage() {
         navigate(`/automations/${automationId}`);
       }, 800);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível atualizar a automação.",
+        message: withApiDetail("Não foi possível atualizar a automação.", error),
       });
     },
   });

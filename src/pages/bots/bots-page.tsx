@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -100,10 +101,10 @@ export function BotsPage() {
       await queryClient.invalidateQueries({ queryKey: ["bots"] });
       await botsQuery.refetch();
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível remover o bot.",
+        message: withApiDetail("Não foi possível remover o bot.", error),
       });
     },
   });

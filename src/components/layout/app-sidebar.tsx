@@ -19,6 +19,7 @@ import {
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useSystemHealth } from "@/hooks/use-system-health";
 
 type AppSidebarProps = {
   collapsed: boolean;
@@ -35,8 +36,8 @@ const menuGroups = [
 
       { label: "Tasks", to: "/tasks", icon: ClipboardList },
       { label: "Nova Task", to: "/tasks/new", icon: PlusSquare },
-      { label: "Logs", to: "/logs", icon: FileText },
-      { label: "Erros", to: "/errors", icon: Siren },
+      { label: "Logs (em breve)", to: "/logs", icon: FileText },
+      { label: "Erros", to: "/errors", icon: Siren, badgeKey: "errors" },
     ],
   },
   {
@@ -74,6 +75,9 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
   const [hovered, setHovered] = useState(false);
 
   const isOpen = !collapsed || hovered;
+  const { errors24h, failedTasks } = useSystemHealth();
+  // badge do item "Erros": erros das ultimas 24h (ou tasks falhas, o que for maior)
+  const errorsBadge = Math.max(errors24h, failedTasks.length);
 
   return (
     <aside
@@ -132,10 +136,22 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
                         }
                         title={!isOpen ? item.label : undefined}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="relative shrink-0">
+                          <Icon className="h-4 w-4" />
+                          {!isOpen && "badgeKey" in item && errorsBadge > 0 && (
+                            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                              {errorsBadge > 99 ? "99+" : errorsBadge}
+                            </span>
+                          )}
+                        </span>
                         {isOpen && (
                           <span className="truncate transition-opacity duration-200 ease-out">
                             {item.label}
+                          </span>
+                        )}
+                        {isOpen && "badgeKey" in item && errorsBadge > 0 && (
+                          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white">
+                            {errorsBadge > 99 ? "99+" : errorsBadge}
                           </span>
                         )}
                       </NavLink>

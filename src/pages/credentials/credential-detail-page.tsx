@@ -180,8 +180,8 @@ export function CredentialDetailPage() {
 
                       <tbody>
                         {credentialQuery.data.items?.length ? (
-                          credentialQuery.data.items.map((item: any) => {
-                            const resolvedKey = item.key ?? item.key_name ?? "---";
+                          credentialQuery.data.items.map((item) => {
+                            const resolvedKey = item.key ?? "---";
 
                             return (
                               <tr

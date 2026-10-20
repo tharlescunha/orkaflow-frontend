@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Save, X } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
+import { toast } from "@/store/toast-store";
 
 import {
   getRunner,
@@ -9,10 +11,7 @@ import {
   type UpdateRunnerConfigPayload,
 } from "@/services/api/runners";
 
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
+const MAX_CONCURRENCY_LIMIT = 5;
 
 type RunnerConfigFormState = {
   max_concurrency: string;
@@ -29,7 +28,6 @@ export function RunnerConfigEditPage() {
 
   const runnerId = Number(params.runnerId);
 
-  const [toast, setToast] = useState<ToastState>(null);
   const [form, setForm] = useState<RunnerConfigFormState>({
     max_concurrency: "1",
     polling_interval: "15",
@@ -44,12 +42,6 @@ export function RunnerConfigEditPage() {
     queryFn: () => getRunner(runnerId),
     enabled: Number.isFinite(runnerId) && runnerId > 0,
   });
-
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
 
   useEffect(() => {
     const data = runnerQuery.data;
@@ -71,20 +63,14 @@ export function RunnerConfigEditPage() {
     mutationFn: (payload: UpdateRunnerConfigPayload) =>
       updateRunnerConfig(runnerId, payload),
     onSuccess: () => {
-      setToast({
-        type: "success",
-        message: "Configuração atualizada com sucesso.",
-      });
+      toast.success("Configuração atualizada com sucesso.");
 
       setTimeout(() => {
         navigate(`/runner-configs/${runnerId}`);
       }, 800);
     },
-    onError: () => {
-      setToast({
-        type: "error",
-        message: "Não foi possível atualizar a configuração.",
-      });
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível atualizar a configuração.", error));
     },
   });
 
@@ -107,16 +93,25 @@ export function RunnerConfigEditPage() {
       try {
         parsedAllowedParallelBots = JSON.parse(form.allowed_parallel_bots);
       } catch {
-        setToast({
-          type: "error",
-          message: "allowed_parallel_bots precisa ser um JSON válido.",
-        });
+        toast.error("allowed_parallel_bots precisa ser um JSON válido.");
         return;
       }
     }
 
+    const maxConcurrency = Number(form.max_concurrency);
+    if (
+      !Number.isInteger(maxConcurrency) ||
+      maxConcurrency < 1 ||
+      maxConcurrency > MAX_CONCURRENCY_LIMIT
+    ) {
+      toast.error(
+        `Bots em background simultâneos deve ser um número inteiro entre 1 e ${MAX_CONCURRENCY_LIMIT}.`
+      );
+      return;
+    }
+
     const payload: UpdateRunnerConfigPayload = {
-      max_concurrency: Number(form.max_concurrency),
+      max_concurrency: maxConcurrency,
       polling_interval: Number(form.polling_interval),
       auto_update_bots: form.auto_update_bots,
       install_all_bots_on_register: form.install_all_bots_on_register,
@@ -141,32 +136,6 @@ export function RunnerConfigEditPage() {
 
   return (
     <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
-
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
       <section className="border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-6 py-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -222,15 +191,21 @@ export function RunnerConfigEditPage() {
                 </div>
 
                 <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Max concurrency">
+                  <FormField label="Bots em background simultâneos (máx. 5; foreground sempre 1)">
                     <input
                       value={form.max_concurrency}
                       onChange={(e) => handleChangeField("max_concurrency", e.target.value)}
                       className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
                       type="number"
                       min={1}
+                      max={MAX_CONCURRENCY_LIMIT}
+                      step={1}
                       required
                     />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Valor de 1 a 5 (campo max_concurrency). Além dos bots em background,
+                      o runner executa sempre 1 bot em foreground por vez.
+                    </p>
                   </FormField>
 
                   <FormField label="Polling interval (segundos)">

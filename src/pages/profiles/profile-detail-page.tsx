@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { withApiDetail } from "@/lib/api-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import {
@@ -67,10 +68,10 @@ export function ProfileDetailPage() {
 
       setConfirmOpen(false);
     },
-    onError: () => {
+    onError: (error) => {
       setToast({
         type: "error",
-        message: "Não foi possível alterar o status do perfil.",
+        message: withApiDetail("Não foi possível alterar o status do perfil.", error),
       });
     },
   });

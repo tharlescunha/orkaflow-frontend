@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
@@ -17,17 +17,29 @@ import {
   Loader2,
   MemoryStick,
   Network,
+  OctagonX,
   RefreshCcw,
   ScrollText,
   Server,
+  ShieldCheck,
+  SquareX,
 } from "lucide-react";
 
 import {
+  cancelTask,
+  forceStopTask,
   getTask,
   listTaskLogs,
+  requestStopTask,
   type TaskStatus,
 } from "@/services/api/tasks";
 import { StatusBadge } from "@/components/common/status-badge";
+import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
+import { withApiDetail } from "@/lib/api-error";
+import { toast } from "@/store/toast-store";
+
+const LIVE_STATUSES = ["running", "waiting", "ready", "stop_requested"];
+const DETAIL_REFRESH_MS = 5_000;
 
 type TaskLogItem = {
   id: number;
@@ -179,7 +191,7 @@ function getHeaderTone(status?: TaskStatus | string | null) {
   };
 }
 
-function getPageTitle(_status?: TaskStatus) {
+function getPageTitle() {
   return "Detalhes da Task";
 }
 
@@ -609,19 +621,77 @@ export function TaskDetailPage() {
 
   const taskId = Number(params.taskId);
 
+  const queryClient = useQueryClient();
+
   const taskQuery = useQuery({
     queryKey: ["task-detail", taskId],
     queryFn: () => getTask(taskId),
     enabled: Number.isFinite(taskId) && taskId > 0,
+    // atualiza sozinho enquanto a task esta viva
+    refetchInterval: (query) =>
+      LIVE_STATUSES.includes(String(query.state.data?.status ?? ""))
+        ? DETAIL_REFRESH_MS
+        : false,
+    refetchIntervalInBackground: false,
   });
+
+  const task = taskQuery.data;
+  const isLive = LIVE_STATUSES.includes(String(task?.status ?? ""));
 
   const taskLogsQuery = useQuery({
     queryKey: ["task-logs", taskId],
     queryFn: () => listTaskLogs(taskId),
     enabled: Number.isFinite(taskId) && taskId > 0,
+    refetchInterval: isLive ? DETAIL_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
   });
 
-  const task = taskQuery.data;
+  async function refreshAfterAction() {
+    await queryClient.invalidateQueries({ queryKey: ["task-detail", taskId] });
+    await queryClient.invalidateQueries({ queryKey: ["task-logs", taskId] });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelTask(taskId),
+    onSuccess: async () => {
+      toast.success("Task cancelada com sucesso.");
+      await refreshAfterAction();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível cancelar a task.", error));
+    },
+  });
+
+  const requestStopMutation = useMutation({
+    mutationFn: () => requestStopTask(taskId),
+    onSuccess: async () => {
+      toast.success("Solicitação de parada registrada. O bot será encerrado com segurança.");
+      await refreshAfterAction();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível solicitar a parada.", error));
+    },
+  });
+
+  const forceStopMutation = useMutation({
+    mutationFn: () => forceStopTask(taskId),
+    onSuccess: async () => {
+      toast.success("Parada forçada aplicada com sucesso.");
+      await refreshAfterAction();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível aplicar a parada forçada.", error));
+    },
+  });
+
+  const status = String(task?.status ?? "");
+  const canCancelTask = ["waiting", "scheduled", "ready"].includes(status);
+  const canStopTask = ["running", "stop_requested"].includes(status);
+  const actionPending =
+    cancelMutation.isPending ||
+    requestStopMutation.isPending ||
+    forceStopMutation.isPending;
 
   const rawLogs = useMemo<TaskLogItem[]>(() => {
     return (taskLogsQuery.data?.items ?? []) as TaskLogItem[];
@@ -630,6 +700,15 @@ export function TaskDetailPage() {
   const logs = useMemo(() => {
     return groupLogs(rawLogs);
   }, [rawLogs]);
+
+  // motivo da espera: ultimo log de sistema enquanto a task esta waiting/ready
+  const waitingReason = useMemo(() => {
+    if (status !== "waiting" && status !== "ready") return null;
+    const systemLogs = rawLogs.filter(
+      (log) => String(log.source ?? "").toLowerCase() === "system" && log.message
+    );
+    return systemLogs.length > 0 ? systemLogs[systemLogs.length - 1] : null;
+  }, [rawLogs, status]);
 
   const executionDuration = useMemo(() => {
     if (
@@ -701,15 +780,61 @@ export function TaskDetailPage() {
               </button>
 
               <h1 className="text-2xl font-semibold text-slate-950">
-                {getPageTitle(task?.status)} #{taskId}
+                {getPageTitle()} #{taskId}
               </h1>
               <p className="mt-1 text-sm text-slate-500">
                 Visualização completa da execução, parâmetros, logs e telemetria.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {task?.status ? <StatusBadge status={task.status} /> : null}
+
+              {canCancelTask ? (
+                <button
+                  type="button"
+                  disabled={actionPending}
+                  onClick={() => {
+                    if (window.confirm(`Cancelar a task #${taskId}?`)) cancelMutation.mutate();
+                  }}
+                  className="inline-flex h-10 items-center gap-2 border border-amber-300 bg-white px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
+                >
+                  <SquareX className="h-4 w-4" />
+                  Cancelar
+                </button>
+              ) : null}
+
+              {canStopTask ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={actionPending || status === "stop_requested"}
+                    onClick={() => requestStopMutation.mutate()}
+                    className="inline-flex h-10 items-center gap-2 border border-amber-300 bg-white px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Parar com segurança
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={actionPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Aplicar parada forçada na task #${taskId}? O processo será interrompido sem aguardar o bot.`
+                        )
+                      ) {
+                        forceStopMutation.mutate();
+                      }
+                    }}
+                    className="inline-flex h-10 items-center gap-2 border border-red-300 bg-white px-4 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-60"
+                  >
+                    <OctagonX className="h-4 w-4" />
+                    Parada forçada
+                  </button>
+                </>
+              ) : null}
 
               <button
                 type="button"
@@ -735,6 +860,15 @@ export function TaskDetailPage() {
             </div>
           ) : task ? (
             <div className="space-y-6">
+              <TaskStuckBadge task={task} runner={task.runner_details} />
+
+              {waitingReason ? (
+                <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <span className="font-semibold">Motivo da espera (log do sistema): </span>
+                  {waitingReason.message}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-3">
                 <TabButton
                   active={activeTab === "general"}

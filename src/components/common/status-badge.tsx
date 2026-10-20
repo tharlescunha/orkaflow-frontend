@@ -29,7 +29,7 @@ const statusMap: Record<
     className: "bg-orange-100 text-orange-800 border border-orange-200",
   },
   forced_stop: {
-    label: "Força parada",
+    label: "Parada forçada",
     className: "bg-violet-100 text-violet-800 border border-violet-200",
   },
   canceled: {
