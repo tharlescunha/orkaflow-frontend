@@ -46,6 +46,7 @@ import { CredentialDetailPage } from "../../pages/credentials/credential-detail-
 import { CredentialEditPage } from "../../pages/credentials/credential-edit-page";
 
 import { UsersPage } from "../../pages/users/users-page";
+import { NotificationsPage } from "../../pages/notifications/notifications-page";
 import { UserCreatePage } from "../../pages/users/user-create-page";
 import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
@@ -128,6 +129,7 @@ export const router = createBrowserRouter([
       { path: "credentials/:credentialId/edit", element: <CredentialEditPage /> },
 
       { path: "users", element: <UsersPage /> },
+      { path: "notifications", element: <NotificationsPage /> },
       { path: "users/new", element: <UserCreatePage /> },
       { path: "users/:userId", element: <UserDetailPage /> },
       { path: "users/:userId/edit", element: <UserEditPage /> },

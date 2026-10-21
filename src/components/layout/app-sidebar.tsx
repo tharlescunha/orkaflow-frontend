@@ -14,6 +14,7 @@ import {
   UserCircle2,
   Users,
   Boxes,
+  Bell,
   Activity,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -66,6 +67,7 @@ const menuGroups = [
     title: "Administração",
     items: [
       { label: "Usuários", to: "/users", icon: Users },
+      { label: "Notificações", to: "/notifications", icon: Bell },
       { label: "Perfil", to: "/profile", icon: UserCircle2 },
     ],
   },

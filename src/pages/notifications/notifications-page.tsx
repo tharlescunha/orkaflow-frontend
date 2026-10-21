@@ -1,0 +1,392 @@
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Save, Send } from "lucide-react";
+import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
+import { toast } from "@/store/toast-store";
+import {
+  getNotificationChannel,
+  listNotificationVariables,
+  testNotificationChannel,
+  updateNotificationChannel,
+  type HttpMethod,
+  type NotificationChannel,
+  type NotificationTestResult,
+  type UpdateNotificationChannelPayload,
+} from "@/services/api/notifications";
+import { HeadersEditor } from "./headers-editor";
+import {
+  headersToRows,
+  rowsToHeaders,
+  validateHeaderRows,
+  type HeaderRow,
+} from "./header-utils";
+import { VariableChips } from "./variable-chips";
+import { TestResult } from "./test-result";
+import { NotificationLogsCard } from "./notification-logs-card";
+
+type FormState = {
+  enabled: boolean;
+  name: string;
+  url: string;
+  method: HttpMethod;
+  headers: HeaderRow[];
+  body_template: string;
+  failure_threshold: string;
+  pause_schedule: boolean;
+  deactivate_automation: boolean;
+  timeout_seconds: string;
+  panel_base_url: string;
+};
+
+const inputClass =
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
+
+function toForm(c: NotificationChannel): FormState {
+  return {
+    enabled: Boolean(c.enabled),
+    name: c.name ?? "",
+    url: c.url ?? "",
+    method: c.method ?? "POST",
+    headers: headersToRows(c.headers),
+    body_template: c.body_template ?? "",
+    failure_threshold: String(c.failure_threshold ?? 3),
+    pause_schedule: Boolean(c.pause_schedule),
+    deactivate_automation: Boolean(c.deactivate_automation),
+    timeout_seconds: String(c.timeout_seconds ?? 15),
+    panel_base_url: c.panel_base_url ?? "",
+  };
+}
+
+/** Representação comparável (ignora ids das linhas e linhas vazias). */
+function snapshot(f: FormState) {
+  return JSON.stringify({ ...f, headers: rowsToHeaders(f.headers) });
+}
+
+const isHttpUrl = (v: string) => /^https?:\/\/\S+/i.test(v.trim());
+
+function validate(f: FormState): string | null {
+  const url = f.url.trim();
+  if (f.enabled && !url) return "Informe a URL de destino para ativar as notificações.";
+  if (url && !isHttpUrl(url)) return "A URL de destino deve começar com http:// ou https://.";
+  const panel = f.panel_base_url.trim();
+  if (panel && !isHttpUrl(panel)) return "A URL base do painel deve começar com http:// ou https://.";
+  const headerError = validateHeaderRows(f.headers);
+  if (headerError) return headerError;
+  const threshold = Number(f.failure_threshold);
+  if (!Number.isInteger(threshold) || threshold < 1)
+    return "Falhas seguidas para notificar deve ser um inteiro maior ou igual a 1.";
+  const timeout = Number(f.timeout_seconds);
+  if (!Number.isInteger(timeout) || timeout < 1) return "O timeout deve ser um inteiro maior ou igual a 1.";
+  return null;
+}
+
+export function NotificationsPage() {
+  const queryClient = useQueryClient();
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [form, setForm] = useState<FormState | null>(null);
+  const [saved, setSaved] = useState("");
+  const [testResult, setTestResult] = useState<NotificationTestResult | null>(null);
+
+  const channelQuery = useQuery({
+    queryKey: ["notification-channel"],
+    queryFn: getNotificationChannel,
+  });
+
+  const variablesQuery = useQuery({
+    queryKey: ["notification-variables"],
+    queryFn: listNotificationVariables,
+    staleTime: 5 * 60_000,
+  });
+
+  function applyChannel(c: NotificationChannel) {
+    const next = toForm(c);
+    setForm(next);
+    setSaved(snapshot(next));
+  }
+
+  // Carga inicial do formulário (ajuste de estado durante a renderização).
+  if (channelQuery.data && form === null) applyChannel(channelQuery.data);
+
+  const dirty = form !== null && snapshot(form) !== saved;
+  const validationError = useMemo(() => (form ? validate(form) : null), [form]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: UpdateNotificationChannelPayload) => updateNotificationChannel(payload),
+    onSuccess: (channel) => {
+      queryClient.setQueryData(["notification-channel"], channel);
+      applyChannel(channel);
+      toast.success("Configuração de notificações salva.");
+    },
+    onError: (error) => toast.error(withApiDetail("Não foi possível salvar.", error)),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: testNotificationChannel,
+    onSuccess: (result) => {
+      setTestResult(result);
+      queryClient.invalidateQueries({ queryKey: ["notification-logs"] });
+      if (result.ok) toast.success("Teste enviado com sucesso.");
+      else toast.error("O teste falhou. Veja os detalhes abaixo.");
+    },
+    onError: (error) => toast.error(withApiDetail("Não foi possível enviar o teste.", error)),
+  });
+
+  function set<K extends keyof FormState>(field: K, value: FormState[K]) {
+    setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+  }
+
+  function insertVariable(token: string) {
+    const el = bodyRef.current;
+    if (!form) return;
+    const current = form.body_template;
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    set("body_template", current.slice(0, start) + token + current.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+    const error = validate(form);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    saveMutation.mutate({
+      enabled: form.enabled,
+      name: form.name.trim(),
+      url: form.url.trim(),
+      method: form.method,
+      headers: rowsToHeaders(form.headers),
+      body_template: form.body_template,
+      failure_threshold: Number(form.failure_threshold),
+      pause_schedule: form.pause_schedule,
+      deactivate_automation: form.deactivate_automation,
+      timeout_seconds: Number(form.timeout_seconds),
+      panel_base_url: form.panel_base_url.trim() || null,
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-5">
+          <h1 className="text-2xl font-semibold text-slate-950">Notificações</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Quando um agendamento falha várias vezes seguidas, o sistema envia uma requisição HTTP
+            configurável (ex.: abrir chamado no desk) e pode pausar o agendamento.
+          </p>
+        </div>
+
+        {channelQuery.isLoading ? (
+          <div className="px-6 py-10 text-sm text-slate-500">Carregando configuração...</div>
+        ) : channelQuery.isError || !form ? (
+          <div className="px-6 py-10 text-sm text-red-600">
+            {getApiErrorMessage(channelQuery.error, "Não foi possível carregar a configuração.")}
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => channelQuery.refetch()}
+                className="h-9 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-6 px-6 py-6">
+              <section className="border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                    Configuração
+                  </h2>
+                </div>
+
+                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
+                  <label className="md:col-span-2 inline-flex items-center gap-3 text-sm font-medium text-slate-800">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={form.enabled}
+                      onChange={(e) => set("enabled", e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    Ativar notificações
+                  </label>
+
+                  <Field label="Nome">
+                    <input className={inputClass} value={form.name} onChange={(e) => set("name", e.target.value)} />
+                  </Field>
+
+                  <Field label="Método">
+                    <select
+                      className={inputClass}
+                      value={form.method}
+                      onChange={(e) => set("method", e.target.value as HttpMethod)}
+                    >
+                      <option value="POST">POST</option>
+                      <option value="PUT">PUT</option>
+                      <option value="PATCH">PATCH</option>
+                    </select>
+                  </Field>
+
+                  <div className="md:col-span-2">
+                    <Field label="URL de destino">
+                      <input
+                        className={inputClass}
+                        value={form.url}
+                        onChange={(e) => set("url", e.target.value)}
+                        placeholder="https://desk.exemplo.com/api/chamados"
+                        inputMode="url"
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <span className="mb-2 block text-sm font-medium text-slate-700">Cabeçalhos</span>
+                    <HeadersEditor rows={form.headers} onChange={(rows) => set("headers", rows)} />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <Field label="Corpo da requisição">
+                      <textarea
+                        ref={bodyRef}
+                        value={form.body_template}
+                        onChange={(e) => set("body_template", e.target.value)}
+                        spellCheck={false}
+                        className="min-h-[260px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                        placeholder={'{\n  "titulo": "Falha em {{automacao}}",\n  "descricao": "{{erro}}"\n}'}
+                      />
+                    </Field>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Use {"{{erro}}"} e {"{{automacao}}"} no corpo. Em JSON, os valores são escapados
+                      automaticamente: escreva "descricao": "{"{{erro}}"}".
+                    </p>
+                    <div className="mt-3">
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Variáveis disponíveis (clique para inserir)
+                      </span>
+                      <VariableChips
+                        variables={variablesQuery.data ?? []}
+                        loading={variablesQuery.isLoading}
+                        error={variablesQuery.isError}
+                        onInsert={insertVariable}
+                      />
+                    </div>
+                  </div>
+
+                  <Field label="Falhas seguidas para notificar">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={form.failure_threshold}
+                      onChange={(e) => set("failure_threshold", e.target.value)}
+                    />
+                  </Field>
+
+                  <Field label="Timeout (segundos)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={form.timeout_seconds}
+                      onChange={(e) => set("timeout_seconds", e.target.value)}
+                    />
+                  </Field>
+
+                  <div className="md:col-span-2">
+                    <Field label="URL base do painel (opcional, usada em {{link_task}})">
+                      <input
+                        className={inputClass}
+                        value={form.panel_base_url}
+                        onChange={(e) => set("panel_base_url", e.target.value)}
+                        placeholder="https://orkaflow.exemplo.com"
+                        inputMode="url"
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="md:col-span-2 grid gap-3">
+                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.pause_schedule}
+                        onChange={(e) => set("pause_schedule", e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      Pausar o agendamento depois de notificar
+                    </label>
+                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.deactivate_automation}
+                        onChange={(e) => set("deactivate_automation", e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      Desativar também a automação
+                    </label>
+                  </div>
+                </div>
+              </section>
+
+              {testResult && <TestResult result={testResult} />}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">
+                {dirty
+                  ? "Há alterações não salvas. O teste usa a configuração SALVA; salve antes de testar."
+                  : "O teste usa a configuração salva, com dados de exemplo, e não pausa nada."}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => testMutation.mutate()}
+                  disabled={dirty || testMutation.isPending}
+                  title={dirty ? "Salve as alterações para testar" : undefined}
+                  className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                  {testMutation.isPending ? "Enviando..." : "Enviar teste"}
+                </button>
+                <button
+                  type="submit"
+                  disabled={saveMutation.isPending || !dirty || Boolean(validationError)}
+                  title={validationError ?? undefined}
+                  className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {saveMutation.isPending ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+            {validationError && dirty && (
+              <p className="px-6 pb-4 text-xs text-red-600">{validationError}</p>
+            )}
+          </form>
+        )}
+      </section>
+
+      <NotificationLogsCard />
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block text-slate-900">
+      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
+      {children}
+    </label>
+  );
+}
