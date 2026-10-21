@@ -31,7 +31,9 @@ export function AppShell() {
           <ConnectionBanner />
           <SystemHealthBanner />
 
-          <main className="flex-1 overflow-y-auto">
+          {/* relative: elementos absolutos (ex.: textos sr-only) ficam contidos e recortados aqui,
+              em vez de alongar a página inteira além do layout */}
+          <main className="relative flex-1 overflow-y-auto">
             <div className="p-4 md:p-6 lg:p-8">
               <Outlet />
             </div>
