@@ -2,6 +2,19 @@ import { api } from "./client";
 
 export type HttpMethod = "POST" | "PUT" | "PATCH";
 
+export type StepMethod = "GET" | "POST" | "PUT" | "PATCH";
+
+export type StepExtract = { variable: string; path: string };
+
+export type NotificationStep = {
+  name: string;
+  method: StepMethod;
+  url: string;
+  headers: Record<string, string>;
+  body_template: string;
+  extract: StepExtract[];
+};
+
 export type NotificationChannel = {
   id: number;
   name: string;
@@ -10,6 +23,7 @@ export type NotificationChannel = {
   method: HttpMethod;
   headers: Record<string, string>;
   body_template: string;
+  pre_steps?: NotificationStep[];
   timeout_seconds: number;
   failure_threshold: number;
   pause_schedule: boolean;
@@ -22,7 +36,16 @@ export type UpdateNotificationChannelPayload = Partial<
   Omit<NotificationChannel, "id" | "updated_at">
 >;
 
+export type NotificationTestStep = {
+  name: string;
+  ok: boolean;
+  status_code: number | null;
+  error: string | null;
+  extracted: string[];
+};
+
 export type NotificationTestResult = {
+  steps?: NotificationTestStep[];
   ok: boolean;
   status_code: number | null;
   response_snippet: string | null;

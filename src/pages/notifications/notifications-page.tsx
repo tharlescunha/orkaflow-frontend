@@ -21,6 +21,14 @@ import {
   type HeaderRow,
 } from "./header-utils";
 import { VariableChips } from "./variable-chips";
+import { StepsEditor } from "./steps-editor";
+import {
+  stepsFromApi,
+  stepsToApi,
+  stepVariableNames,
+  validateSteps,
+  type StepForm,
+} from "./step-utils";
 import { TestResult } from "./test-result";
 import { NotificationLogsCard } from "./notification-logs-card";
 
@@ -30,6 +38,7 @@ type FormState = {
   url: string;
   method: HttpMethod;
   headers: HeaderRow[];
+  pre_steps: StepForm[];
   body_template: string;
   failure_threshold: string;
   pause_schedule: boolean;
@@ -48,6 +57,7 @@ function toForm(c: NotificationChannel): FormState {
     url: c.url ?? "",
     method: c.method ?? "POST",
     headers: headersToRows(c.headers),
+    pre_steps: stepsFromApi(c.pre_steps),
     body_template: c.body_template ?? "",
     failure_threshold: String(c.failure_threshold ?? 3),
     pause_schedule: Boolean(c.pause_schedule),
@@ -59,7 +69,11 @@ function toForm(c: NotificationChannel): FormState {
 
 /** Representação comparável (ignora ids das linhas e linhas vazias). */
 function snapshot(f: FormState) {
-  return JSON.stringify({ ...f, headers: rowsToHeaders(f.headers) });
+  return JSON.stringify({
+    ...f,
+    headers: rowsToHeaders(f.headers),
+    pre_steps: stepsToApi(f.pre_steps),
+  });
 }
 
 const isHttpUrl = (v: string) => /^https?:\/\/\S+/i.test(v.trim());
@@ -72,6 +86,8 @@ function validate(f: FormState): string | null {
   if (panel && !isHttpUrl(panel)) return "A URL base do painel deve começar com http:// ou https://.";
   const headerError = validateHeaderRows(f.headers);
   if (headerError) return headerError;
+  const stepsError = validateSteps(f.pre_steps);
+  if (stepsError) return stepsError;
   const threshold = Number(f.failure_threshold);
   if (!Number.isInteger(threshold) || threshold < 1)
     return "Falhas seguidas para notificar deve ser um inteiro maior ou igual a 1.";
@@ -108,6 +124,7 @@ export function NotificationsPage() {
   if (channelQuery.data && form === null) applyChannel(channelQuery.data);
 
   const dirty = form !== null && snapshot(form) !== saved;
+  const stepVariables = useMemo(() => (form ? stepVariableNames(form.pre_steps) : []), [form]);
   const validationError = useMemo(() => (form ? validate(form) : null), [form]);
 
   const saveMutation = useMutation({
@@ -164,6 +181,7 @@ export function NotificationsPage() {
       url: form.url.trim(),
       method: form.method,
       headers: rowsToHeaders(form.headers),
+      pre_steps: stepsToApi(form.pre_steps),
       body_template: form.body_template,
       failure_threshold: Number(form.failure_threshold),
       pause_schedule: form.pause_schedule,
@@ -253,7 +271,28 @@ export function NotificationsPage() {
                     <span className="mb-2 block text-sm font-medium text-slate-700">Cabeçalhos</span>
                     <HeadersEditor rows={form.headers} onChange={(rows) => set("headers", rows)} />
                   </div>
+                </div>
+              </section>
 
+              <section className="border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                    Etapas antes do envio (ex.: login)
+                  </h2>
+                </div>
+                <div className="px-5 py-5">
+                  <StepsEditor steps={form.pre_steps} onChange={(steps) => set("pre_steps", steps)} />
+                </div>
+              </section>
+
+              <section className="border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                    Corpo e regras
+                  </h2>
+                </div>
+
+                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <Field label="Corpo da requisição">
                       <textarea
@@ -275,6 +314,7 @@ export function NotificationsPage() {
                       </span>
                       <VariableChips
                         variables={variablesQuery.data ?? []}
+                        stepVariables={stepVariables}
                         loading={variablesQuery.isLoading}
                         error={variablesQuery.isError}
                         onInsert={insertVariable}
