@@ -73,6 +73,17 @@ export type NotificationLog = {
   paused_schedule: boolean;
 };
 
+export type NotificationLogDetail = NotificationLog & {
+  request: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+  } | null;
+  steps: NotificationTestStep[] | null;
+  response_body: string | null;
+};
+
 export type NotificationVariable = {
   name: string;
   description: string;
@@ -103,6 +114,11 @@ export async function listNotificationLogs(limit = 50) {
   const response = await api.get<NotificationLog[]>("/api/v1/notifications/logs", {
     params: { limit },
   });
+  return response.data;
+}
+
+export async function getNotificationLog(id: number) {
+  const response = await api.get<NotificationLogDetail>(`/api/v1/notifications/logs/${id}`);
   return response.data;
 }
 
