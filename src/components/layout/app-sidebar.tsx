@@ -16,6 +16,7 @@ import {
   Boxes,
   Bell,
   Activity,
+  Variable,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ const menuGroups = [
       { label: "Automações", to: "/automations", icon: PlaySquare },
       { label: "Agendamentos", to: "/schedules", icon: CalendarClock },
       { label: "Repositórios", to: "/repositories", icon: FolderGit2 },
+      { label: "Variáveis", to: "/env-variables", icon: Variable },
     ],
   },
   {
