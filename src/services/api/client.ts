@@ -51,14 +51,27 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error?.config as RetriableConfig | undefined;
     const refreshToken = useAuthStore.getState().refreshToken;
+    const requestUrl = String(originalRequest?.url ?? "");
+    const isAuthRoute = requestUrl.includes("/auth/refresh") || requestUrl.includes("/auth/login");
+
+    // 401 que não tem como ser recuperado (sem refresh token, ou já tentou renovar e
+    // continuou 401): a sessão salva está vencida. Desloga em vez de ficar com a tela
+    // "logada" e todas as chamadas falhando.
+    if (
+      error.response?.status === 401 &&
+      !requestUrl.includes("/auth/login") &&
+      (!refreshToken || originalRequest?._retry || requestUrl.includes("/auth/refresh"))
+    ) {
+      forceLogout();
+      return Promise.reject(error);
+    }
 
     if (
       originalRequest &&
       error.response?.status === 401 &&
       refreshToken &&
       !originalRequest._retry &&
-      !String(originalRequest.url ?? "").includes("/auth/refresh") &&
-      !String(originalRequest.url ?? "").includes("/auth/login")
+      !isAuthRoute
     ) {
       originalRequest._retry = true;
 
