@@ -11,6 +11,7 @@ import {
   Pencil,
   Power,
   RefreshCcw,
+  Trash2,
   X,
   XCircle,
 } from "lucide-react";
@@ -20,16 +21,20 @@ import {
   disableRunner,
   getRunnerScreenshotBlobUrl,
   listRunners,
+  removeRunner,
   type RunnerRead,
 } from "@/services/api/runners";
-import { getRunnerHealth, getRunnerStatusText } from "@/lib/health";
+import { getRunnerHealth, getRunnerStatusText, parseApiDate } from "@/lib/health";
 import {
   RunnerBadges,
   RunnerHeartbeatText,
 } from "@/components/common/runner-badges";
 import { toast } from "@/store/toast-store";
+import { getApiErrorMessage } from "@/lib/api-error";
 
-type EnabledFilter = "true" | "false" | "all";
+type EnabledFilter = "true" | "false" | "all" | "removed";
+
+type ConfirmAction = { runner: RunnerRead; action: "toggle" | "remove" } | null;
 
 type MenuState = {
   runner: RunnerRead;
@@ -67,11 +72,16 @@ export function RunnersPage() {
 
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
-  const [confirmRunner, setConfirmRunner] = useState<RunnerRead | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmAction>(null);
+  const confirmRunner = confirm?.action === "toggle" ? confirm.runner : null;
   const [previewRunner, setPreviewRunner] = useState<RunnerRead | null>(null);
   const [refreshCountdown, setRefreshCountdown] = useState(10);
 
   const queryParams = useMemo(() => {
+    if (enabledFilter === "removed") {
+      return { skip: 0, limit: 100, removed: true };
+    }
+
     return {
       skip: 0,
       limit: 100,
@@ -98,7 +108,7 @@ export function RunnersPage() {
       queryClient.invalidateQueries({ queryKey: ["runners-page"] });
       queryClient.invalidateQueries({ queryKey: ["runners"] });
       queryClient.invalidateQueries({ queryKey: ["health"] });
-      setConfirmRunner(null);
+      setConfirm(null);
       setOpenMenu(null);
     },
   });
@@ -109,8 +119,25 @@ export function RunnersPage() {
       toast.success("Runner desativado.");
       queryClient.invalidateQueries({ queryKey: ["runners-page"] });
       queryClient.invalidateQueries({ queryKey: ["runners"] });
-      setConfirmRunner(null);
+      setConfirm(null);
       setOpenMenu(null);
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (runnerId: number) => removeRunner(runnerId),
+    onSuccess: () => {
+      toast.success('Runner removido. Ele continua em "Removidos (histórico)".');
+      queryClient.invalidateQueries({ queryKey: ["runners-page"] });
+      queryClient.invalidateQueries({ queryKey: ["runners"] });
+      queryClient.invalidateQueries({ queryKey: ["health"] });
+      setConfirm(null);
+      setOpenMenu(null);
+    },
+    onError: (error) => {
+      // Fecha o modal para o aviso (ex.: task em execução) ficar visível.
+      toast.error(getApiErrorMessage(error, "Não foi possível remover o runner."));
+      setConfirm(null);
     },
   });
 
@@ -175,12 +202,24 @@ export function RunnersPage() {
   }
 
   function handleAskToggleRunner(runner: RunnerRead) {
-    setConfirmRunner(runner);
+    setConfirm({ runner, action: "toggle" });
     setOpenMenu(null);
   }
 
-  function handleConfirmToggle() {
-    if (!confirmRunner) return;
+  function handleAskRemoveRunner(runner: RunnerRead) {
+    setConfirm({ runner, action: "remove" });
+    setOpenMenu(null);
+  }
+
+  function handleConfirm() {
+    if (!confirm) return;
+
+    if (confirm.action === "remove") {
+      removeMutation.mutate(confirm.runner.id);
+      return;
+    }
+
+    const confirmRunner = confirm.runner;
 
     if (confirmRunner.enabled) {
       disableMutation.mutate(confirmRunner.id);
@@ -190,7 +229,8 @@ export function RunnersPage() {
     activateMutation.mutate(confirmRunner.id);
   }
 
-  const isSubmitting = activateMutation.isPending || disableMutation.isPending;
+  const isSubmitting =
+    activateMutation.isPending || disableMutation.isPending || removeMutation.isPending;
   const runners = runnersQuery.data ?? [];
 
   return (
@@ -227,6 +267,7 @@ export function RunnersPage() {
               <option value="true">Somente ativos</option>
               <option value="false">Somente inativos</option>
               <option value="all">Todos</option>
+              <option value="removed">Removidos (histórico)</option>
             </select>
 
             <div className="text-sm text-slate-500">
@@ -249,7 +290,9 @@ export function RunnersPage() {
             </div>
           ) : runners.length === 0 ? (
             <div className="py-10 text-sm text-slate-500">
-              Nenhum runner encontrado.
+              {enabledFilter === "removed"
+                ? "Nenhum runner removido."
+                : "Nenhum runner encontrado."}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
@@ -281,11 +324,30 @@ export function RunnersPage() {
           navigate(`/runner-configs/${runner.id}/edit`);
         }}
         onToggle={(runner) => handleAskToggleRunner(runner)}
+        onRemove={(runner) => handleAskRemoveRunner(runner)}
       />
 
       <ScreenshotPreviewModal
         runner={previewRunner}
         onClose={() => setPreviewRunner(null)}
+      />
+
+      <ConfirmModal
+        open={confirm?.action === "remove"}
+        title="Remover runner"
+        description={
+          confirm
+            ? `Runner: ${confirm.runner.name}\n\n` +
+              "Ele some das telas de Runners e Config. Runners, é desvinculado das automações " +
+              "e não recebe mais tasks. O histórico das execuções continua com o nome dele.\n\n" +
+              "Se a máquina for configurada de novo (configurar_worker.bat), ela volta."
+            : ""
+        }
+        onCancel={() => setConfirm(null)}
+        onConfirm={handleConfirm}
+        confirmLabel="Remover"
+        loading={isSubmitting}
+        danger
       />
 
       <ConfirmModal
@@ -302,8 +364,8 @@ export function RunnersPage() {
               } este runner?`
             : ""
         }
-        onCancel={() => setConfirmRunner(null)}
-        onConfirm={handleConfirmToggle}
+        onCancel={() => setConfirm(null)}
+        onConfirm={handleConfirm}
         confirmLabel={
           confirmRunner?.enabled
             ? "Confirmar desativação"
@@ -332,6 +394,7 @@ function RunnerCard({
 }) {
   const displayName = getRunnerDisplayName(runner);
   const showScreenshot = canShowScreenshot(runner);
+  const removedAt = parseApiDate(runner.deleted_at);
 
   return (
     <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
@@ -365,10 +428,18 @@ function RunnerCard({
           </h3>
 
           <div className="mt-2 space-y-1.5">
-            <RunnerBadges runner={runner} />
-            <p className="text-xs">
-              <RunnerHeartbeatText runner={runner} />
-            </p>
+            {removedAt ? (
+              <p className="text-xs font-medium text-slate-500">
+                Removido em {removedAt.toLocaleString("pt-BR")}
+              </p>
+            ) : (
+              <>
+                <RunnerBadges runner={runner} />
+                <p className="text-xs">
+                  <RunnerHeartbeatText runner={runner} />
+                </p>
+              </>
+            )}
           </div>
         </div>
       </button>
@@ -584,6 +655,7 @@ function ActionsDropdown({
   onView,
   onEdit,
   onToggle,
+  onRemove,
 }: {
   open: boolean;
   anchorRect: DOMRect | null;
@@ -592,6 +664,7 @@ function ActionsDropdown({
   onView: (runner: RunnerRead) => void;
   onEdit: (runner: RunnerRead) => void;
   onToggle: (runner: RunnerRead) => void;
+  onRemove: (runner: RunnerRead) => void;
 }) {
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 208 });
@@ -613,7 +686,7 @@ function ActionsDropdown({
       left = viewportWidth - dropdownWidth - 8;
     }
 
-    const estimatedHeight = 140;
+    const estimatedHeight = 180;
 
     if (top + estimatedHeight > viewportHeight - 8) {
       top = anchorRect.top - estimatedHeight - gap;
@@ -674,25 +747,38 @@ function ActionsDropdown({
           Informações
         </button>
 
-        <button
-          type="button"
-          onClick={() => onEdit(runner)}
-          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-        >
-          <Pencil className="h-4 w-4" />
-          Editar
-        </button>
+        {!runner.deleted_at && (
+          <>
+            <button
+              type="button"
+              onClick={() => onEdit(runner)}
+              className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+            >
+              <Pencil className="h-4 w-4" />
+              Editar
+            </button>
 
-        <button
-          type="button"
-          onClick={() => onToggle(runner)}
-          className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-slate-50 ${
-            runner.enabled ? "text-red-600" : "text-emerald-700"
-          }`}
-        >
-          <Power className="h-4 w-4" />
-          {runner.enabled ? "Desativar" : "Ativar"}
-        </button>
+            <button
+              type="button"
+              onClick={() => onToggle(runner)}
+              className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-slate-50 ${
+                runner.enabled ? "text-red-600" : "text-emerald-700"
+              }`}
+            >
+              <Power className="h-4 w-4" />
+              {runner.enabled ? "Desativar" : "Ativar"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onRemove(runner)}
+              className="flex w-full items-center gap-3 border-t border-slate-100 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remover
+            </button>
+          </>
+        )}
       </div>
     </div>,
     document.body

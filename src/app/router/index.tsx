@@ -15,6 +15,7 @@ import { RunnerConfigsPage } from "../../pages/runner-config/runner-configs-page
 import { RunnerConfigDetailPage } from "../../pages/runner-config/runner-config-detail-page";
 import { RunnerConfigEditPage } from "../../pages/runner-config/runner-config-edit-page";
 import { WorkerRegistrationPage } from "../../pages/runner-config/worker-registration-page";
+import { RunnerLogsPage } from "../../pages/runner-logs/runner-logs-page";
 import { ProfilePage } from "../../pages/profile/profile-page";
 import { useAuthStore } from "../../store/auth-store";
 
@@ -57,15 +58,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return token ? children : <Navigate to="/login" replace />;
 }
 
-function PagePlaceholder({ title }: { title: string }) {
-  return (
-    <div className="border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
-      <p className="mt-2 text-sm text-slate-500">Tela em preparação.</p>
-    </div>
-  );
-}
-
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -95,7 +87,7 @@ export const router = createBrowserRouter([
       { path: "runner-configs/:runnerId", element: <RunnerConfigDetailPage /> },
       { path: "runner-configs/:runnerId/edit", element: <RunnerConfigEditPage /> },
 
-      { path: "logs", element: <PagePlaceholder title="Logs" /> },
+      { path: "logs", element: <RunnerLogsPage /> },
       { path: "errors", element: <TaskErrorsPage /> },
       { path: "errors/:errorId", element: <TaskErrorDetailPage /> },
 

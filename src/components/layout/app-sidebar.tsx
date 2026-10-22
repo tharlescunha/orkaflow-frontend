@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   PlusSquare,
   PlaySquare,
+  ScrollText,
   Server,
   Settings2,
   Siren,
@@ -38,7 +39,7 @@ const menuGroups = [
 
       { label: "Tasks", to: "/tasks", icon: ClipboardList },
       { label: "Nova Task", to: "/tasks/new", icon: PlusSquare },
-      { label: "Logs (em breve)", to: "/logs", icon: FileText },
+      { label: "Logs", to: "/logs", icon: ScrollText },
       { label: "Erros", to: "/errors", icon: Siren, badgeKey: "errors" },
     ],
   },

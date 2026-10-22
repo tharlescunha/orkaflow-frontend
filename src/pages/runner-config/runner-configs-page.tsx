@@ -11,6 +11,7 @@ import {
   Pencil,
   Power,
   RefreshCcw,
+  Trash2,
   XCircle,
 } from "lucide-react";
 
@@ -18,8 +19,11 @@ import {
   activateRunner,
   disableRunner,
   listRunners,
+  removeRunner,
   type RunnerRead,
 } from "@/services/api/runners";
+import { toast } from "@/store/toast-store";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
@@ -84,6 +88,7 @@ export function RunnerConfigsPage() {
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
   const [confirmRunner, setConfirmRunner] = useState<RunnerRead | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<RunnerRead | null>(null);
 
   const queryParams = useMemo(() => {
     return {
@@ -120,6 +125,22 @@ export function RunnerConfigsPage() {
       queryClient.invalidateQueries({ queryKey: ["runners"] });
       setConfirmRunner(null);
       setOpenMenu(null);
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (runnerId: number) => removeRunner(runnerId),
+    onSuccess: () => {
+      toast.success('Runner removido. Ele continua em Runners > "Removidos (histórico)".');
+      queryClient.invalidateQueries({ queryKey: ["runners"] });
+      queryClient.invalidateQueries({ queryKey: ["runners-page"] });
+      setRemoveTarget(null);
+      setOpenMenu(null);
+    },
+    onError: (error) => {
+      // Fecha o modal para o aviso (ex.: task em execução) ficar visível.
+      toast.error(getApiErrorMessage(error, "Não foi possível remover o runner."));
+      setRemoveTarget(null);
     },
   });
 
@@ -178,7 +199,7 @@ export function RunnerConfigsPage() {
   }
 
   const isSubmitting =
-    activateMutation.isPending || disableMutation.isPending;
+    activateMutation.isPending || disableMutation.isPending || removeMutation.isPending;
 
   const runners = runnersQuery.data ?? [];
 
@@ -365,6 +386,28 @@ export function RunnerConfigsPage() {
         onToggle={(runner) => {
           handleAskToggleRunner(runner);
         }}
+        onRemove={(runner) => {
+          setRemoveTarget(runner);
+          setOpenMenu(null);
+        }}
+      />
+
+      <ConfirmModal
+        open={!!removeTarget}
+        title="Remover runner"
+        description={
+          removeTarget
+            ? `Runner: ${removeTarget.name}\n\n` +
+              "Ele some das telas de Runners e Config. Runners, é desvinculado das automações " +
+              "e não recebe mais tasks. O histórico das execuções continua com o nome dele.\n\n" +
+              "Se a máquina for configurada de novo (configurar_worker.bat), ela volta."
+            : ""
+        }
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.id)}
+        confirmLabel="Remover"
+        loading={isSubmitting}
+        danger
       />
 
       <ConfirmModal
@@ -403,6 +446,7 @@ function ActionsDropdown({
   onView,
   onEdit,
   onToggle,
+  onRemove,
 }: {
   open: boolean;
   anchorRect: DOMRect | null;
@@ -411,6 +455,7 @@ function ActionsDropdown({
   onView: (runner: RunnerRead) => void;
   onEdit: (runner: RunnerRead) => void;
   onToggle: (runner: RunnerRead) => void;
+  onRemove: (runner: RunnerRead) => void;
 }) {
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 208 });
@@ -431,7 +476,7 @@ function ActionsDropdown({
       left = viewportWidth - dropdownWidth - 8;
     }
 
-    const estimatedHeight = 140;
+    const estimatedHeight = 180;
     if (top + estimatedHeight > viewportHeight - 8) {
       top = anchorRect.top - estimatedHeight - gap;
     }
@@ -511,6 +556,15 @@ function ActionsDropdown({
         >
           <Power className="h-4 w-4" />
           {runner.enabled ? "Desativar" : "Ativar"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onRemove(runner)}
+          className="flex w-full items-center gap-3 border-t border-slate-100 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+        >
+          <Trash2 className="h-4 w-4" />
+          Remover
         </button>
       </div>
     </div>,

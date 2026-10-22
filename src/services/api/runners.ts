@@ -37,6 +37,7 @@ export type RunnerRead = {
   has_running_task?: boolean;
   last_screenshot_at?: string | null;
   has_screenshot?: boolean;
+  deleted_at?: string | null;
 };
 
 export type ListRunnersParams = {
@@ -44,6 +45,8 @@ export type ListRunnersParams = {
   limit?: number;
   enabled?: boolean;
   status?: string;
+  // true: só os removidos (histórico). Sem ele, removidos não vêm.
+  removed?: boolean;
 };
 
 export type UpdateRunnerPayload = {
@@ -115,6 +118,13 @@ export async function activateRunner(runnerId: number) {
 
 export async function disableRunner(runnerId: number) {
   return updateRunner(runnerId, { enabled: false });
+}
+
+// Some das telas, perde os vínculos com automações e o worker da máquina é recusado.
+export async function removeRunner(runnerId: number) {
+  const response = await api.delete<RunnerRead>(`/api/v1/runners/${runnerId}`);
+
+  return response.data;
 }
 
 export async function getRunnerConfig(runnerId: number) {
