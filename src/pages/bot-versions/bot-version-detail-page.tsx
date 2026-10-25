@@ -118,8 +118,28 @@ export function BotVersionDetailPage() {
                 <div className="grid gap-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
                   <InfoItem label="ID" value={String(versionQuery.data.id)} />
                   <InfoItem label="Bot" value={botName} />
-                  <InfoItem label="Versão" value={versionQuery.data.version} />
+                  <InfoItem
+                    label="Versão"
+                    value={
+                      versionQuery.data.in_use
+                        ? `${versionQuery.data.version} · em uso${versionQuery.data.pinned ? " (Release)" : ""}`
+                        : versionQuery.data.version
+                    }
+                  />
                   <InfoItem label="Storage" value={versionQuery.data.storage_type} />
+                  <InfoItem
+                    label="Commit (Git)"
+                    value={
+                      versionQuery.data.commit_hash
+                        ? `${versionQuery.data.commit_hash.slice(0, 7)}${versionQuery.data.branch ? ` · ${versionQuery.data.branch}` : ""}`
+                        : "---"
+                    }
+                  />
+                  <InfoItem label="Autor do commit" value={versionQuery.data.commit_author || "---"} />
+                  <InfoItem
+                    label="Data do commit"
+                    value={formatDateTime(versionQuery.data.committed_at)}
+                  />
                   <InfoItem
                     label="Status"
                     value={formatActive(versionQuery.data.is_active)}

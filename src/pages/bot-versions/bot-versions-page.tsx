@@ -1,26 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Eye, MoreVertical, Plus, RefreshCcw, Search } from "lucide-react";
+import {
+  CheckCircle2,
+  Eye,
+  MoreVertical,
+  Plus,
+  RefreshCcw,
+  RotateCcw,
+  Search,
+  XCircle,
+} from "lucide-react";
 
-import { listBotVersions } from "@/services/api/bot-versions";
+import {
+  listBotVersions,
+  releaseBotVersion,
+  type BotVersionRead,
+} from "@/services/api/bot-versions";
 import { listBots } from "@/services/api/bots";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { toast } from "@/store/toast-store";
 
 const PAGE_SIZE = 10;
 
-type BotVersionListItem = {
-  id: number;
-  bot_id: number;
-  version: string;
-  storage_type: string;
-  artifact_path?: string | null;
-  changelog?: string | null;
-  checksum?: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at?: string | null;
-};
+type BotVersionListItem = BotVersionRead;
 
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
@@ -43,10 +47,26 @@ export function BotVersionsPage() {
   const [botFilter, setBotFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("");
   const [actionMenuVersionId, setActionMenuVersionId] = useState<number | null>(null);
+  const [releaseTarget, setReleaseTarget] = useState<BotVersionListItem | null>(null);
+  const queryClient = useQueryClient();
 
   const versionsQuery = useQuery({
     queryKey: ["bot-versions"],
     queryFn: listBotVersions,
+  });
+
+  const releaseMutation = useMutation({
+    mutationFn: (versionId: number) => releaseBotVersion(versionId),
+    onSuccess: (released) => {
+      toast.success(`Release feito: o orquestrador passa a executar a versão ${released.version}.`);
+      queryClient.invalidateQueries({ queryKey: ["bot-versions"] });
+      queryClient.invalidateQueries({ queryKey: ["bots"] });
+      setReleaseTarget(null);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Não foi possível fazer o Release."));
+      setReleaseTarget(null);
+    },
   });
 
   const botsQuery = useQuery({
@@ -106,6 +126,11 @@ export function BotVersionsPage() {
   function openInfo(versionId: number) {
     setActionMenuVersionId(null);
     navigate(`/bot-versions/${versionId}`);
+  }
+
+  function askRelease(item: BotVersionListItem) {
+    setActionMenuVersionId(null);
+    setReleaseTarget(item);
   }
 
   return (
@@ -215,7 +240,7 @@ export function BotVersionsPage() {
                     Versão
                   </th>
                   <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Storage
+                    Commit (Git)
                   </th>
                   <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
                     Status
@@ -266,6 +291,7 @@ export function BotVersionsPage() {
                       actionMenuVersionId={actionMenuVersionId}
                       setActionMenuVersionId={setActionMenuVersionId}
                       onOpenInfo={openInfo}
+                      onRelease={askRelease}
                     />
                   ))
                 )}
@@ -306,6 +332,67 @@ export function BotVersionsPage() {
           </div>
         </section>
       </div>
+
+      {releaseTarget
+        ? createPortal(
+            <div className="fixed inset-0 z-[9999]">
+              <div
+                className="absolute inset-0 bg-slate-950/55"
+                onClick={() => !releaseMutation.isPending && setReleaseTarget(null)}
+              />
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div className="relative z-10 w-full max-w-md border border-slate-200 bg-white shadow-2xl">
+                  <div className="border-b border-slate-200 px-6 py-4">
+                    <h2 className="text-lg font-semibold text-slate-950">Release da versão</h2>
+                  </div>
+                  <div className="space-y-3 px-6 py-5 text-sm text-slate-700">
+                    <p>
+                      Bot: <strong>{botNameMap.get(releaseTarget.bot_id) ?? `Bot #${releaseTarget.bot_id}`}</strong>
+                      <br />
+                      Versão: <strong>{releaseTarget.version}</strong>
+                      {releaseTarget.commit_hash ? ` (commit ${releaseTarget.commit_hash.slice(0, 7)})` : ""}
+                    </p>
+                    <p>
+                      As próximas execuções desse bot usam esta versão. As máquinas baixam o
+                      commit dela antes de rodar.
+                    </p>
+                    <p className="text-slate-500">
+                      Fazer Release na versão mais nova volta o bot a seguir sempre a mais nova.
+                      Criar uma versão nova também.
+                    </p>
+                    {!releaseTarget.commit_hash ? (
+                      <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                        Esta versão não tem commit registrado (cadastro antigo/manual): a máquina
+                        não tem como voltar o código para ela.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                    <button
+                      type="button"
+                      onClick={() => setReleaseTarget(null)}
+                      disabled={releaseMutation.isPending}
+                      className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => releaseMutation.mutate(releaseTarget.id)}
+                      disabled={releaseMutation.isPending}
+                      className="inline-flex h-10 items-center gap-2 border border-slate-950 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      {releaseMutation.isPending ? "Processando..." : "Fazer Release"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 }
@@ -316,6 +403,7 @@ type BotVersionRowProps = {
   actionMenuVersionId: number | null;
   setActionMenuVersionId: (id: number | null) => void;
   onOpenInfo: (versionId: number) => void;
+  onRelease: (item: BotVersionListItem) => void;
 };
 
 function BotVersionRow({
@@ -324,6 +412,7 @@ function BotVersionRow({
   actionMenuVersionId,
   setActionMenuVersionId,
   onOpenInfo,
+  onRelease,
 }: BotVersionRowProps) {
   const isOpen = actionMenuVersionId === item.id;
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -369,8 +458,20 @@ function BotVersionRow({
         </button>
       </td>
 
-      <td className="px-4 py-3 text-sm text-slate-700">{item.version}</td>
-      <td className="px-4 py-3 text-sm text-slate-700">{item.storage_type}</td>
+      <td className="px-4 py-3 text-sm text-slate-700">
+        {item.version}
+        {item.in_use ? (
+          <span
+            className="ml-2 inline-flex items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+            title={item.pinned ? "Fixada por Release" : "Versão mais nova"}
+          >
+            {item.pinned ? "Em uso (Release)" : "Em uso"}
+          </span>
+        ) : null}
+      </td>
+      <td className="px-4 py-3 font-mono text-xs text-slate-700">
+        {item.commit_hash ? item.commit_hash.slice(0, 7) : "---"}
+      </td>
       <td className="px-4 py-3 text-sm text-slate-700">
         {formatActive(item.is_active)}
       </td>
@@ -404,6 +505,20 @@ function BotVersionRow({
                 >
                   <Eye className="h-4 w-4" />
                   Informações
+                </button>
+
+                <button
+                  type="button"
+                  disabled={item.in_use}
+                  onClick={() => {
+                    onRelease(item);
+                    setMenuPosition(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                  title={item.in_use ? "Esta já é a versão em uso" : "Executar esta versão"}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Release
                 </button>
               </div>,
               document.body
