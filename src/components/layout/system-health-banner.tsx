@@ -1,8 +1,28 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertOctagon, ChevronDown, ChevronUp, Clock, ServerOff } from "lucide-react";
+import { AlertOctagon, ChevronDown, ChevronUp, Clock, ServerOff, X } from "lucide-react";
 import { useSystemHealth } from "@/hooks/use-system-health";
 import { formatMinutes } from "@/lib/health";
+
+// "Dispensar" guarda o que estava no aviso; ele só volta quando surgir algo novo.
+const DISMISSED_KEY = "orkaflow:health-banner-dismissed";
+
+function readDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissed(keys: string[]) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(keys));
+  } catch {
+    // sem localStorage (janela anônima/bloqueado): dispensa só nesta tela
+  }
+}
 
 function runnerLabel(runner: { name: string; label?: string | null }) {
   return runner.label || runner.name;
@@ -11,8 +31,26 @@ function runnerLabel(runner: { name: string; label?: string | null }) {
 export function SystemHealthBanner() {
   const { failedTasks, problemRunners, stuckTasks, total } = useSystemHealth();
   const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
 
-  if (total === 0) return null;
+  const currentKeys = useMemo(
+    () => [
+      ...failedTasks.map((task) => `erro:${task.id}`),
+      ...problemRunners.map(({ runner, reason }) => `runner:${runner.id}:${reason}`),
+      ...stuckTasks.map(({ task }) => `parada:${task.id}`),
+    ],
+    [failedTasks, problemRunners, stuckTasks],
+  );
+
+  const hasNew = currentKeys.some((key) => !dismissed.has(key));
+
+  function dismiss() {
+    saveDismissed(currentKeys);
+    setDismissed(new Set(currentKeys));
+    setExpanded(false);
+  }
+
+  if (total === 0 || !hasNew) return null;
 
   const linkClass = "underline decoration-white/60 underline-offset-2 hover:decoration-white";
 
@@ -47,6 +85,16 @@ export function SystemHealthBanner() {
         >
           {expanded ? "Ocultar detalhes" : "Ver detalhes"}
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+
+        <button
+          type="button"
+          onClick={dismiss}
+          title="Esconder este aviso até aparecer um erro, runner ou task parada novos"
+          className="inline-flex items-center gap-1 border-l border-white/30 pl-3 text-xs text-white/90 hover:text-white"
+        >
+          <X className="h-3.5 w-3.5" />
+          Dispensar
         </button>
       </div>
 

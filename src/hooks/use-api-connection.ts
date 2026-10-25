@@ -38,12 +38,15 @@ export function useApiConnection() {
   const query = useQuery({
     queryKey: ["health", "api-ping"],
     queryFn: async () => {
-      const response = await api.get<HealthPayload>("/api/v1/health", { timeout: 5_000 });
+      const response = await api.get<HealthPayload>("/api/v1/health", { timeout: 10_000 });
       return response.data;
     },
     refetchInterval: 20_000,
     refetchIntervalInBackground: false,
-    retry: false,
+    // Uma resposta lenta (reinício do servidor, plano que "acorda") não vira aviso:
+    // só conta como sem conexão depois de falhar de novo.
+    retry: 1,
+    retryDelay: 5_000,
   });
 
   const lastContactAt = query.dataUpdatedAt > 0 ? new Date(query.dataUpdatedAt) : null;

@@ -24,6 +24,7 @@ import {
 } from "@/services/api/bot-versions";
 import { listAllBots } from "@/services/api/bots";
 import { parseApiDate } from "@/lib/health";
+import { SearchableSelect } from "@/components/common/searchable-select";
 
 type ToastState = {
   type: "success" | "error";
@@ -246,20 +247,21 @@ export function BotVersionCreatePage() {
           <div className="space-y-6 px-6 py-6">
             <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
               <FormField label="Bot">
-                <select
-                  value={botId}
-                  onChange={(e) => handleSelectBot(e.target.value)}
-                  className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                  required
+                <SearchableSelect<number>
+                  value={botId === "" ? "" : Number(botId)}
+                  onChange={(value) => handleSelectBot(value === "" ? "" : String(value))}
+                  options={sortedBots.map((bot) => ({
+                    value: bot.id,
+                    label: bot.name,
+                    description: bot.active ? bot.repository_name : "Inativo",
+                    disabled: !bot.active,
+                  }))}
+                  placeholder="Selecione o bot"
+                  searchPlaceholder="Buscar bot ou repositório..."
+                  loading={botsQuery.isLoading}
                   disabled={botsQuery.isLoading}
-                >
-                  <option value="">Selecione</option>
-                  {sortedBots.map((bot) => (
-                    <option key={bot.id} value={bot.id} disabled={!bot.active}>
-                      {bot.name} {!bot.active ? "(Inativo)" : ""}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
               </FormField>
 
               {hasBot && !manualMode ? (

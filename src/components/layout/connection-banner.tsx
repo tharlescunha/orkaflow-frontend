@@ -12,13 +12,13 @@ export function ConnectionBanner() {
   if (disconnected) {
     return (
       <div
-        role="alert"
-        className="flex shrink-0 items-center gap-2 bg-red-700 px-4 py-2 text-sm font-medium text-white"
+        role="status"
+        className="flex shrink-0 items-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-slate-950"
       >
         <WifiOff className="h-4 w-4 shrink-0" />
         <span>
-          Sem conexão com a API desde {formatTime(lastContactAt)}. Os dados em tela podem
-          estar desatualizados.
+          Reconectando ao servidor... A tela mostra os dados de {formatTime(lastContactAt)} e
+          atualiza sozinha quando a conexão voltar.
         </span>
       </div>
     );
