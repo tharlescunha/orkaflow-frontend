@@ -16,7 +16,9 @@ import {
 } from "@/services/api/automations";
 import { getCredential, listCredentials } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
-import { listBots } from "@/services/api/bots";
+import { listAllBots } from "@/services/api/bots";
+import { SearchableSelect } from "@/components/common/searchable-select";
+import { SearchableMultiSelect } from "@/components/common/searchable-multi-select";
 
 type CredentialItemLike = {
   id: number;
@@ -95,7 +97,7 @@ export function AutomationFormPage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-automation-form"],
-    queryFn: () => listBots({ limit: 100 }),
+    queryFn: () => listAllBots(),
   });
 
   const automationQuery = useQuery({
@@ -179,6 +181,32 @@ export function AutomationFormPage() {
 
     return bots.filter((bot) => bot.repository_id === Number(form.repository_id));
   }, [botsQuery.data, form.repository_id]);
+
+  // Listas mostram só itens ativos; o item já selecionado (ex.: edição de automação
+  // com bot/repositório inativo) continua visível, marcado como "Inativo".
+  const repositoryOptions = useMemo(
+    () =>
+      (repositoriesQuery.data ?? [])
+        .filter((repository) => repository.active || String(repository.id) === form.repository_id)
+        .map((repository) => ({
+          value: String(repository.id),
+          label: repository.name,
+          description: repository.active ? null : "Inativo",
+        })),
+    [repositoriesQuery.data, form.repository_id]
+  );
+
+  const botOptions = useMemo(
+    () =>
+      availableBots
+        .filter((bot) => bot.active || String(bot.id) === form.bot_id)
+        .map((bot) => ({
+          value: String(bot.id),
+          label: bot.name,
+          description: bot.active ? null : "Inativo",
+        })),
+    [availableBots, form.bot_id]
+  );
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateAutomationPayload) => createAutomation(payload),
@@ -431,9 +459,25 @@ export function AutomationFormPage() {
 
   const isSubmitting =
     isPreparingSubmit || createMutation.isPending || updateMutation.isPending;
-  const repositories = repositoriesQuery.data ?? [];
   const triggerAutomationOptions = (triggerAutomationsQuery.data ?? []).filter(
     (automation) => !isEditMode || automation.id !== automationId
+  );
+  const triggerSelectOptions = triggerAutomationOptions.map((automation) => ({
+    value: String(automation.id),
+    label: automation.label ? `${automation.name} - ${automation.label}` : automation.name,
+    description: automation.repository_name || automation.bot_name || null,
+  }));
+  const exclusiveGroups = exclusiveGroupsQuery.data ?? [];
+  const exclusiveGroupOptions = exclusiveGroups.map((group) => ({
+    value: String(group.id),
+    label: group.label || group.name,
+    description: group.label && group.label !== group.name ? group.name : null,
+  }));
+  const selectedExclusiveGroups = exclusiveGroups.filter((group) =>
+    form.exclusive_group_ids.includes(String(group.id))
+  );
+  const selectedTriggerAutomations = triggerAutomationOptions.filter((automation) =>
+    form.success_trigger_automation_ids.includes(String(automation.id))
   );
 
   return (
@@ -528,35 +572,33 @@ export function AutomationFormPage() {
                   </FormField>
 
                   <FormField label="Repositório">
-                    <select
+                    <SearchableSelect
                       value={form.repository_id}
-                      onChange={(e) => handleChangeField("repository_id", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      onChange={(value) => handleChangeField("repository_id", value)}
+                      options={repositoryOptions}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar repositório..."
+                      emptyText="Nenhum repositório encontrado."
+                      loading={repositoriesQuery.isLoading}
                       required
-                    >
-                      <option value="">Selecione</option>
-                      {repositories.map((repository) => (
-                        <option key={repository.id} value={repository.id}>
-                          {repository.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </FormField>
 
                   <FormField label="Bot">
-                    <select
+                    <SearchableSelect
                       value={form.bot_id}
-                      onChange={(e) => handleChangeField("bot_id", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      onChange={(value) => handleChangeField("bot_id", value)}
+                      options={botOptions}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar bot..."
+                      emptyText={
+                        form.repository_id
+                          ? "Nenhum bot ativo neste repositório."
+                          : "Nenhum bot encontrado."
+                      }
+                      loading={botsQuery.isLoading}
                       required
-                    >
-                      <option value="">Selecione</option>
-                      {availableBots.map((bot) => (
-                        <option key={bot.id} value={bot.id}>
-                          {bot.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </FormField>
 
                   <FormField label="Prioridade padrão">
@@ -605,31 +647,23 @@ export function AutomationFormPage() {
 
                 <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
                   <FormField label="Grupos exclusivos">
-                    <div className="min-h-10 border border-slate-300 bg-white px-3 py-2">
-                      {exclusiveGroupsQuery.isLoading ? (
-                        <div className="text-sm text-slate-500">Carregando...</div>
-                      ) : (exclusiveGroupsQuery.data ?? []).length === 0 ? (
-                        <div className="text-sm text-slate-500">
-                          Nenhum grupo cadastrado.
-                        </div>
-                      ) : (
-                        <div className="grid gap-2">
-                          {(exclusiveGroupsQuery.data ?? []).map((group) => (
-                            <label
-                              key={group.id}
-                              className="flex items-center gap-3 text-sm text-slate-700"
-                            >
-                              <input
-                                checked={form.exclusive_group_ids.includes(String(group.id))}
-                                onChange={() => toggleExclusiveGroup(group.id)}
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300"
-                              />
-                              <span>{group.label || group.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
+                    <div>
+                      <SearchableMultiSelect
+                        label={exclusiveGroupsQuery.isLoading ? "Carregando..." : "Selecione os grupos"}
+                        options={exclusiveGroupOptions}
+                        selectedValues={form.exclusive_group_ids}
+                        onChange={(next) => handleChangeField("exclusive_group_ids", next)}
+                        disabled={exclusiveGroupsQuery.isLoading}
+                        emptyText="Nenhum grupo cadastrado."
+                        searchPlaceholder="Buscar grupo..."
+                      />
+                      <SelectedChips
+                        items={selectedExclusiveGroups.map((group) => ({
+                          id: group.id,
+                          label: group.label || group.name,
+                        }))}
+                        onRemove={toggleExclusiveGroup}
+                      />
                     </div>
                   </FormField>
 
@@ -735,38 +769,31 @@ export function AutomationFormPage() {
 
                 <div className="grid gap-5 px-5 py-5">
                   <FormField label="Ao finalizar com sucesso, disparar">
-                    <div className="min-h-10 border border-slate-300 bg-white px-3 py-2">
-                      {triggerAutomationsQuery.isLoading ? (
-                        <div className="text-sm text-slate-500">Carregando...</div>
-                      ) : triggerAutomationOptions.length === 0 ? (
-                        <div className="text-sm text-slate-500">
-                          Nenhuma automacao ativa disponivel.
-                        </div>
-                      ) : (
-                        <div className="grid gap-2 md:grid-cols-2">
-                          {triggerAutomationOptions.map((automation) => (
-                            <label
-                              key={automation.id}
-                              className="flex items-center gap-3 text-sm text-slate-700"
-                            >
-                              <input
-                                checked={form.success_trigger_automation_ids.includes(
-                                  String(automation.id)
-                                )}
-                                onChange={() =>
-                                  toggleSuccessTriggerAutomation(automation.id)
-                                }
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300"
-                              />
-                              <span>
-                                {automation.name}
-                                {automation.label ? ` - ${automation.label}` : ""}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
+                    <div>
+                      <SearchableMultiSelect
+                        label={
+                          triggerAutomationsQuery.isLoading
+                            ? "Carregando..."
+                            : "Selecione as automações"
+                        }
+                        options={triggerSelectOptions}
+                        selectedValues={form.success_trigger_automation_ids}
+                        onChange={(next) =>
+                          handleChangeField("success_trigger_automation_ids", next)
+                        }
+                        disabled={triggerAutomationsQuery.isLoading}
+                        emptyText="Nenhuma automação ativa disponível."
+                        searchPlaceholder="Buscar automação..."
+                      />
+                      <SelectedChips
+                        items={selectedTriggerAutomations.map((automation) => ({
+                          id: automation.id,
+                          label: automation.label
+                            ? `${automation.name} - ${automation.label}`
+                            : automation.name,
+                        }))}
+                        onRemove={toggleSuccessTriggerAutomation}
+                      />
                     </div>
                   </FormField>
                 </div>
@@ -833,43 +860,41 @@ export function AutomationFormPage() {
                 </div>
                 <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
                   <FormField label="Repositório">
-                    <select
+                    <SearchableSelect
                       value={selectedRepositoryId ?? ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
+                      onChange={(value) => {
                         setSelectedRepositoryId(value ? Number(value) : null);
                         setSelectedCredentialId(null);
                         setSelectedKeys([]);
                       }}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      options={(credentialRepositoriesQuery.data ?? []).map((repo) => ({
+                        value: repo.id,
+                        label: repo.name,
+                      }))}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar repositório..."
+                      emptyText="Nenhum repositório encontrado."
+                      loading={credentialRepositoriesQuery.isLoading}
                       disabled={credentialRepositoriesQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {(credentialRepositoriesQuery.data ?? []).map((repo) => (
-                        <option key={repo.id} value={repo.id}>
-                          {repo.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </FormField>
                   <FormField label="Credencial">
-                    <select
+                    <SearchableSelect
                       value={selectedCredentialId ?? ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
+                      onChange={(value) => {
                         setSelectedCredentialId(value ? Number(value) : null);
                         setSelectedKeys([]);
                       }}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      options={(credentialsQuery.data ?? []).map((cred) => ({
+                        value: cred.id,
+                        label: cred.label,
+                      }))}
+                      placeholder={selectedRepositoryId ? "Selecione" : "Selecione um repositório"}
+                      searchPlaceholder="Buscar credencial..."
+                      emptyText="Nenhuma credencial encontrada."
+                      loading={!!selectedRepositoryId && credentialsQuery.isLoading}
                       disabled={!selectedRepositoryId || credentialsQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {(credentialsQuery.data ?? []).map((cred) => (
-                        <option key={cred.id} value={cred.id}>
-                          {cred.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </FormField>
                 </div>
                 {selectedRepositoryName ? (
@@ -1022,5 +1047,41 @@ function FormField({
       </span>
       {children}
     </label>
+  );
+}
+
+function SelectedChips({
+  items,
+  onRemove,
+}: {
+  items: { id: number; label: string }[];
+  onRemove: (id: number) => void;
+}) {
+  if (!items.length) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span
+          key={item.id}
+          className="inline-flex max-w-full items-center gap-1 border border-slate-300 bg-slate-50 py-1 pl-2 pr-1 text-xs text-slate-700"
+        >
+          <span className="max-w-[260px] truncate" title={item.label}>
+            {item.label}
+          </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              onRemove(item.id);
+            }}
+            aria-label={`Remover ${item.label}`}
+            className="p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+    </div>
   );
 }

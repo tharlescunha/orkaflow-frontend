@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle2, Eye, EyeOff, Plus, Save, Trash2, X } from "luc
 import { v4 as uuidv4 } from "uuid";
 
 import { createCredential, createCredentialItem } from "@/services/api/credentials";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { listRepositories } from "@/services/api/repositories";
 
 type ToastState = {
@@ -225,20 +226,21 @@ export function CredentialCreatePage() {
                 </FormField>
 
                 <FormField label="Repositório">
-                  <select
-                    value={form.repository_id}
-                    onChange={(e) => handleChangeField("repository_id", e.target.value)}
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                  <SearchableSelect<number>
+                    value={form.repository_id ? Number(form.repository_id) : ""}
+                    onChange={(value) =>
+                      handleChangeField("repository_id", value === "" ? "" : String(value))
+                    }
+                    options={repositories.map((repository) => ({
+                      value: repository.id,
+                      label: repository.name,
+                    }))}
+                    placeholder="Selecione"
+                    searchPlaceholder="Buscar repositório..."
                     required
                     disabled={repositoriesQuery.isLoading}
-                  >
-                    <option value="">Selecione</option>
-                    {repositories.map((repository) => (
-                      <option key={repository.id} value={repository.id}>
-                        {repository.name}
-                      </option>
-                    ))}
-                  </select>
+                    loading={repositoriesQuery.isLoading}
+                  />
                 </FormField>
 
                 <div className="md:col-span-2">

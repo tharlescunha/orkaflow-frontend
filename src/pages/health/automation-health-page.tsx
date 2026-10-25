@@ -17,14 +17,23 @@ import {
   Timer,
 } from "lucide-react";
 
-import { listBots } from "@/services/api/bots";
+import { SearchableSelect } from "@/components/common/searchable-select";
+import type { SearchableOption } from "@/components/common/searchable-select";
+import { normalizeSearch } from "@/lib/search";
+import { listAllBots } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
 import {
   listAutomationHealth,
   type AutomationHealthItemRead,
 } from "@/services/api/automation-health";
 
-type ActiveFilter = "true" | "false" | "all";
+type ActiveFilter = "active" | "inactive" | "all";
+
+const ACTIVE_FILTER_OPTIONS: SearchableOption<ActiveFilter>[] = [
+  { value: "active", label: "Somente ativas" },
+  { value: "inactive", label: "Somente inativas" },
+  { value: "all", label: "Todas" },
+];
 type CardScale = "sm" | "md" | "lg";
 
 const AUTO_REFRESH_SECONDS = 10;
@@ -65,7 +74,24 @@ function formatDuration(seconds?: number | null) {
 }
 
 function normalizeText(value?: string | null) {
-  return (value ?? "").toLowerCase().trim();
+  return normalizeSearch(value ?? "");
+}
+
+/**
+ * Motivo de a automação não estar realmente ativa no painel, ou null se está.
+ * Além da própria automação, conta o bot inativo e o agendamento pausado/desativado:
+ * nesses casos o backend nem cobra execução ("Inactive schedule"), então só poluem a tela.
+ * Automação ativa sem agendamento continua visível (pode rodar por gatilho/manual).
+ */
+function getInactiveReason(item: AutomationHealthItemRead): string | null {
+  if (!item.automation_active) return "Automação inativa";
+  if (item.bot_active === false) return "Bot inativo";
+  const schedule = item.schedule;
+  if (schedule) {
+    if (schedule.status === "paused") return "Agendamento pausado";
+    if (!schedule.active || schedule.status === "inactive") return "Agendamento inativo";
+  }
+  return null;
 }
 
 function removeAutomationPrefix(value?: string | null) {
@@ -246,7 +272,7 @@ function InfoItem({
 export function AutomationHealthPage() {
   const [repositoryFilter, setRepositoryFilter] = useState("");
   const [botFilter, setBotFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("true");
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
   const [search, setSearch] = useState("");
   const [cardScale, setCardScale] = useState<CardScale>(getStoredCardScale);
   const [selectedItem, setSelectedItem] = useState<AutomationHealthItemRead | null>(null);
@@ -256,12 +282,23 @@ export function AutomationHealthPage() {
   const queryParams = useMemo(() => ({
     repository_id: repositoryFilter ? Number(repositoryFilter) : undefined,
     bot_id: botFilter ? Number(botFilter) : undefined,
-    active: activeFilter === "all" ? undefined : activeFilter === "true" ? true : false,
+    activeFilter,
   }), [repositoryFilter, botFilter, activeFilter]);
 
   const automationHealthQuery = useQuery({
     queryKey: ["automation-health", queryParams],
-    queryFn: () => listAutomationHealth(queryParams),
+    queryFn: async () => {
+      const { activeFilter: filter, ...base } = queryParams;
+      if (filter === "active") {
+        return (await listAutomationHealth({ ...base, active: true })).items;
+      }
+      // Omitir "active" faz o backend usar o padrão (true); para ver inativas busca os dois lados.
+      const [activeItems, inactiveItems] = await Promise.all([
+        listAutomationHealth({ ...base, active: true }),
+        listAutomationHealth({ ...base, active: false }),
+      ]);
+      return [...activeItems.items, ...inactiveItems.items];
+    },
     refetchInterval: AUTO_REFRESH_SECONDS * 1000,
   });
 
@@ -272,7 +309,7 @@ export function AutomationHealthPage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-filter-automation-health"],
-    queryFn: () => listBots({ limit: 200 }),
+    queryFn: () => listAllBots(),
   });
 
   useEffect(() => {
@@ -295,13 +332,25 @@ export function AutomationHealthPage() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const repositories = repositoriesQuery.data ?? [];
-  const bots = botsQuery.data?.items ?? [];
-  const rawItems = automationHealthQuery.data?.items ?? [];
+  const repositoryOptions = useMemo<SearchableOption<number>[]>(
+    () => (repositoriesQuery.data ?? []).map((r) => ({ value: r.id, label: r.name })),
+    [repositoriesQuery.data]
+  );
+
+  const botOptions = useMemo<SearchableOption<number>[]>(
+    () =>
+      (botsQuery.data?.items ?? [])
+        .filter((bot) => (repositoryFilter ? bot.repository_id === Number(repositoryFilter) : true))
+        .map((bot) => ({ value: bot.id, label: bot.name })),
+    [botsQuery.data, repositoryFilter]
+  );
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = normalizeText(search);
-    return rawItems.filter((item) => {
+    return (automationHealthQuery.data ?? []).filter((item) => {
+      const inactive = getInactiveReason(item) !== null;
+      if (activeFilter === "active" && inactive) return false;
+      if (activeFilter === "inactive" && !inactive) return false;
       if (!normalizedSearch) return true;
       const fields = [
         item.automation_name,
@@ -317,7 +366,7 @@ export function AutomationHealthPage() {
       ];
       return fields.some((field) => normalizeText(field).includes(normalizedSearch));
     });
-  }, [rawItems, search]);
+  }, [automationHealthQuery.data, search, activeFilter]);
 
   // Ordena: erro → atrasado → rodando → ok
   const sortedItems = useMemo(() => {
@@ -428,39 +477,33 @@ export function AutomationHealthPage() {
               />
             </label>
 
-            <select
-              value={repositoryFilter}
-              onChange={(e) => { setRepositoryFilter(e.target.value); setBotFilter(""); }}
-              className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="">Todos os repositórios</option>
-              {repositories.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              className="min-w-0"
+              value={repositoryFilter ? Number(repositoryFilter) : ""}
+              onChange={(value) => { setRepositoryFilter(value === "" ? "" : String(value)); setBotFilter(""); }}
+              options={repositoryOptions}
+              emptyLabel="Todos os repositórios"
+              searchPlaceholder="Buscar repositório..."
+              loading={repositoriesQuery.isLoading}
+            />
 
-            <select
-              value={botFilter}
-              onChange={(e) => setBotFilter(e.target.value)}
-              className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="">Todos os bots</option>
-              {bots
-                .filter((bot) => repositoryFilter ? bot.repository_id === Number(repositoryFilter) : true)
-                .map((bot) => (
-                  <option key={bot.id} value={bot.id}>{bot.name}</option>
-                ))}
-            </select>
+            <SearchableSelect
+              className="min-w-0"
+              value={botFilter ? Number(botFilter) : ""}
+              onChange={(value) => setBotFilter(value === "" ? "" : String(value))}
+              options={botOptions}
+              emptyLabel="Todos os bots"
+              searchPlaceholder="Buscar bot..."
+              loading={botsQuery.isLoading}
+            />
 
-            <select
+            <SearchableSelect
+              className="min-w-0"
               value={activeFilter}
-              onChange={(e) => setActiveFilter(e.target.value as ActiveFilter)}
-              className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="true">Somente ativas</option>
-              <option value="false">Somente inativas</option>
-              <option value="all">Todas ativo/inativo</option>
-            </select>
+              onChange={(value) => setActiveFilter(value || "active")}
+              options={ACTIVE_FILTER_OPTIONS}
+              searchPlaceholder="Buscar..."
+            />
 
             <div className="grid grid-cols-4 overflow-hidden border border-slate-200 bg-slate-50">
               <div className="flex h-10 items-center justify-center gap-1.5 border-r border-slate-200 px-2 text-xs font-semibold text-emerald-700" title="OK">
@@ -496,6 +539,7 @@ export function AutomationHealthPage() {
                 const visual = getHealthVisual(item.health_status);
                 const StatusIcon = visual.icon;
                 const timeChip = getTimeChipInfo(item);
+                const inactiveReason = getInactiveReason(item);
 
                 return (
                   <button
@@ -508,7 +552,10 @@ export function AutomationHealthPage() {
 
                     <div className="flex items-start justify-between gap-3 pl-2">
                       <div className="min-w-0">
-                        <p className={`line-clamp-2 font-semibold text-slate-950 ${scaleClasses.title}`}>
+                        <p
+                          className={`line-clamp-2 break-words font-semibold text-slate-950 ${scaleClasses.title}`}
+                          title={getAutomationTitle(item)}
+                        >
                           {getAutomationTitle(item)}
                         </p>
                         <p className={`mt-0.5 line-clamp-1 text-slate-500 ${scaleClasses.text}`}>
@@ -525,6 +572,12 @@ export function AutomationHealthPage() {
                           />
                           {visual.label}
                         </span>
+
+                        {inactiveReason ? (
+                          <span className={`inline-flex items-center border border-slate-300 bg-slate-100 px-2 py-0.5 font-medium text-slate-600 ${scaleClasses.chip}`}>
+                            {inactiveReason}
+                          </span>
+                        ) : null}
 
                         {timeChip && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 font-medium ${visual.timeChipClass} ${scaleClasses.chip}`}>

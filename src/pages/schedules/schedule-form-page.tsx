@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
+import type { SearchableOption } from "@/components/common/searchable-select";
 import { getAutomation, listAutomations } from "@/services/api/automations";
 import {
   createSchedule,
@@ -260,6 +262,20 @@ export function ScheduleFormPage() {
   });
 
   const selectedAutomationId = Number(form.automation_id);
+
+  // Só automações ativas por padrão; a já vinculada (edição) continua na lista mesmo se inativa.
+  const automationOptions = useMemo<SearchableOption<number>[]>(() => {
+    return (automationsQuery.data ?? [])
+      .filter((automation) => automation.active || automation.id === selectedAutomationId)
+      .map((automation) => ({
+        value: automation.id,
+        label: automation.name,
+        description:
+          [automation.active ? null : "Inativa", automation.repository_name, automation.bot_name]
+            .filter(Boolean)
+            .join(" · ") || null,
+      }));
+  }, [automationsQuery.data, selectedAutomationId]);
 
   const automationQuery = useQuery({
     queryKey: ["automation-form-selected", selectedAutomationId],
@@ -539,20 +555,17 @@ export function ScheduleFormPage() {
                   </FormField>
 
                   <FormField label="Automação">
-                    <select
-                      value={form.automation_id}
-                      onChange={(e) => handleChange("automation_id", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    <SearchableSelect
+                      value={form.automation_id ? Number(form.automation_id) : ""}
+                      onChange={(value) => handleChange("automation_id", value === "" ? "" : String(value))}
+                      options={automationOptions}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar automação, repositório, bot..."
+                      emptyText="Nenhuma automação ativa encontrada."
                       required
                       disabled={automationsQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {(automationsQuery.data ?? []).map((automation) => (
-                        <option key={automation.id} value={automation.id}>
-                          {automation.name}
-                        </option>
-                      ))}
-                    </select>
+                      loading={automationsQuery.isLoading}
+                    />
                   </FormField>
 
                   <FormField label="Prioridade">
@@ -618,9 +631,9 @@ export function ScheduleFormPage() {
                   <div className="border-t border-slate-200 px-5 py-4">
                     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                       <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-medium">Automação selecionada</p>
-                        <p className="mt-1">
+                        <p className="mt-1 [overflow-wrap:anywhere]">
                           {automationQuery.data.name}
                           {automationQuery.data.label
                             ? ` · ${automationQuery.data.label}`
@@ -1046,7 +1059,8 @@ function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
+    // min-w-0: impede que conteúdo longo (ex.: nome de automação) alargue a coluna do grid.
+    <label className="block min-w-0">
       <span className="mb-2 block text-sm font-medium text-slate-700">
         {label}
       </span>

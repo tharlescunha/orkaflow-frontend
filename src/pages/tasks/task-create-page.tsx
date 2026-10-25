@@ -14,6 +14,8 @@ import { getAutomation, listAutomationRunners, listAutomations } from "@/service
 import { getCredential, listCredentials } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
 import { createTask } from "@/services/api/tasks";
+import { SearchableSelect } from "@/components/common/searchable-select";
+import type { SearchableOption } from "@/components/common/searchable-select";
 
 type ToastState = {
   type: "success" | "error";
@@ -69,6 +71,7 @@ type AutomationLike = {
   repository_id?: number | null;
   repository_name?: string | null;
   bot_id?: number | null;
+  bot_name?: string | null;
   bot?: {
     id?: number | null;
     name?: string | null;
@@ -233,7 +236,10 @@ export function TaskCreatePage() {
   const selectedRepositoryId = Number(form.repository_id) || null;
 
   const filteredAutomations = useMemo(() => {
-    const automations = automationsQuery.data ?? [];
+    // Por padrão só oferece automações ativas (a API devolve todas).
+    const automations = (automationsQuery.data ?? []).filter(
+      (automation) => automation.active !== false
+    );
 
     if (!selectedRepositoryId) return automations;
 
@@ -265,6 +271,50 @@ export function TaskCreatePage() {
       resolvedKey: getCredentialItemKey(item),
     }))
     .filter((item) => item.resolvedKey);
+
+  const repositoryOptions: SearchableOption<number>[] = (
+    repositoriesQuery.data ?? []
+  ).map((repository) => ({
+    value: repository.id,
+    label: repository.name,
+    description: repository.description,
+  }));
+
+  const automationOptions: SearchableOption<number>[] = filteredAutomations.map(
+    (automation) => ({
+      value: automation.id,
+      label: automation.name,
+      description:
+        [
+          automation.label,
+          automation.bot_name ?? automation.bot?.name,
+          automation.repository_name ?? automation.bot?.repository_name,
+        ]
+          .filter(Boolean)
+          .join(" · ") || null,
+    })
+  );
+
+  const runnerOptions: SearchableOption<number>[] = linkedRunners.map((runner) => ({
+    value: runner.runner_id,
+    label: runner.runner_name ?? `Runner #${runner.runner_id}`,
+    description:
+      [
+        runner.runner_label,
+        runner.runner_status,
+        runner.runner_enabled === false ? "desabilitado" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
+    disabled: runner.runner_enabled === false,
+  }));
+
+  const credentialOptions: SearchableOption<number>[] = (
+    credentialsQuery.data ?? []
+  ).map((credential) => ({
+    value: credential.id,
+    label: credential.label,
+  }));
 
   function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({
@@ -482,7 +532,7 @@ export function TaskCreatePage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {toast ? (
         <div
           className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
@@ -510,351 +560,425 @@ export function TaskCreatePage() {
       ) : null}
 
       <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-950">Nova Task</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Criação manual de task para execução imediata ou agendada.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => navigate("/tasks")}
-              className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Voltar
-            </button>
+        <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-950">Nova task</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Crie uma execução manual de uma automação, para agora ou agendada.
+            </p>
           </div>
-        </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4 px-6 py-5">
-            <section className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                  Dados principais
-                </h2>
+          <button
+            type="button"
+            onClick={() => navigate("/tasks")}
+            className="inline-flex h-10 items-center gap-2 self-start border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:self-auto"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para tasks
+          </button>
+        </div>
+      </section>
+
+      <form
+        onSubmit={handleSubmit}
+        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
+      >
+        <div className="min-w-0 space-y-5">
+          <FormSection
+            step={1}
+            title="O que executar"
+            description="Escolha o repositório e a automação. O runner é opcional."
+          >
+            <div className="grid gap-5 md:grid-cols-2">
+              <FormField
+                label="Repositório"
+                htmlFor="task-repository"
+                hint="Filtra as automações e as credenciais disponíveis."
+                required
+              >
+                <SearchableSelect<number>
+                  id="task-repository"
+                  value={form.repository_id ? Number(form.repository_id) : ""}
+                  onChange={(value) => {
+                    handleChange("repository_id", value === "" ? "" : String(value));
+                    handleChange("automation_id", "");
+                  }}
+                  options={repositoryOptions}
+                  placeholder="Selecione o repositório"
+                  searchPlaceholder="Buscar repositório..."
+                  emptyText="Nenhum repositório ativo encontrado."
+                  disabled={repositoriesQuery.isLoading}
+                  loading={repositoriesQuery.isLoading}
+                  required
+                />
+              </FormField>
+
+              <FormField
+                label="Automação"
+                htmlFor="task-automation"
+                hint="Somente automações ativas são listadas."
+                required
+              >
+                <SearchableSelect<number>
+                  id="task-automation"
+                  value={form.automation_id ? Number(form.automation_id) : ""}
+                  onChange={(value) => {
+                    handleChange("automation_id", value === "" ? "" : String(value));
+                    handleChange("runner_id", "");
+                  }}
+                  options={automationOptions}
+                  placeholder="Selecione a automação"
+                  searchPlaceholder="Buscar automação, bot ou repositório..."
+                  emptyText="Nenhuma automação ativa encontrada."
+                  disabled={automationsQuery.isLoading}
+                  loading={automationsQuery.isLoading}
+                  required
+                />
+              </FormField>
+
+              <FormField
+                label="Runner específico"
+                htmlFor="task-runner"
+                hint="Opcional. Runners desabilitados aparecem, mas não podem ser escolhidos."
+                className="md:col-span-2"
+              >
+                <SearchableSelect<number>
+                  id="task-runner"
+                  value={form.runner_id ? Number(form.runner_id) : ""}
+                  onChange={(value) =>
+                    handleChange("runner_id", value === "" ? "" : String(value))
+                  }
+                  options={runnerOptions}
+                  placeholder="Selecione uma automação primeiro"
+                  emptyLabel={form.automation_id ? "Qualquer runner disponível" : undefined}
+                  searchPlaceholder="Buscar runner..."
+                  emptyText="Nenhum runner vinculado a esta automação."
+                  disabled={!form.automation_id || automationRunnersQuery.isLoading}
+                  loading={!!form.automation_id && automationRunnersQuery.isLoading}
+                />
+              </FormField>
+            </div>
+          </FormSection>
+
+          <FormSection
+            step={2}
+            title="Quando e como executar"
+            description="Agendamento, prioridade na fila e limites de tempo."
+          >
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Quando executar
+                </span>
+
+                <div className="grid grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChange("execute_now", true)}
+                    className={`h-10 border px-3 text-sm font-medium transition ${
+                      form.execute_now
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    Executar agora
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleChange("execute_now", false)}
+                    className={`-ml-px h-10 border px-3 text-sm font-medium transition ${
+                      !form.execute_now
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    Agendar
+                  </button>
+                </div>
               </div>
 
-              <div className="grid gap-4 px-4 py-4 md:grid-cols-2 xl:grid-cols-4">
-                <FormField label="Repositório">
-                  <select
-                    value={form.repository_id}
-                    onChange={(e) => {
-                      handleChange("repository_id", e.target.value);
-                      handleChange("automation_id", "");
-                    }}
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    disabled={repositoriesQuery.isLoading}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    {(repositoriesQuery.data ?? []).map((repository) => (
-                      <option key={repository.id} value={repository.id}>
-                        {repository.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Automação">
-                  <select
-                    value={form.automation_id}
-                    onChange={(e) => {
-                      handleChange("automation_id", e.target.value);
-                      handleChange("runner_id", "");
-                    }}
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    disabled={automationsQuery.isLoading}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    {filteredAutomations.map((automation) => (
-                      <option key={automation.id} value={automation.id}>
-                        {automation.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Runner específico">
-                  <select
-                    value={form.runner_id}
-                    onChange={(e) => handleChange("runner_id", e.target.value)}
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
-                    disabled={!form.automation_id || automationRunnersQuery.isLoading}
-                  >
-                    <option value="">
-                      {!form.automation_id
-                        ? "Selecione uma automação primeiro"
-                        : "Qualquer runner disponível"}
-                    </option>
-                    {linkedRunners.map((runner) => (
-                      <option key={runner.runner_id} value={runner.runner_id}>
-                        {runner.runner_name ?? `Runner #${runner.runner_id}`}
-                        {runner.runner_label ? ` · ${runner.runner_label}` : ""}
-                        {runner.runner_status ? ` · ${runner.runner_status}` : ""}
-                        {runner.runner_enabled === false ? " · desabilitado" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Prioridade">
+              {!form.execute_now ? (
+                <FormField
+                  label="Data e hora"
+                  htmlFor="task-requested-start"
+                  hint="Horário local em que a task fica pronta para execução."
+                  required
+                >
                   <input
-                    value={form.priority}
-                    onChange={(e) => handleChange("priority", e.target.value)}
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    type="number"
-                    min={1}
-                    max={10}
-                    required
+                    id="task-requested-start"
+                    value={form.requested_start_at}
+                    onChange={(e) =>
+                      handleChange("requested_start_at", e.target.value)
+                    }
+                    className={inputClassName}
+                    type="datetime-local"
+                    required={!form.execute_now}
                   />
                 </FormField>
-              </div>
-
-              <div className="grid gap-4 border-t border-slate-200 px-4 py-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="xl:col-span-2">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">
-                    Quando executar
+              ) : (
+                <div>
+                  <span className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Data e hora
                   </span>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleChange("execute_now", true)}
-                      className={`h-9 border px-3 text-sm font-medium transition ${
-                        form.execute_now
-                          ? "border-slate-950 bg-slate-950 text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      Executar agora
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleChange("execute_now", false)}
-                      className={`h-9 border px-3 text-sm font-medium transition ${
-                        !form.execute_now
-                          ? "border-slate-950 bg-slate-950 text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      Agendar
-                    </button>
+                  <div className="flex h-10 w-full items-center border border-dashed border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
+                    Entra na fila assim que for criada
                   </div>
                 </div>
+              )}
 
-                {!form.execute_now ? (
-                  <FormField label="Data e hora">
-                    <input
-                      value={form.requested_start_at}
-                      onChange={(e) =>
-                        handleChange("requested_start_at", e.target.value)
-                      }
-                      className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      type="datetime-local"
-                      required={!form.execute_now}
-                    />
-                  </FormField>
-                ) : (
-                  <div className="flex items-end">
-                    <div className="flex h-9 w-full items-center border border-dashed border-slate-300 bg-slate-50 px-3 text-sm text-slate-400">
-                      Execução imediata
-                    </div>
-                  </div>
-                )}
+              <FormField
+                label="Prioridade"
+                htmlFor="task-priority"
+                hint="De 1 a 10."
+                required
+              >
+                <input
+                  id="task-priority"
+                  value={form.priority}
+                  onChange={(e) => handleChange("priority", e.target.value)}
+                  className={inputClassName}
+                  type="number"
+                  min={1}
+                  max={10}
+                  required
+                />
+              </FormField>
 
-                <FormField label="Timeout (segundos)">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  label="Timeout (s)"
+                  htmlFor="task-timeout"
+                  hint="Tempo máximo total."
+                >
                   <input
+                    id="task-timeout"
                     value={form.timeout_seconds}
                     onChange={(e) => handleChange("timeout_seconds", e.target.value)}
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    className={inputClassName}
                     type="number"
                     min={1}
                   />
                 </FormField>
 
-                <FormField label="Timeout inatividade">
+                <FormField
+                  label="Inatividade (s)"
+                  htmlFor="task-inactivity-timeout"
+                  hint="Sem atividade por esse tempo."
+                >
                   <input
+                    id="task-inactivity-timeout"
                     value={form.inactivity_timeout_seconds}
                     onChange={(e) =>
                       handleChange("inactivity_timeout_seconds", e.target.value)
                     }
-                    className="h-9 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    className={inputClassName}
                     type="number"
                     min={1}
                   />
                 </FormField>
               </div>
+            </div>
+          </FormSection>
 
-              <div className="grid gap-4 border-t border-slate-200 px-4 py-4">
-                <div>
-                  <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      Se não selecionar runner, a task ficará disponível para o
-                      fluxo normal de despacho e será pega pelo runner elegível.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {(selectedRepositoryName || selectedAutomation || selectedRunner) && (
-                <div className="grid gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 md:grid-cols-3">
-                  <MiniInfo
-                    label="Repositório"
-                    value={selectedRepositoryName || "-"}
-                  />
-
-                  <MiniInfo
-                    label="Automação"
-                    value={
-                      selectedAutomation
-                        ? `${selectedAutomation.name}${
-                            selectedAutomation.label
-                              ? ` · ${selectedAutomation.label}`
-                              : ""
-                          }`
-                        : "-"
+          <FormSection
+            step={3}
+            title="Dados da execução"
+            description={
+              form.use_automation_defaults
+                ? "Usando os parâmetros e credenciais padrão cadastrados na automação."
+                : "Informe manualmente os JSONs enviados ao robô."
+            }
+            actions={
+              <label className="flex cursor-pointer items-center gap-2 border border-slate-300 bg-white px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={form.use_automation_defaults}
+                  onChange={(e) => {
+                    handleChange("use_automation_defaults", e.target.checked);
+                    if (!e.target.checked) {
+                      handleChange("runtime_parameters_json", "");
+                      handleChange("parameters_json", "");
                     }
-                  />
-
-                  <MiniInfo
-                    label="Runner"
-                    value={
-                      selectedRunner
-                        ? `${selectedRunner.runner_name ?? `#${selectedRunner.runner_id}`}${
-                            selectedRunner.runner_label ? ` · ${selectedRunner.runner_label}` : ""
-                          }${selectedRunner.runner_status ? ` · ${getRunnerStatusLabel(selectedRunner.runner_status)}` : ""}`
-                        : "Qualquer runner disponível"
-                    }
-                  />
-                </div>
-              )}
-            </section>
-
-            <section className="border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                  Dados da execução
-                </h2>
-
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.use_automation_defaults}
-                    onChange={(e) => {
-                      handleChange("use_automation_defaults", e.target.checked);
-                      if (!e.target.checked) {
-                        handleChange("runtime_parameters_json", "");
-                        handleChange("parameters_json", "");
-                      }
-                    }}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  <span className="text-xs font-medium text-slate-700">
-                    Usar dados da automação
-                  </span>
-                </label>
-              </div>
-
-              {form.use_automation_defaults ? (
-                <div className="space-y-4 px-4 py-4">
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Parâmetros do robô
-                    </p>
-                    <pre className="min-h-[80px] border border-slate-200 bg-slate-50 px-3 py-3 font-mono text-xs text-slate-700">
-                      {automationDetailQuery.data?.default_runtime_parameters_json
+                  }}
+                  className="h-4 w-4 border-slate-300"
+                />
+                <span className="text-sm font-medium text-slate-700">
+                  Usar dados da automação
+                </span>
+              </label>
+            }
+          >
+            {form.use_automation_defaults ? (
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-sm font-medium text-slate-700">
+                    Parâmetros do robô
+                  </p>
+                  <pre className="min-h-[120px] overflow-x-auto border border-slate-200 bg-slate-50 px-3 py-3 font-mono text-xs text-slate-700">
+                    {!form.automation_id
+                      ? "Selecione uma automação para ver os parâmetros padrão."
+                      : automationDetailQuery.data?.default_runtime_parameters_json
                         ? JSON.stringify(
                             (automationDetailQuery.data as AutomationLike).default_runtime_parameters_json,
                             null,
                             2
                           )
                         : "Nenhum parâmetro padrão cadastrado na automação."}
-                    </pre>
-                  </div>
+                  </pre>
+                </div>
 
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Credenciais JSON
-                    </p>
-                    <pre className="min-h-[80px] border border-slate-200 bg-slate-50 px-3 py-3 font-mono text-xs text-slate-700">
-                      {automationDetailQuery.data?.default_parameters_json
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-sm font-medium text-slate-700">
+                    Credenciais JSON
+                  </p>
+                  <pre className="min-h-[120px] overflow-x-auto border border-slate-200 bg-slate-50 px-3 py-3 font-mono text-xs text-slate-700">
+                    {!form.automation_id
+                      ? "Selecione uma automação para ver as credenciais padrão."
+                      : automationDetailQuery.data?.default_parameters_json
                         ? JSON.stringify(
                             (automationDetailQuery.data as AutomationLike).default_parameters_json,
                             null,
                             2
                           )
                         : "Nenhuma credencial padrão cadastrada na automação."}
-                    </pre>
-                  </div>
+                  </pre>
                 </div>
-              ) : (
-                <div className="space-y-4 px-4 py-4">
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Parâmetros do robô
-                    </p>
-                    <textarea
-                      value={form.runtime_parameters_json}
-                      onChange={(e) => handleChange("runtime_parameters_json", e.target.value)}
-                      className="min-h-[120px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      placeholder='Ex.: { "filial": "001", "safra": "2026" }'
-                    />
-                  </div>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <FormField
+                  label="Parâmetros do robô"
+                  htmlFor="task-runtime-json"
+                  hint="Objeto JSON lido pelo robô em tempo de execução."
+                >
+                  <textarea
+                    id="task-runtime-json"
+                    value={form.runtime_parameters_json}
+                    onChange={(e) => handleChange("runtime_parameters_json", e.target.value)}
+                    className="min-h-[120px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    placeholder='Ex.: { "filial": "001", "safra": "2026" }'
+                  />
+                </FormField>
 
-                  <div>
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Credenciais JSON
-                      </p>
-                      <button
-                        type="button"
-                        onClick={openCredentialsModal}
-                        className="inline-flex h-7 items-center gap-1.5 border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                <div>
+                  <div className="mb-1.5 flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                      <label
+                        htmlFor="task-parameters-json"
+                        className="block text-sm font-medium text-slate-700"
                       >
-                        <KeyRound className="h-3 w-3" />
-                        Usar credenciais
-                      </button>
+                        Credenciais JSON
+                      </label>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Use o botão para inserir referências às credenciais do repositório.
+                      </p>
                     </div>
-                    <textarea
-                      value={form.parameters_json}
-                      onChange={(e) => handleChange("parameters_json", e.target.value)}
-                      className="min-h-[180px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      placeholder='Ex.: { "cliente": "XPTO" }'
-                    />
+                    <button
+                      type="button"
+                      onClick={openCredentialsModal}
+                      className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Usar credenciais
+                    </button>
                   </div>
+                  <textarea
+                    id="task-parameters-json"
+                    value={form.parameters_json}
+                    onChange={(e) => handleChange("parameters_json", e.target.value)}
+                    className="min-h-[180px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    placeholder='Ex.: { "cliente": "XPTO" }'
+                  />
                 </div>
-              )}
-            </section>
-          </div>
+              </div>
+            )}
+          </FormSection>
+        </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={() => navigate("/tasks")}
-              className="h-9 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Cancelar
-            </button>
+        <aside className="xl:sticky xl:top-4">
+          <section className="border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="text-base font-semibold text-slate-950">Resumo</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Confira antes de criar a task.
+              </p>
+            </div>
 
-            <button
-              type="submit"
-              disabled={createMutation.isPending}
-              className="inline-flex h-9 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-            >
-              <Save className="h-4 w-4" />
-              {createMutation.isPending ? "Criando..." : "Criar task"}
-            </button>
-          </div>
-        </form>
-      </section>
+            <dl className="divide-y divide-slate-100 px-5">
+              <SummaryRow label="Repositório" value={selectedRepositoryName} />
+              <SummaryRow
+                label="Automação"
+                value={
+                  selectedAutomation
+                    ? `${selectedAutomation.name}${
+                        selectedAutomation.label ? ` · ${selectedAutomation.label}` : ""
+                      }`
+                    : null
+                }
+              />
+              <SummaryRow
+                label="Runner"
+                value={
+                  selectedRunner
+                    ? `${selectedRunner.runner_name ?? `#${selectedRunner.runner_id}`}${
+                        selectedRunner.runner_label ? ` · ${selectedRunner.runner_label}` : ""
+                      }${selectedRunner.runner_status ? ` · ${getRunnerStatusLabel(selectedRunner.runner_status)}` : ""}`
+                    : "Qualquer runner disponível"
+                }
+              />
+              <SummaryRow
+                label="Execução"
+                value={
+                  form.execute_now
+                    ? "Imediata"
+                    : form.requested_start_at
+                      ? `Agendada · ${form.requested_start_at.replace("T", " ")}`
+                      : "Agendada · informe data e hora"
+                }
+              />
+              <SummaryRow label="Prioridade" value={form.priority || "5"} />
+              <SummaryRow
+                label="Dados"
+                value={
+                  form.use_automation_defaults
+                    ? "Padrão da automação"
+                    : "Informados manualmente"
+                }
+              />
+            </dl>
+
+            {!form.runner_id ? (
+              <div className="mx-5 mb-4 mt-1 flex items-start gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  Sem runner específico, a task segue o fluxo normal de despacho e
+                  será pega pelo runner elegível.
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => navigate("/tasks")}
+                className="h-10 flex-1 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={createMutation.isPending}
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {createMutation.isPending ? "Criando..." : "Criar task"}
+              </button>
+            </div>
+          </section>
+        </aside>
+      </form>
 
       {credentialsModalOpen ? (
         <div
@@ -894,32 +1018,31 @@ export function TaskCreatePage() {
                 </div>
 
                 <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Repositório">
+                  <FormField label="Repositório" htmlFor="credential-repository">
                     <input
+                      id="credential-repository"
                       value={selectedRepositoryName ?? ""}
                       readOnly
-                      className="h-10 w-full border border-slate-300 bg-slate-50 px-3 text-sm text-slate-900 outline-none"
+                      title={selectedRepositoryName ?? undefined}
+                      className="h-10 w-full truncate border border-slate-300 bg-slate-50 px-3 text-sm text-slate-900 outline-none"
                     />
                   </FormField>
 
-                  <FormField label="Credencial">
-                    <select
+                  <FormField label="Credencial" htmlFor="credential-select">
+                    <SearchableSelect<number>
+                      id="credential-select"
                       value={selectedCredentialId ?? ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setSelectedCredentialId(value ? Number(value) : null);
+                      onChange={(value) => {
+                        setSelectedCredentialId(value === "" ? null : value);
                         setSelectedKeys([]);
                       }}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      options={credentialOptions}
+                      placeholder="Selecione a credencial"
+                      searchPlaceholder="Buscar credencial..."
+                      emptyText="Nenhuma credencial ativa neste repositório."
                       disabled={!form.repository_id || credentialsQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {(credentialsQuery.data ?? []).map((credential) => (
-                        <option key={credential.id} value={credential.id}>
-                          {credential.label}
-                        </option>
-                      ))}
-                    </select>
+                      loading={credentialsQuery.isLoading}
+                    />
                   </FormField>
                 </div>
               </section>
@@ -1058,38 +1181,93 @@ export function TaskCreatePage() {
   );
 }
 
-function FormField({
-  label,
+const inputClassName =
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
+
+function FormSection({
+  step,
+  title,
+  description,
+  actions,
   children,
 }: {
-  label: string;
+  step: number;
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-slate-700">
-        {label}
-      </span>
-      {children}
-    </label>
+    <section className="border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-950 text-xs font-semibold text-white">
+            {step}
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+            {description ? (
+              <p className="mt-0.5 text-sm text-slate-500">{description}</p>
+            ) : null}
+          </div>
+        </div>
+        {actions}
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </section>
   );
 }
 
-function MiniInfo({
+function FormField({
+  label,
+  htmlFor,
+  hint,
+  required = false,
+  className = "",
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: string;
+  required?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <label
+        htmlFor={htmlFor}
+        className="mb-1.5 block text-sm font-medium text-slate-700"
+      >
+        {label}
+        {required ? <span className="ml-0.5 text-red-600">*</span> : null}
+      </label>
+      {children}
+      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
+function SummaryRow({
   label,
   value,
 }: {
   label: string;
-  value: string;
+  value?: string | null;
 }) {
   return (
-    <div className="border border-slate-200 bg-white px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {label}
-      </p>
-      <p className="mt-1 truncate text-sm text-slate-900" title={value}>
-        {value}
-      </p>
+      </dt>
+      <dd
+        className={`min-w-0 truncate text-right text-sm ${
+          value ? "text-slate-900" : "text-slate-400"
+        }`}
+        title={value ?? undefined}
+      >
+        {value || "Não selecionado"}
+      </dd>
     </div>
   );
 }

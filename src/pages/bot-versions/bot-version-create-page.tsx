@@ -22,7 +22,7 @@ import {
   type BotVersionGitPreview,
   type CreateBotVersionPayload,
 } from "@/services/api/bot-versions";
-import { listBots } from "@/services/api/bots";
+import { listAllBots } from "@/services/api/bots";
 import { parseApiDate } from "@/lib/health";
 
 type ToastState = {
@@ -72,7 +72,7 @@ export function BotVersionCreatePage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-select-for-create-version"],
-    queryFn: () => listBots({ skip: 0, limit: 100 }),
+    queryFn: () => listAllBots(),
   });
 
   const versionsQuery = useQuery({

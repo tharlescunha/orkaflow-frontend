@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCcw } from "lucide-react";
 
 import { getBotVersion } from "@/services/api/bot-versions";
-import { listBots } from "@/services/api/bots";
+import { listAllBots } from "@/services/api/bots";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
@@ -33,7 +33,7 @@ export function BotVersionDetailPage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-select-for-version-detail"],
-    queryFn: () => listBots({ skip: 0, limit: 1000 }),
+    queryFn: () => listAllBots(),
   });
 
   const botName = useMemo(() => {

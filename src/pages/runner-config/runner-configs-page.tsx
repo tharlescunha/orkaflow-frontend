@@ -85,7 +85,7 @@ export function RunnerConfigsPage() {
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState("");
-  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("true");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
   const [confirmRunner, setConfirmRunner] = useState<RunnerRead | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RunnerRead | null>(null);

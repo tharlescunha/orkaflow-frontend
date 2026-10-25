@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { getBot, updateBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
 import type { BotUpdatePayload as UpdateBotPayload } from "@/types/bot";
@@ -275,22 +276,24 @@ export function BotEditPage() {
                   </FormField>
 
                   <FormField label="Repositório">
-                    <select
-                      value={form.repository_id}
-                      onChange={(e) =>
-                        handleChange("repository_id", e.target.value)
+                    <SearchableSelect<number>
+                      value={form.repository_id ? Number(form.repository_id) : ""}
+                      onChange={(value) =>
+                        handleChange(
+                          "repository_id",
+                          value === "" ? "" : String(value)
+                        )
                       }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      options={repositories.map((repository) => ({
+                        value: repository.id,
+                        label: repository.name,
+                      }))}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar repositório..."
                       required
                       disabled={repositoriesQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {repositories.map((repository) => (
-                        <option key={repository.id} value={repository.id}>
-                          {repository.name}
-                        </option>
-                      ))}
-                    </select>
+                      loading={repositoriesQuery.isLoading}
+                    />
                   </FormField>
 
                   <div className="md:col-span-2">

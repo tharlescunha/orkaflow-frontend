@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { deleteBot, listBots } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
 import type { BotListItem } from "@/types/bot";
@@ -41,12 +42,6 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
-function truncateText(value?: string | null, max = 60) {
-  if (!value) return "---";
-  if (value.length <= max) return value;
-  return `${value.slice(0, max)}...`;
-}
-
 function formatActive(value: boolean) {
   return value ? "Ativo" : "Inativo";
 }
@@ -58,7 +53,7 @@ export function BotsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [repositoryFilter, setRepositoryFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("");
+  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("true");
   const [actionMenuBotId, setActionMenuBotId] = useState<number | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>(null);
@@ -224,21 +219,21 @@ export function BotsPage() {
                 />
               </div>
 
-              <select
-                value={repositoryFilter}
-                onChange={(e) => {
+              <SearchableSelect<number>
+                value={repositoryFilter ? Number(repositoryFilter) : ""}
+                onChange={(value) => {
                   setPage(1);
-                  setRepositoryFilter(e.target.value);
+                  setRepositoryFilter(value === "" ? "" : String(value));
                 }}
-                className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-              >
-                <option value="">Todos os repositórios</option>
-                {repositories.map((repository) => (
-                  <option key={repository.id} value={repository.id}>
-                    {repository.name}
-                  </option>
-                ))}
-              </select>
+                options={repositories.map((repository) => ({
+                  value: repository.id,
+                  label: repository.name,
+                }))}
+                emptyLabel="Todos os repositórios"
+                placeholder="Todos os repositórios"
+                searchPlaceholder="Buscar repositório..."
+                loading={repositoriesQuery.isLoading}
+              />
 
               <select
                 value={activeFilter}
@@ -439,27 +434,33 @@ function BotRow({
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">
-        <div>
+        <div className="max-w-[320px]">
           <button
             type="button"
             onClick={() => onOpenInfo(bot.id)}
-            className="font-medium text-slate-900 transition hover:text-blue-700"
+            title={bot.name}
+            className="block max-w-full truncate text-left font-medium text-slate-900 transition hover:text-blue-700"
           >
             {bot.name}
           </button>
 
           <p
-            className="mt-1 max-w-[320px] text-xs text-slate-500"
+            className="mt-1 line-clamp-2 break-words text-xs text-slate-500"
             title={bot.description || undefined}
           >
-            {truncateText(bot.description, 70)}
+            {bot.description || "---"}
           </p>
         </div>
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">
-        {bot.repository_name ||
-          (bot.repository_id ? `Repositório #${bot.repository_id}` : "---")}
+        <div
+          className="max-w-[220px] truncate"
+          title={bot.repository_name || undefined}
+        >
+          {bot.repository_name ||
+            (bot.repository_id ? `Repositório #${bot.repository_id}` : "---")}
+        </div>
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">

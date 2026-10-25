@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
 import {
@@ -27,7 +28,7 @@ const chip = (active: boolean) =>
 
 export function EnvVariablesPage() {
   const queryClient = useQueryClient();
-  const { byScope } = useScopeOptions();
+  const { byScope, loading } = useScopeOptions();
 
   const [tab, setTab] = useState<"cadastro" | "efetivos">("cadastro");
   const [scope, setScope] = useState<ScopeFilter>("all");
@@ -160,22 +161,18 @@ export function EnvVariablesPage() {
                   />
                 </div>
                 {needsTarget && (
-                  <select
+                  <SearchableSelect<number>
                     value={targetId}
-                    onChange={(e) =>
-                      setTargetId(e.target.value ? Number(e.target.value) : "")
-                    }
-                    className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
-                  >
-                    <option value="">
-                      Todos ({SCOPE_LABELS[scope as EnvScopeType]})
-                    </option>
-                    {byScope[scope as EnvScopeType].map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setTargetId}
+                    options={byScope[scope as EnvScopeType].map((o) => ({
+                      value: o.id,
+                      label: o.label,
+                    }))}
+                    emptyLabel={`Todos (${SCOPE_LABELS[scope as EnvScopeType]})`}
+                    placeholder={`Todos (${SCOPE_LABELS[scope as EnvScopeType]})`}
+                    searchPlaceholder="Digite para buscar..."
+                    loading={loading[scope as EnvScopeType]}
+                  />
                 )}
               </div>
             </div>

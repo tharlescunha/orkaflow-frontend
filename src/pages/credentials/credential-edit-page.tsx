@@ -12,6 +12,7 @@ import {
   updateCredential,
   updateCredentialItem,
 } from "@/services/api/credentials";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { listRepositories } from "@/services/api/repositories";
 
 type ToastState = {
@@ -328,20 +329,21 @@ export function CredentialEditPage() {
                   </FormField>
 
                   <FormField label="Repositório">
-                    <select
-                      value={form.repository_id}
-                      onChange={(e) => handleChange("repository_id", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    <SearchableSelect<number>
+                      value={form.repository_id ? Number(form.repository_id) : ""}
+                      onChange={(value) =>
+                        handleChange("repository_id", value === "" ? "" : String(value))
+                      }
+                      options={(repositoriesQuery.data ?? []).map((repository) => ({
+                        value: repository.id,
+                        label: repository.name,
+                      }))}
+                      placeholder="Selecione"
+                      searchPlaceholder="Buscar repositório..."
                       required
                       disabled={repositoriesQuery.isLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {(repositoriesQuery.data ?? []).map((repository) => (
-                        <option key={repository.id} value={repository.id}>
-                          {repository.name}
-                        </option>
-                      ))}
-                    </select>
+                      loading={repositoriesQuery.isLoading}
+                    />
                   </FormField>
 
                   <div className="md:col-span-2">

@@ -12,6 +12,9 @@ import {
   Search,
 } from "lucide-react";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
+import type { SearchableOption } from "@/components/common/searchable-select";
+import { normalizeSearch } from "@/lib/search";
 import { listAutomations } from "@/services/api/automations";
 import {
   deactivateSchedule,
@@ -31,7 +34,7 @@ function formatDateTime(value?: string | null) {
 }
 
 function normalizeText(value?: string | null) {
-  return (value ?? "").toLowerCase().trim();
+  return normalizeSearch(value ?? "");
 }
 
 function getStatusLabel(schedule: ScheduleRead) {
@@ -40,6 +43,34 @@ function getStatusLabel(schedule: ScheduleRead) {
   if (schedule.status === "inactive") return "Inativo";
   if (schedule.status === "active") return schedule.active ? "Ativo" : "Inativo";
   return schedule.active ? "Ativo" : "Inativo";
+}
+
+// Padrão: esconde só os desativados (status "inactive"). Pausados continuam na lista
+// porque ainda têm ação (Reativar), e os com erro precisam de atenção.
+type SituationFilter = "not_inactive" | "active" | "paused" | "inactive" | "all";
+
+const SITUATION_OPTIONS: SearchableOption<SituationFilter>[] = [
+  { value: "not_inactive", label: "Ativos e pausados" },
+  { value: "active", label: "Somente ativos" },
+  { value: "paused", label: "Somente pausados" },
+  { value: "inactive", label: "Somente inativos" },
+  { value: "all", label: "Todos" },
+];
+
+function matchesSituation(schedule: ScheduleRead, filter: SituationFilter) {
+  const label = getStatusLabel(schedule);
+  switch (filter) {
+    case "not_inactive":
+      return label !== "Inativo";
+    case "active":
+      return schedule.active;
+    case "paused":
+      return label === "Pausado";
+    case "inactive":
+      return label === "Inativo";
+    default:
+      return true;
+  }
 }
 
 function getTypeLabel(schedule: ScheduleRead) {
@@ -107,8 +138,8 @@ export function SchedulesPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [automationFilter, setAutomationFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState("");
+  const [automationFilter, setAutomationFilter] = useState<number | "">("");
+  const [situationFilter, setSituationFilter] = useState<SituationFilter>("not_inactive");
 
   const schedulesQuery = useQuery({
     queryKey: ["schedules"],
@@ -151,6 +182,20 @@ export function SchedulesPage() {
     return map;
   }, [automationsQuery.data]);
 
+  // Ativas primeiro; inativas continuam disponíveis (podem ter agendamentos antigos), marcadas na descrição.
+  const automationOptions = useMemo<SearchableOption<number>[]>(() => {
+    return [...(automationsQuery.data ?? [])]
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, "pt-BR"))
+      .map((automation) => ({
+        value: automation.id,
+        label: automation.name,
+        description:
+          [automation.active ? null : "Inativa", automation.repository_name, automation.bot_name]
+            .filter(Boolean)
+            .join(" · ") || null,
+      }));
+  }, [automationsQuery.data]);
+
   const filteredSchedules = useMemo(() => {
     const term = normalizeText(search);
 
@@ -166,16 +211,11 @@ export function SchedulesPage() {
         normalizeText(status).includes(term);
 
       const matchesAutomation =
-        !automationFilter || String(schedule.automation_id) === automationFilter;
+        automationFilter === "" || schedule.automation_id === automationFilter;
 
-      const matchesActive =
-        !activeFilter ||
-        (activeFilter === "active" && schedule.active) ||
-        (activeFilter === "inactive" && !schedule.active);
-
-      return matchesText && matchesAutomation && matchesActive;
+      return matchesText && matchesAutomation && matchesSituation(schedule, situationFilter);
     });
-  }, [schedulesQuery.data, automationMap, search, automationFilter, activeFilter]);
+  }, [schedulesQuery.data, automationMap, search, automationFilter, situationFilter]);
 
   function handleRefresh() {
     schedulesQuery.refetch();
@@ -237,38 +277,39 @@ export function SchedulesPage() {
                 </div>
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
+              <div className="min-w-0">
+                <label
+                  htmlFor="schedules-automation-filter"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
                   Automação
-                </span>
-                <select
+                </label>
+                <SearchableSelect
+                  id="schedules-automation-filter"
                   value={automationFilter}
-                  onChange={(e) => setAutomationFilter(e.target.value)}
-                  className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                >
-                  <option value="">Todas</option>
-                  {(automationsQuery.data ?? []).map((automation) => (
-                    <option key={automation.id} value={automation.id}>
-                      {automation.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={setAutomationFilter}
+                  options={automationOptions}
+                  emptyLabel="Todas as automações"
+                  searchPlaceholder="Buscar automação, repositório, bot..."
+                  loading={automationsQuery.isLoading}
+                />
+              </div>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Ativo
-                </span>
-                <select
-                  value={activeFilter}
-                  onChange={(e) => setActiveFilter(e.target.value)}
-                  className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+              <div className="min-w-0">
+                <label
+                  htmlFor="schedules-situation-filter"
+                  className="mb-2 block text-sm font-medium text-slate-700"
                 >
-                  <option value="">Todos</option>
-                  <option value="active">Ativos</option>
-                  <option value="inactive">Inativos</option>
-                </select>
-              </label>
+                  Situação
+                </label>
+                <SearchableSelect
+                  id="schedules-situation-filter"
+                  value={situationFilter}
+                  onChange={(value) => setSituationFilter(value || "not_inactive")}
+                  options={SITUATION_OPTIONS}
+                  searchPlaceholder="Buscar situação..."
+                />
+              </div>
 
               <div className="flex items-end">
                 <div className="w-full border border-slate-200 bg-white px-4 py-3">
@@ -348,8 +389,11 @@ export function SchedulesPage() {
                                 <CalendarClock className="h-4 w-4 text-slate-700" />
                               </div>
 
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
+                              <div className="min-w-0">
+                                <p
+                                  className="max-w-xs truncate text-sm font-semibold text-slate-900"
+                                  title={schedule.name}
+                                >
                                   {schedule.name}
                                 </p>
                                 <p className="mt-1 text-xs text-slate-500">
@@ -376,7 +420,9 @@ export function SchedulesPage() {
                           </td>
 
                           <td className="px-4 py-4 align-top text-sm text-slate-700">
-                            {automationName}
+                            <div className="max-w-[280px] truncate" title={automationName}>
+                              {automationName}
+                            </div>
                           </td>
 
                           <td className="px-4 py-4 align-top text-sm text-slate-700">

@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { withApiDetail } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
 import { listRunners, type RunnerRead } from "@/services/api/runners";
 import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
+import { SearchableMultiSelect } from "@/components/common/searchable-multi-select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Check,
-  ChevronDown,
   Eye,
   MoreVertical,
   OctagonX,
@@ -62,8 +61,6 @@ type TaskListResponse = {
   total: number;
 };
 
-type FilterMenu = "status" | "automation" | "runner" | null;
-
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
 
@@ -105,16 +102,6 @@ function getStatusLabel(status: TaskStatus) {
   );
 }
 
-function getFilterButtonText(
-  label: string,
-  count: number,
-  firstLabel?: string | null
-) {
-  if (count === 0) return label;
-  if (count === 1 && firstLabel) return firstLabel;
-  return `${label} (${count})`;
-}
-
 function arrayEquals<T>(a: T[], b: T[]) {
   if (a.length !== b.length) return false;
   return a.every((item, index) => item === b[index]);
@@ -150,103 +137,9 @@ async function fetchTasks(params: {
   return response.data;
 }
 
-type MultiSelectDropdownProps<TValue extends string | number> = {
-  label: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  options: Array<{
-    value: TValue;
-    label: string;
-  }>;
-  selectedValues: TValue[];
-  onChange: (next: TValue[]) => void;
-  disabled?: boolean;
-  emptyText?: string;
-};
-
-function MultiSelectDropdown<TValue extends string | number>({
-  label,
-  isOpen,
-  onToggle,
-  options,
-  selectedValues,
-  onChange,
-  disabled = false,
-  emptyText = "Nenhuma opção disponível.",
-}: MultiSelectDropdownProps<TValue>) {
-  const selectedLabels = options
-    .filter((option) => selectedValues.includes(option.value))
-    .map((option) => option.label);
-
-  function handleToggleValue(value: TValue) {
-    if (selectedValues.includes(value)) {
-      onChange(selectedValues.filter((item) => item !== value));
-      return;
-    }
-
-    onChange([...selectedValues, value]);
-  }
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={disabled}
-        className="flex h-10 w-full items-center justify-between gap-3 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <span className="truncate text-left">
-          {getFilterButtonText(label, selectedValues.length, selectedLabels[0])}
-        </span>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-slate-500 transition ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-
-      {isOpen ? (
-        <div className="absolute left-0 top-12 z-40 w-full min-w-[280px] border border-slate-200 bg-white shadow-lg">
-          <div className="max-h-72 overflow-y-auto py-1">
-            {options.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-slate-500">{emptyText}</div>
-            ) : (
-              options.map((option) => {
-                const checked = selectedValues.includes(option.value);
-
-                return (
-                  <button
-                    key={String(option.value)}
-                    type="button"
-                    onClick={() => handleToggleValue(option.value)}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center border ${
-                        checked
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-300 bg-white text-transparent"
-                      }`}
-                    >
-                      <Check className="h-3 w-3" />
-                    </span>
-
-                    <span className="truncate">{option.label}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function TasksPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const filtersAreaRef = useRef<HTMLDivElement | null>(null);
 
   const [page, setPage] = useState(1);
   const [taskIdSearch, setTaskIdSearch] = useState("");
@@ -255,7 +148,6 @@ export function TasksPage() {
     []
   );
   const [selectedRunnerIds, setSelectedRunnerIds] = useState<number[]>([]);
-  const [openFilterMenu, setOpenFilterMenu] = useState<FilterMenu>(null);
   const [actionMenuTaskId, setActionMenuTaskId] = useState<number | null>(null);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL_SECONDS);
 
@@ -331,21 +223,6 @@ export function TasksPage() {
   });
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (!filtersAreaRef.current || !target) return;
-      if (!filtersAreaRef.current.contains(target)) {
-        setOpenFilterMenu(null);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  useEffect(() => {
     setCountdown(REFRESH_INTERVAL_SECONDS);
   }, [page, selectedStatuses, selectedAutomationIds, selectedRunnerIds]);
 
@@ -407,7 +284,7 @@ export function TasksPage() {
     },
   });
 
-  const items = tasksQuery.data?.items ?? [];
+  const items = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data?.items]);
   const total = tasksQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -457,7 +334,6 @@ export function TasksPage() {
     setSelectedStatuses([]);
     setSelectedAutomationIds([]);
     setSelectedRunnerIds([]);
-    setOpenFilterMenu(null);
   }
 
   function removeStatusFilter(status: TaskStatus) {
@@ -540,10 +416,7 @@ export function TasksPage() {
             </div>
           </div>
 
-          <div
-            ref={filtersAreaRef}
-            className="border-b border-slate-200 bg-slate-50/60 px-6 py-4"
-          >
+          <div className="border-b border-slate-200 bg-slate-50/60 px-6 py-4">
             <div className="grid gap-3 xl:grid-cols-[260px_260px_260px_220px_1fr]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -556,49 +429,34 @@ export function TasksPage() {
                 />
               </div>
 
-              <MultiSelectDropdown
+              <SearchableMultiSelect
                 label="Status"
-                isOpen={openFilterMenu === "status"}
-                onToggle={() =>
-                  setOpenFilterMenu((current) =>
-                    current === "status" ? null : "status"
-                  )
-                }
                 options={availableStatuses}
                 selectedValues={selectedStatuses}
                 onChange={handleStatusesChange}
                 disabled={filterOptionsQuery.isLoading}
                 emptyText="Nenhum status disponível."
+                searchPlaceholder="Buscar status..."
               />
 
-              <MultiSelectDropdown
+              <SearchableMultiSelect
                 label="Automação"
-                isOpen={openFilterMenu === "automation"}
-                onToggle={() =>
-                  setOpenFilterMenu((current) =>
-                    current === "automation" ? null : "automation"
-                  )
-                }
                 options={automationOptions}
                 selectedValues={selectedAutomationIds}
                 onChange={handleAutomationIdsChange}
                 disabled={filterOptionsQuery.isLoading}
                 emptyText="Nenhuma automação ativa disponível."
+                searchPlaceholder="Buscar automação..."
               />
 
-              <MultiSelectDropdown
+              <SearchableMultiSelect
                 label="Runner"
-                isOpen={openFilterMenu === "runner"}
-                onToggle={() =>
-                  setOpenFilterMenu((current) =>
-                    current === "runner" ? null : "runner"
-                  )
-                }
                 options={runnerOptions}
                 selectedValues={selectedRunnerIds}
                 onChange={handleRunnerIdsChange}
                 disabled={filterOptionsQuery.isLoading}
                 emptyText="Nenhum runner ativo disponível."
+                searchPlaceholder="Buscar runner..."
               />
 
               <div className="flex h-10 items-center justify-between gap-3 border border-slate-200 bg-white px-3 text-sm text-slate-500">
@@ -638,7 +496,7 @@ export function TasksPage() {
                     onClick={() => removeAutomationFilter(automationId)}
                     className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                   >
-                    <span>
+                    <span className="max-w-[320px] truncate">
                       Automação:{" "}
                       {selectedAutomationMap.get(automationId) ||
                         `Automação #${automationId}`}
@@ -850,18 +708,22 @@ function TaskRow({
         {formatDateTime(task.last_update_at)}
       </td>
 
-      <td
-        className="max-w-[260px] px-4 py-3 text-sm text-slate-700"
-        title={task.automation_name || undefined}
-      >
-        {truncateText(
-          task.automation_name || `Automação #${task.automation_id}`,
-          35
-        )}
+      <td className="px-4 py-3 text-sm text-slate-700">
+        <span
+          className="block max-w-[260px] truncate"
+          title={task.automation_name || `Automação #${task.automation_id}`}
+        >
+          {task.automation_name || `Automação #${task.automation_id}`}
+        </span>
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">
-        {task.runner_name || (task.runner_id ? `Runner #${task.runner_id}` : "---")}
+        <span
+          className="block max-w-[200px] truncate"
+          title={task.runner_name || undefined}
+        >
+          {task.runner_name || (task.runner_id ? `Runner #${task.runner_id}` : "---")}
+        </span>
       </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">

@@ -22,6 +22,7 @@ import {
   type UserRead,
   unblockUser,
 } from "@/services/api/users";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { listProfiles } from "@/services/api/profiles";
 
 const PAGE_SIZE = 10;
@@ -62,7 +63,7 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [profileFilter, setProfileFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("");
+  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("true");
   const [actionMenuUserId, setActionMenuUserId] = useState<number | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [statusConfirm, setStatusConfirm] = useState<StatusConfirmState>(null);
@@ -254,18 +255,20 @@ export function UsersPage() {
                 />
               </div>
 
-              <select
-                value={profileFilter}
-                onChange={(e) => setProfileFilter(e.target.value)}
-                className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-              >
-                <option value="">Todos os perfis</option>
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect<number>
+                value={profileFilter ? Number(profileFilter) : ""}
+                onChange={(value) =>
+                  setProfileFilter(value === "" ? "" : String(value))
+                }
+                options={profiles.map((profile) => ({
+                  value: profile.id,
+                  label: profile.name,
+                }))}
+                emptyLabel="Todos os perfis"
+                placeholder="Todos os perfis"
+                searchPlaceholder="Buscar perfil..."
+                loading={profilesQuery.isLoading}
+              />
 
               <select
                 value={activeFilter}
@@ -452,13 +455,19 @@ function UserRow({
   return (
     <tr className="hover:bg-slate-50/70">
       <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-800">
-        {user.name}
+        <div className="max-w-[260px] truncate" title={user.name}>
+          {user.name}
+        </div>
       </td>
       <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
-        {user.login}
+        <div className="max-w-[180px] truncate" title={user.login}>
+          {user.login}
+        </div>
       </td>
       <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
-        {user.email}
+        <div className="max-w-[260px] truncate" title={user.email ?? undefined}>
+          {user.email}
+        </div>
       </td>
       <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
         <span className="inline-flex items-center gap-2 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">

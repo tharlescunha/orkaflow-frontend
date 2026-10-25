@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { createBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
 import type { BotCreatePayload as CreateBotPayload } from "@/types/bot";
@@ -271,22 +272,24 @@ export function BotCreatePage() {
 
               <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
                 <FormField label="Repositório">
-                  <select
-                    value={form.repository_id}
-                    onChange={(e) =>
-                      handleChangeField("repository_id", e.target.value)
+                  <SearchableSelect<number>
+                    value={form.repository_id ? Number(form.repository_id) : ""}
+                    onChange={(value) =>
+                      handleChangeField(
+                        "repository_id",
+                        value === "" ? "" : String(value)
+                      )
                     }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    options={repositories.map((repository) => ({
+                      value: repository.id,
+                      label: repository.name,
+                    }))}
+                    placeholder="Selecione"
+                    searchPlaceholder="Buscar repositório..."
                     required
                     disabled={repositoriesQuery.isLoading}
-                  >
-                    <option value="">Selecione</option>
-                    {repositories.map((repository) => (
-                      <option key={repository.id} value={repository.id}>
-                        {repository.name}
-                      </option>
-                    ))}
-                  </select>
+                    loading={repositoriesQuery.isLoading}
+                  />
                 </FormField>
 
                 <FormField label="Tecnologia">

@@ -22,6 +22,26 @@ export async function listBots(params: ListBotsParams = {}) {
   return response.data;
 }
 
+// O backend devolve no máximo 100 bots por chamada (limit > 100 dá 422).
+// Para selects e filtros que precisam de todos, busca página por página.
+const BOTS_PAGE_SIZE = 100;
+
+export async function listAllBots(
+  params: Omit<ListBotsParams, "skip" | "limit"> = {}
+): Promise<BotListResponse> {
+  const items: BotListResponse["items"] = [];
+  let total = 0;
+
+  for (let skip = 0; ; skip += BOTS_PAGE_SIZE) {
+    const page = await listBots({ ...params, skip, limit: BOTS_PAGE_SIZE });
+    items.push(...page.items);
+    total = page.total;
+    if (page.items.length < BOTS_PAGE_SIZE || items.length >= total) break;
+  }
+
+  return { items, total };
+}
+
 export async function getBot(botId: number) {
   const response = await api.get<BotRead>(`/api/v1/bots/${botId}`);
   return response.data;

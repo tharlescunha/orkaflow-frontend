@@ -385,11 +385,12 @@ function InfoItem({
   value: React.ReactNode;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <div className="mt-1 break-words text-sm text-slate-800">{value}</div>
+      {/* overflow-wrap:anywhere quebra nomes longos sem espaço (ex.: automacao_xxx_yyy) sem alargar a coluna. */}
+      <div className="mt-1 text-sm text-slate-800 [overflow-wrap:anywhere]">{value}</div>
     </div>
   );
 }

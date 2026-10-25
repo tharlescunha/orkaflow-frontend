@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine, Eraser, Pause, Play, Search } from "lucide-react";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { parseApiDate } from "@/lib/health";
 import { listRunners } from "@/services/api/runners";
@@ -78,7 +79,20 @@ export function RunnerLogsPage() {
     queryKey: ["runners", "log-options"],
     queryFn: () => listRunners({ limit: 500 }),
   });
-  const runners = runnersQuery.data ?? [];
+  // Ativas primeiro; inativas continuam selecionáveis (log histórico), marcadas e no fim.
+  const runnerOptions = useMemo(
+    () =>
+      [...(runnersQuery.data ?? [])]
+        .sort((a, b) => Number(b.enabled) - Number(a.enabled))
+        .map((runner) => ({
+          value: runner.id,
+          label:
+            (runner.label ? `${runner.name} (${runner.label})` : runner.name) +
+            (runner.enabled ? "" : " (inativo)"),
+          description: runner.host_name,
+        })),
+    [runnersQuery.data],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -173,8 +187,7 @@ export function RunnerLogsPage() {
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }
 
-  function handleRunnerChange(value: string) {
-    const next = value ? Number(value) : "";
+  function handleRunnerChange(next: number | "") {
     setRunnerId(next);
     const params = new URLSearchParams(searchParams);
     if (next) params.set("runner_id", String(next));
@@ -235,19 +248,14 @@ export function RunnerLogsPage() {
 
         <div className="space-y-3 border-b border-slate-200 bg-slate-50/60 px-6 py-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,160px)_minmax(0,200px)_minmax(0,320px)]">
-            <select
+            <SearchableSelect<number>
               value={runnerId}
-              onChange={(e) => handleRunnerChange(e.target.value)}
-              className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
-            >
-              <option value="">Selecione a máquina</option>
-              {runners.map((runner) => (
-                <option key={runner.id} value={runner.id}>
-                  {runner.label ? `${runner.name} (${runner.label})` : runner.name}
-                  {runner.enabled ? "" : " - inativo"}
-                </option>
-              ))}
-            </select>
+              onChange={handleRunnerChange}
+              options={runnerOptions}
+              placeholder="Selecione a máquina"
+              searchPlaceholder="Buscar máquina..."
+              loading={runnersQuery.isLoading}
+            />
 
             <input
               value={taskInput}

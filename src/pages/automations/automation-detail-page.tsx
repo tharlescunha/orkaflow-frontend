@@ -23,6 +23,7 @@ import {
   type AutomationRunnerRead,
 } from "@/services/api/automations";
 import { listRunners, type RunnerRead } from "@/services/api/runners";
+import { SearchableSelect } from "@/components/common/searchable-select";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
@@ -132,13 +133,12 @@ export function AutomationDetailPage() {
     return () => clearTimeout(timeout);
   }, [toast]);
 
-  const linkedRunners = linkedRunnersQuery.data ?? [];
-  const allRunners = runnersQuery.data ?? [];
+  const linkedRunners = useMemo(() => linkedRunnersQuery.data ?? [], [linkedRunnersQuery.data]);
 
   const availableRunners = useMemo(() => {
     const linkedRunnerIds = new Set(linkedRunners.map((item) => item.runner_id));
-    return allRunners.filter((runner) => !linkedRunnerIds.has(runner.id));
-  }, [allRunners, linkedRunners]);
+    return (runnersQuery.data ?? []).filter((runner) => !linkedRunnerIds.has(runner.id));
+  }, [runnersQuery.data, linkedRunners]);
 
   function handleRefresh() {
     automationQuery.refetch();
@@ -511,7 +511,8 @@ function LinkRunnerModal({
     document.body.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      // Esc dentro da busca do SearchableSelect só fecha a lista, não o modal.
+      if (event.key === "Escape" && !event.defaultPrevented) {
         onCancel();
       }
     }
@@ -527,7 +528,7 @@ function LinkRunnerModal({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999]">
+    <div className="fixed inset-0 z-[9000]">
       <div className="absolute inset-0 bg-slate-950/55" onClick={onCancel} />
 
       <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -549,19 +550,17 @@ function LinkRunnerModal({
                 <span className="mb-2 block text-sm font-medium text-slate-700">
                   Runner disponível
                 </span>
-                <select
+                <SearchableSelect
                   value={selectedRunnerId}
-                  onChange={(e) => onChangeSelectedRunnerId(e.target.value)}
-                  className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                >
-                  <option value="">Selecione</option>
-                  {runners.map((runner) => (
-                    <option key={runner.id} value={runner.id}>
-                      {runner.name}
-                      {runner.label ? ` - ${runner.label}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => onChangeSelectedRunnerId(value)}
+                  options={runners.map((runner) => ({
+                    value: String(runner.id),
+                    label: runner.label ? `${runner.name} - ${runner.label}` : runner.name,
+                  }))}
+                  placeholder="Selecione"
+                  searchPlaceholder="Buscar runner..."
+                  emptyText="Nenhum runner encontrado."
+                />
               </label>
             )}
           </div>

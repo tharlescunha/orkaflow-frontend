@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
 import {
@@ -33,11 +34,32 @@ type Props = {
   onClose: () => void;
 };
 
+// Clique/Esc dentro da lista do SearchableSelect (portal) não deve fechar o Sheet.
+function isInsideSelectPanel(target: EventTarget | null) {
+  return target instanceof Element && target.closest('[role="listbox"]') !== null;
+}
+
 export function VariableFormSheet(props: Props) {
   const { open, editing, onClose } = props;
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+    // modal={false}: o SearchableSelect abre a lista num portal em document.body,
+    // fora do Sheet. Em modo modal o Radix bloqueia ponteiro (pointer-events:none
+    // no body) e prende o foco no conteúdo, deixando a lista inutilizável.
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()} modal={false}>
+      {open && (
+        // Fundo escurecido (o overlay do Radix só existe em modo modal).
+        // Clique fora fecha pelo próprio Radix (onInteractOutside).
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/10" />
+      )}
+      <SheetContent
+        className="w-full overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
+        onInteractOutside={(event) => {
+          if (isInsideSelectPanel(event.target)) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isInsideSelectPanel(event.target)) event.preventDefault();
+        }}
+      >
         <SheetHeader className="border-b border-slate-200">
           <SheetTitle className="text-slate-900">
             {editing ? `Editar ${editing.name}` : "Nova variável"}
@@ -59,7 +81,7 @@ function VariableForm({
   onClose,
 }: Props) {
   const queryClient = useQueryClient();
-  const { byScope } = useScopeOptions();
+  const { byScope, loading } = useScopeOptions();
 
   const [scopeType, setScopeType] = useState<EnvScopeType>(
     editing?.scope_type ?? defaultScope ?? "global",
@@ -140,6 +162,18 @@ function VariableForm({
   }
 
   const options = byScope[scopeType];
+  const targetOptions = options.map((o) => ({ value: o.id, label: o.label }));
+  // Alvo apagado/fora da lista: mantém exibível ao editar.
+  if (
+    editing &&
+    editing.scope_type !== "global" &&
+    !options.some((o) => o.id === editing.scope_id)
+  ) {
+    targetOptions.push({
+      value: editing.scope_id,
+      label: editing.scope_label,
+    });
+  }
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 px-4 pb-6">
@@ -165,24 +199,14 @@ function VariableForm({
         {scopeType !== "global" && (
           <div>
             <label className={label}>Alvo</label>
-            <select
-              className={`${input} h-10`}
+            <SearchableSelect<number>
               value={scopeId}
+              onChange={setScopeId}
+              options={targetOptions}
+              placeholder="Selecione..."
               disabled={Boolean(editing)}
-              onChange={(e) =>
-                setScopeId(e.target.value ? Number(e.target.value) : "")
-              }
-            >
-              <option value="">Selecione...</option>
-              {options.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-              {editing && !options.some((o) => o.id === editing.scope_id) && (
-                <option value={editing.scope_id}>{editing.scope_label}</option>
-              )}
-            </select>
+              loading={loading[scopeType]}
+            />
           </div>
         )}
       </div>

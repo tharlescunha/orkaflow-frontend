@@ -70,7 +70,7 @@ export function RunnersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("true");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
   const [confirm, setConfirm] = useState<ConfirmAction>(null);
   const confirmRunner = confirm?.action === "toggle" ? confirm.runner : null;
@@ -423,7 +423,10 @@ function RunnerCard({
         </div>
 
         <div className="p-4">
-          <h3 className="truncate text-sm font-semibold text-slate-900">
+          <h3
+            className="truncate text-sm font-semibold text-slate-900"
+            title={displayName}
+          >
             {displayName}
           </h3>
 
@@ -608,7 +611,10 @@ function ScreenshotPreviewModal({
         >
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold text-slate-900">
+              <h2
+                className="truncate text-sm font-semibold text-slate-900"
+                title={displayName}
+              >
                 {displayName}
               </h2>
               <p className="text-xs text-slate-500">Screenshot do runner</p>

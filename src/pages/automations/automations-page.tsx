@@ -19,7 +19,8 @@ import {
   type AutomationRead,
 } from "@/services/api/automations";
 import { listRepositories } from "@/services/api/repositories";
-import { listBots } from "@/services/api/bots";
+import { listAllBots } from "@/services/api/bots";
+import { SearchableSelect } from "@/components/common/searchable-select";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "---";
@@ -49,7 +50,7 @@ export function AutomationsPage() {
 
   const [repositoryFilter, setRepositoryFilter] = useState("");
   const [botFilter, setBotFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("true");
   const [openMenu, setOpenMenu] = useState<MenuState>(null);
   const [confirmAutomation, setConfirmAutomation] = useState<AutomationRead | null>(null);
 
@@ -78,7 +79,7 @@ export function AutomationsPage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-filter-automations"],
-    queryFn: () => listBots({ limit: 100 }),
+    queryFn: () => listAllBots(),
   });
 
   const activateMutation = useMutation({
@@ -160,6 +161,22 @@ export function AutomationsPage() {
   const repositories = repositoriesQuery.data ?? [];
   const bots = botsQuery.data?.items ?? [];
 
+  const repositoryOptions = repositories.map((repository) => ({
+    value: String(repository.id),
+    label: repository.name,
+    description: repository.active ? null : "Inativo",
+  }));
+
+  const botOptions = bots
+    .filter((bot) =>
+      repositoryFilter ? bot.repository_id === Number(repositoryFilter) : true
+    )
+    .map((bot) => ({
+      value: String(bot.id),
+      label: bot.name,
+      description: bot.active ? null : "Inativo",
+    }));
+
   return (
     <div className="space-y-5">
       <section className="border border-slate-200 bg-white shadow-sm">
@@ -195,38 +212,30 @@ export function AutomationsPage() {
 
         <div className="border-b border-slate-200 px-6 py-4">
           <div className="flex flex-col gap-3 lg:flex-row">
-            <select
+            <SearchableSelect
               value={repositoryFilter}
-              onChange={(e) => {
-                setRepositoryFilter(e.target.value);
+              onChange={(value) => {
+                setRepositoryFilter(value);
                 setBotFilter("");
               }}
-              className="h-10 min-w-[220px] border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="">Todos os repositórios</option>
-              {repositories.map((repository) => (
-                <option key={repository.id} value={repository.id}>
-                  {repository.name}
-                </option>
-              ))}
-            </select>
+              options={repositoryOptions}
+              emptyLabel="Todos os repositórios"
+              searchPlaceholder="Buscar repositório..."
+              emptyText="Nenhum repositório encontrado."
+              loading={repositoriesQuery.isLoading}
+              className="min-w-[220px] lg:w-[260px]"
+            />
 
-            <select
+            <SearchableSelect
               value={botFilter}
-              onChange={(e) => setBotFilter(e.target.value)}
-              className="h-10 min-w-[220px] border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="">Todos os bots</option>
-              {bots
-                .filter((bot) =>
-                  repositoryFilter ? bot.repository_id === Number(repositoryFilter) : true
-                )
-                .map((bot) => (
-                  <option key={bot.id} value={bot.id}>
-                    {bot.name}
-                  </option>
-                ))}
-            </select>
+              onChange={(value) => setBotFilter(value)}
+              options={botOptions}
+              emptyLabel="Todos os bots"
+              searchPlaceholder="Buscar bot..."
+              emptyText="Nenhum bot encontrado."
+              loading={botsQuery.isLoading}
+              className="min-w-[220px] lg:w-[260px]"
+            />
 
             <select
               value={activeFilter}
@@ -290,21 +299,43 @@ export function AutomationsPage() {
                     <td className="px-6 py-4 text-sm text-slate-700">{automation.id}</td>
 
                     <td className="px-6 py-4 text-sm text-slate-900">
-                      {automation.name}
+                      <div
+                        className="max-w-[260px] truncate font-medium"
+                        title={automation.name}
+                      >
+                        {automation.name}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4 text-xs text-slate-500">
+                      {automation.description ? (
+                        <div
+                          className="line-clamp-2 max-w-[320px] break-words"
+                          title={automation.description}
+                        >
+                          {automation.description}
+                        </div>
+                      ) : (
+                        "---"
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-sm text-slate-700">
-                      <div className="max-w-[340px] whitespace-pre-wrap break-words">
-                        {automation.description || "---"}
+                      <div
+                        className="max-w-[200px] truncate"
+                        title={automation.repository_name || `#${automation.repository_id}`}
+                      >
+                        {automation.repository_name || `#${automation.repository_id}`}
                       </div>
                     </td>
 
                     <td className="px-6 py-4 text-sm text-slate-700">
-                      {automation.repository_name || `#${automation.repository_id}`}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm text-slate-700">
-                      {automation.bot_name || `#${automation.bot_id}`}
+                      <div
+                        className="max-w-[200px] truncate"
+                        title={automation.bot_name || `#${automation.bot_id}`}
+                      >
+                        {automation.bot_name || `#${automation.bot_id}`}
+                      </div>
                     </td>
 
                     <td className="px-6 py-4 text-sm">

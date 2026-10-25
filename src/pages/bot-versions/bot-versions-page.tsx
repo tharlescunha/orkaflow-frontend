@@ -18,7 +18,7 @@ import {
   releaseBotVersion,
   type BotVersionRead,
 } from "@/services/api/bot-versions";
-import { listBots } from "@/services/api/bots";
+import { listAllBots } from "@/services/api/bots";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
 
@@ -71,7 +71,7 @@ export function BotVersionsPage() {
 
   const botsQuery = useQuery({
     queryKey: ["bots-select-for-versions"],
-    queryFn: () => listBots({ skip: 0, limit: 100 }),
+    queryFn: () => listAllBots(),
   });
 
   const versions = (versionsQuery.data ?? []) as BotVersionListItem[];

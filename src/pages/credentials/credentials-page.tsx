@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { deleteCredential, listCredentials } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
 import type { CredentialRead } from "@/types/credential";
@@ -53,7 +54,7 @@ export function CredentialsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [repositoryFilter, setRepositoryFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("");
+  const [activeFilter, setActiveFilter] = useState<"" | "true" | "false">("true");
   const [actionMenuCredentialId, setActionMenuCredentialId] = useState<number | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>(null);
@@ -94,7 +95,10 @@ export function CredentialsPage() {
     },
   });
 
-  const repositories = repositoriesQuery.data ?? [];
+  const repositories = useMemo(
+    () => repositoriesQuery.data ?? [],
+    [repositoriesQuery.data]
+  );
   const repositoryMap = useMemo(() => {
     return new Map(repositories.map((repository) => [repository.id, repository.name]));
   }, [repositories]);
@@ -245,21 +249,21 @@ export function CredentialsPage() {
                 />
               </div>
 
-              <select
-                value={repositoryFilter}
-                onChange={(e) => {
+              <SearchableSelect<number>
+                value={repositoryFilter ? Number(repositoryFilter) : ""}
+                onChange={(value) => {
                   setPage(1);
-                  setRepositoryFilter(e.target.value);
+                  setRepositoryFilter(value === "" ? "" : String(value));
                 }}
-                className="h-10 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-              >
-                <option value="">Todos os repositórios</option>
-                {repositories.map((repository) => (
-                  <option key={repository.id} value={repository.id}>
-                    {repository.name}
-                  </option>
-                ))}
-              </select>
+                options={repositories.map((repository) => ({
+                  value: repository.id,
+                  label: repository.name,
+                }))}
+                emptyLabel="Todos os repositórios"
+                placeholder="Todos os repositórios"
+                searchPlaceholder="Buscar repositório..."
+                loading={repositoriesQuery.isLoading}
+              />
 
               <select
                 value={activeFilter}
@@ -460,14 +464,19 @@ function CredentialRow({
         <button
           type="button"
           onClick={() => onOpenInfo(credential.id)}
-          className="inline-flex items-center gap-2 font-medium text-slate-900 transition hover:text-blue-700"
+          title={credential.label}
+          className="inline-flex max-w-[360px] items-center gap-2 text-left font-medium text-slate-900 transition hover:text-blue-700"
         >
-          <ShieldCheck className="h-4 w-4 text-slate-500" />
-          {credential.label}
+          <ShieldCheck className="h-4 w-4 shrink-0 text-slate-500" />
+          <span className="truncate">{credential.label}</span>
         </button>
       </td>
 
-      <td className="px-4 py-3 text-sm text-slate-700">{repositoryName}</td>
+      <td className="px-4 py-3 text-sm text-slate-700">
+        <div className="max-w-[240px] truncate" title={repositoryName}>
+          {repositoryName}
+        </div>
+      </td>
 
       <td className="px-4 py-3 text-sm text-slate-700">
         {formatActive(credential.active)}

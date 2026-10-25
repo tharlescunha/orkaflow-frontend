@@ -1,18 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { SearchableSelect } from "@/components/common/searchable-select";
 import { getEffectiveEnvVariables } from "@/services/api/env-variables";
 import { ScopeBadge } from "./scope-badge";
 import { SCOPE_LABELS } from "./scope-labels";
 import { SecretMask } from "./variables-table";
 import { useScopeOptions } from "./use-scope-options";
 
-const select =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900";
 const th =
   "border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600";
 
 export function EffectiveTab() {
-  const { byScope } = useScopeOptions();
+  const { byScope, loading } = useScopeOptions();
   const [automationId, setAutomationId] = useState<number | "">("");
   const [runnerId, setRunnerId] = useState<number | "">("");
 
@@ -37,39 +36,32 @@ export function EffectiveTab() {
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Automação (obrigatório)
             </label>
-            <select
-              className={select}
+            <SearchableSelect<number>
               value={automationId}
-              onChange={(e) =>
-                setAutomationId(e.target.value ? Number(e.target.value) : "")
-              }
-            >
-              <option value="">Selecione...</option>
-              {byScope.automation.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setAutomationId}
+              options={byScope.automation.map((o) => ({
+                value: o.id,
+                label: o.label,
+              }))}
+              placeholder="Selecione..."
+              loading={loading.automation}
+            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Máquina (opcional)
             </label>
-            <select
-              className={select}
+            <SearchableSelect<number>
               value={runnerId}
-              onChange={(e) =>
-                setRunnerId(e.target.value ? Number(e.target.value) : "")
-              }
-            >
-              <option value="">Nenhuma</option>
-              {byScope.runner.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setRunnerId}
+              options={byScope.runner.map((o) => ({
+                value: o.id,
+                label: o.label,
+              }))}
+              placeholder="Nenhuma"
+              emptyLabel="Nenhuma"
+              loading={loading.runner}
+            />
           </div>
         </div>
         <p className="mt-3 text-sm text-slate-500">
