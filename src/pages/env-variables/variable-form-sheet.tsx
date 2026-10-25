@@ -83,8 +83,11 @@ function VariableForm({
   const queryClient = useQueryClient();
   const { byScope, loading } = useScopeOptions();
 
+  // Global não é mais oferecido para variáveis novas (só bot, automação e máquina);
+  // as globais que já existem continuam editáveis.
   const [scopeType, setScopeType] = useState<EnvScopeType>(
-    editing?.scope_type ?? defaultScope ?? "global",
+    editing?.scope_type ??
+      (defaultScope && defaultScope !== "global" ? defaultScope : "automation"),
   );
   const [scopeId, setScopeId] = useState<number | "">(
     editing
@@ -189,11 +192,13 @@ function VariableForm({
               setScopeId("");
             }}
           >
-            {(Object.keys(SCOPE_LABELS) as EnvScopeType[]).map((s) => (
-              <option key={s} value={s}>
-                {SCOPE_LABELS[s]}
-              </option>
-            ))}
+            {(Object.keys(SCOPE_LABELS) as EnvScopeType[])
+              .filter((s) => s !== "global" || editing?.scope_type === "global")
+              .map((s) => (
+                <option key={s} value={s}>
+                  {SCOPE_LABELS[s]}
+                </option>
+              ))}
           </select>
         </div>
         {scopeType !== "global" && (

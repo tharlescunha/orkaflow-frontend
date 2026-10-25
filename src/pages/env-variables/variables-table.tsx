@@ -28,6 +28,8 @@ type Props = {
   error: boolean;
   onEdit: (item: EnvVariableRead) => void;
   onDelete: (item: EnvVariableRead) => void;
+  // Dentro de um alvo (bot, automação ou máquina) a coluna Escopo repetiria o mesmo valor.
+  hideScope?: boolean;
 };
 
 export function VariablesTable({
@@ -36,7 +38,9 @@ export function VariablesTable({
   error,
   onEdit,
   onDelete,
+  hideScope = false,
 }: Props) {
+  const columns = hideScope ? 6 : 7;
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[960px]">
@@ -44,7 +48,7 @@ export function VariablesTable({
           <tr>
             <th className={th}>Nome</th>
             <th className={th}>Valor</th>
-            <th className={th}>Escopo</th>
+            {!hideScope && <th className={th}>Escopo</th>}
             <th className={th}>Descrição</th>
             <th className={th}>Ativa</th>
             <th className={th}>Atualizada em</th>
@@ -55,7 +59,7 @@ export function VariablesTable({
           {loading ? (
             <tr>
               <td
-                colSpan={7}
+                colSpan={columns}
                 className="px-4 py-12 text-center text-sm text-slate-500"
               >
                 Carregando variáveis...
@@ -64,7 +68,7 @@ export function VariablesTable({
           ) : error ? (
             <tr>
               <td
-                colSpan={7}
+                colSpan={columns}
                 className="px-4 py-12 text-center text-sm text-red-600"
               >
                 Não foi possível carregar as variáveis.
@@ -73,7 +77,7 @@ export function VariablesTable({
           ) : items.length === 0 ? (
             <tr>
               <td
-                colSpan={7}
+                colSpan={columns}
                 className="px-4 py-12 text-center text-sm text-slate-500"
               >
                 Nenhuma variável encontrada. Clique em "Nova variável" para
@@ -103,9 +107,11 @@ export function VariablesTable({
                     </span>
                   )}
                 </td>
-                <td className="max-w-[220px] px-4 py-3">
-                  <ScopeBadge type={item.scope_type} label={item.scope_label} />
-                </td>
+                {!hideScope && (
+                  <td className="max-w-[220px] px-4 py-3">
+                    <ScopeBadge type={item.scope_type} label={item.scope_label} />
+                  </td>
+                )}
                 <td className="max-w-[240px] px-4 py-3 text-sm text-slate-600">
                   <span
                     className="block truncate"

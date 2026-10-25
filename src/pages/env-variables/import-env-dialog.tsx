@@ -28,7 +28,8 @@ const RESERVED_NAMES = new Set([
   "VIRTUAL_ENV", "LD_PRELOAD", "LD_LIBRARY_PATH",
 ]);
 
-const SCOPES: EnvScopeType[] = ["global", "bot", "automation", "runner"];
+// Global não é mais oferecido: variáveis ficam sempre ligadas a um bot, automação ou máquina.
+const SCOPES: EnvScopeType[] = ["automation", "bot", "runner"];
 
 type Row = {
   line: number;
@@ -86,7 +87,9 @@ export function ImportEnvDialog({
   const { byScope, loading } = useScopeOptions();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const [scope, setScope] = useState<EnvScopeType>(initialScope ?? "global");
+  const [scope, setScope] = useState<EnvScopeType>(
+    initialScope && initialScope !== "global" ? initialScope : "automation",
+  );
   const [targetId, setTargetId] = useState<number | "">(initialTargetId ?? "");
   const [fileName, setFileName] = useState<string | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
