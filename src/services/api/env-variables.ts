@@ -73,6 +73,27 @@ export async function deleteEnvVariable(id: number) {
   await api.delete(`/api/v1/env-variables/${id}`);
 }
 
+export type ImportEnvVariablesPayload = {
+  scope_type: EnvScopeType;
+  scope_id: number | null;
+  // true: atualiza o valor das que já existem no escopo; false: mantém as existentes.
+  overwrite: boolean;
+  variables: { name: string; value: string; is_secret: boolean }[];
+};
+
+export type ImportEnvVariablesResult = {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  results: { name: string; status: "created" | "updated" | "skipped" | "error"; message: string | null }[];
+};
+
+export async function importEnvVariables(payload: ImportEnvVariablesPayload) {
+  const response = await api.post<ImportEnvVariablesResult>("/api/v1/env-variables/import", payload);
+  return response.data;
+}
+
 export async function getEffectiveEnvVariables(params: {
   automation_id: number;
   runner_id?: number;

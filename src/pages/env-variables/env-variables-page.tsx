@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { FileUp, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
@@ -11,6 +11,7 @@ import {
   type EnvVariableRead,
 } from "@/services/api/env-variables";
 import { EffectiveTab } from "./effective-tab";
+import { ImportEnvDialog } from "./import-env-dialog";
 import { SCOPE_LABELS } from "./scope-labels";
 import { VariableFormSheet } from "./variable-form-sheet";
 import { VariablesTable } from "./variables-table";
@@ -38,6 +39,7 @@ export function EnvVariablesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<EnvVariableRead | null>(null);
   const [toDelete, setToDelete] = useState<EnvVariableRead | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -102,6 +104,14 @@ export function EnvVariablesPage() {
               >
                 <RefreshCcw className="h-4 w-4" />
                 Atualizar
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <FileUp className="h-4 w-4" />
+                Importar .env
               </button>
               <button
                 type="button"
@@ -205,6 +215,16 @@ export function EnvVariablesPage() {
         }
         onClose={() => setFormOpen(false)}
       />
+
+      {/* Montado só quando aberto: cada importação começa do zero, já no escopo filtrado na tela. */}
+      {importOpen && (
+        <ImportEnvDialog
+          open
+          onClose={() => setImportOpen(false)}
+          initialScope={scope === "all" ? "global" : scope}
+          initialTargetId={needsTarget ? targetId : ""}
+        />
+      )}
 
       {toDelete && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4">
