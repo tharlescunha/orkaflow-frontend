@@ -7,7 +7,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ onToggleSidebar }: AppHeaderProps) {
   return (
-    <header className="relative z-30 shrink-0 border-b border-slate-200 bg-white">
+    <header className="relative z-30 shrink-0 border-b border-slate-300 bg-slate-200">
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <button

@@ -93,6 +93,8 @@ const menuGroups = [
   },
 ];
 
+const ALL_ITEM_PATHS = menuGroups.flatMap((group) => group.items.map((item) => item.to));
+
 export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebarProps) {
   const [hovered, setHovered] = useState(false);
 
@@ -147,6 +149,9 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
                       <NavLink
                         key={item.to}
                         to={item.to}
+                        // end: um item cujo caminho é prefixo de outro (ex.: /automations e /automations/health)
+                        // só acende na rota exata, senão os dois ficam selecionados juntos.
+                        end={ALL_ITEM_PATHS.some((other) => other !== item.to && other.startsWith(`${item.to}/`))}
                         onClick={onNavigate}
                         className={({ isActive }) =>
                           cn(
