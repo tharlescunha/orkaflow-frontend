@@ -365,7 +365,7 @@ export function SchedulesPage() {
                     <td className={cn(table.tdMuted, "whitespace-nowrap")}>{getTypeLabel(schedule)}</td>
 
                     <td className={table.td}>
-                      <span className="block max-w-[260px] break-words font-mono text-xs" title={getRuleLabel(schedule)}>
+                      <span className="block max-w-[260px] whitespace-nowrap truncate font-mono text-xs" title={getRuleLabel(schedule)}>
                         {getRuleLabel(schedule)}
                       </span>
                     </td>
