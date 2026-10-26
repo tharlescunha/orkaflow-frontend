@@ -52,6 +52,7 @@ import { NotificationsPage } from "../../pages/notifications/notifications-page"
 import { UserCreatePage } from "../../pages/users/user-create-page";
 import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
+import { AppErrorPage, NotFoundPage } from "../../pages/app-error-page";
 import { IntegrationMcpPage } from "../../pages/integration/integration-mcp-page";
 import { IntegrationApiPage } from "../../pages/integration/integration-api-page";
 
@@ -64,11 +65,18 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <AuthLayout />,
+    errorElement: <AppErrorPage />,
     children: [{ index: true, element: <LoginPage /> }],
   },
   {
     path: "/",
     element: (
+      <PrivateRoute>
+        <AppLayout />
+      </PrivateRoute>
+    ),
+    // Erro de render em qualquer tela cai aqui (dentro do layout, com menu), em vez da tela crua do react-router.
+    errorElement: (
       <PrivateRoute>
         <AppLayout />
       </PrivateRoute>
@@ -136,6 +144,8 @@ export const router = createBrowserRouter([
 
       { path: "worker-registration", element: <WorkerRegistrationPage /> },
       { path: "profile", element: <ProfilePage /> },
+
+      { path: "*", element: <NotFoundPage /> },
     ],
   },
 ]);

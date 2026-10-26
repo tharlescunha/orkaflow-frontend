@@ -11,7 +11,9 @@ export function AppHeader({ onToggleSidebar }: AppHeaderProps) {
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={onToggleSidebar}
+            aria-label="Abrir ou recolher o menu"
             className="rounded-xl border border-slate-200 p-2 transition hover:bg-slate-100"
           >
             <Menu className="h-5 w-5 text-slate-700" />

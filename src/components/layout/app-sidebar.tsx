@@ -28,6 +28,10 @@ import { useSystemHealth } from "@/hooks/use-system-health";
 
 type AppSidebarProps = {
   collapsed: boolean;
+  // Dentro do painel deslizante do celular: sempre aberta e sem a largura fixa.
+  mobile?: boolean;
+  // Chamado ao clicar num item (o painel do celular fecha).
+  onNavigate?: () => void;
 };
 
 const menuGroups = [
@@ -85,10 +89,10 @@ const menuGroups = [
   },
 ];
 
-export function AppSidebar({ collapsed }: AppSidebarProps) {
+export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebarProps) {
   const [hovered, setHovered] = useState(false);
 
-  const isOpen = !collapsed || hovered;
+  const isOpen = mobile || !collapsed || hovered;
   const { errors24h, failedTasks } = useSystemHealth();
   // badge do item "Erros": erros das ultimas 24h (ou tasks falhas, o que for maior)
   const errorsBadge = Math.max(errors24h, failedTasks.length);
@@ -102,9 +106,10 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
         if (collapsed) setHovered(false);
       }}
       className={cn(
-        "hidden h-full shrink-0 border-r border-slate-200 bg-slate-950 text-slate-100 md:flex md:flex-col",
+        "h-full shrink-0 border-r border-slate-200 bg-slate-950 text-slate-100",
         "overflow-hidden transition-[width] duration-300 ease-out",
-        isOpen ? "w-[280px]" : "w-[84px]"
+        mobile ? "flex w-full flex-col" : "hidden md:flex md:flex-col",
+        !mobile && (isOpen ? "w-[280px]" : "w-[84px]")
       )}
     >
       <div className="flex h-full min-h-0 flex-col">
@@ -138,6 +143,7 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
                       <NavLink
                         key={item.to}
                         to={item.to}
+                        onClick={onNavigate}
                         className={({ isActive }) =>
                           cn(
                             "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm",
