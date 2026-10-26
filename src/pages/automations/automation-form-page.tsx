@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { withApiDetail } from "@/lib/api-error";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, KeyRound, Save, X } from "lucide-react";
+import { KeyRound, Save, X } from "lucide-react";
 
+import { EmptyState } from "@/components/common/empty-state";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { SearchableMultiSelect } from "@/components/common/searchable-multi-select";
+import { SearchableSelect } from "@/components/common/searchable-select";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { btn, card, cardBody, cardHeader, cardTitle, chip, fieldError, hint, input, label as labelClass, textarea } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
   createAutomation,
   createAutomationExclusiveGroup,
@@ -11,14 +19,14 @@ import {
   listAutomations,
   listAutomationExclusiveGroups,
   updateAutomation,
+  type AutomationRead,
   type CreateAutomationPayload,
   type UpdateAutomationPayload,
 } from "@/services/api/automations";
+import { listAllBots } from "@/services/api/bots";
 import { getCredential, listCredentials } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
-import { listAllBots } from "@/services/api/bots";
-import { SearchableSelect } from "@/components/common/searchable-select";
-import { SearchableMultiSelect } from "@/components/common/searchable-multi-select";
+import { toast } from "@/store/toast-store";
 
 type CredentialItemLike = {
   id: number;
@@ -39,11 +47,6 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
-
 type AutomationFormState = {
   name: string;
   label: string;
@@ -59,36 +62,136 @@ type AutomationFormState = {
   default_runtime_parameters_json: string;
 };
 
-export function AutomationFormPage() {
-  const navigate = useNavigate();
-  const params = useParams<{ automationId: string }>();
+type FieldErrors = Partial<
+  Record<
+    "name" | "repository_id" | "bot_id" | "default_priority" | "default_parameters_json" | "default_runtime_parameters_json",
+    string
+  >
+>;
 
+const EMPTY_FORM: AutomationFormState = {
+  name: "",
+  label: "",
+  description: "",
+  repository_id: "",
+  bot_id: "",
+  default_priority: "5",
+  active: true,
+  exclusive_group_ids: [],
+  new_exclusive_group_name: "",
+  success_trigger_automation_ids: [],
+  default_parameters_json: "",
+  default_runtime_parameters_json: "",
+};
+
+function formFromAutomation(data: AutomationRead): AutomationFormState {
+  return {
+    name: data.name ?? "",
+    label: data.label ?? "",
+    description: data.description ?? "",
+    repository_id: String(data.repository_id ?? ""),
+    bot_id: String(data.bot_id ?? ""),
+    default_priority: String(data.default_priority ?? 5),
+    active: Boolean(data.active),
+    exclusive_group_ids: (data.exclusive_group_ids ?? []).map(String),
+    new_exclusive_group_name: "",
+    success_trigger_automation_ids: (data.success_trigger_automation_ids ?? []).map(String),
+    default_parameters_json: data.default_parameters_json
+      ? JSON.stringify(data.default_parameters_json, null, 2)
+      : "",
+    default_runtime_parameters_json: data.default_runtime_parameters_json
+      ? JSON.stringify(data.default_runtime_parameters_json, null, 2)
+      : "",
+  };
+}
+
+// Tela: decide entre criar e editar. Na edição, o formulário só é montado quando a automação chega
+// (assim o refetch não sobrescreve o que a pessoa digitou).
+export function AutomationFormPage() {
+  const params = useParams<{ automationId: string }>();
   const automationId = params.automationId ? Number(params.automationId) : null;
   const isEditMode = Number.isFinite(automationId) && automationId !== null;
 
-  const [toast, setToast] = useState<ToastState>(null);
+  const automationQuery = useQuery({
+    queryKey: ["automation-form", automationId],
+    queryFn: () => getAutomation(automationId as number),
+    enabled: !!isEditMode,
+  });
+
+  const backTo = isEditMode ? `/automations/${automationId}` : "/automations";
+  const backLabel = isEditMode ? "Voltar para detalhes" : "Voltar para automações";
+
+  if (!isEditMode) {
+    return (
+      <div className="space-y-5">
+        <section className={card}>
+          <PageHeader
+            backTo={backTo}
+            backLabel={backLabel}
+            title="Nova automação"
+            description="Escolha o bot e o repositório, defina prioridade, concorrência e parâmetros padrão."
+          />
+          <AutomationForm initial={EMPTY_FORM} automationId={null} backTo={backTo} />
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className={card}>
+        <PageHeader
+          backTo={backTo}
+          backLabel={backLabel}
+          title={automationQuery.data ? `Editar ${automationQuery.data.name}` : "Editar automação"}
+          description="Altere os dados e salve. Tasks já na fila não são afetadas."
+        />
+        {automationQuery.isError ? (
+          <div className={cardBody}>
+            <QueryError
+              error={automationQuery.error}
+              what="a automação"
+              onRetry={() => automationQuery.refetch()}
+              retrying={automationQuery.isFetching}
+            />
+          </div>
+        ) : !automationQuery.data ? (
+          <div className={cardBody}>
+            <DetailSkeleton fields={8} />
+          </div>
+        ) : (
+          <AutomationForm
+            key={automationQuery.data.id}
+            initial={formFromAutomation(automationQuery.data)}
+            automationId={automationQuery.data.id}
+            backTo={backTo}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AutomationForm({
+  initial,
+  automationId,
+  backTo,
+}: {
+  initial: AutomationFormState;
+  automationId: number | null;
+  backTo: string;
+}) {
+  const navigate = useNavigate();
+  const isEditMode = automationId !== null;
+
   const [isPreparingSubmit, setIsPreparingSubmit] = useState(false);
-  const [jsonErrors, setJsonErrors] = useState<{ default_parameters_json?: string; default_runtime_parameters_json?: string }>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [form, setForm] = useState<AutomationFormState>(initial);
 
   const [credentialsModalOpen, setCredentialsModalOpen] = useState(false);
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<number | null>(null);
   const [selectedCredentialId, setSelectedCredentialId] = useState<number | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-
-  const [form, setForm] = useState<AutomationFormState>({
-    name: "",
-    label: "",
-    description: "",
-    repository_id: "",
-    bot_id: "",
-    default_priority: "5",
-    active: true,
-    exclusive_group_ids: [],
-    new_exclusive_group_name: "",
-    success_trigger_automation_ids: [],
-    default_parameters_json: "",
-    default_runtime_parameters_json: "",
-  });
 
   const repositoriesQuery = useQuery({
     queryKey: ["repositories-automation-form"],
@@ -98,12 +201,6 @@ export function AutomationFormPage() {
   const botsQuery = useQuery({
     queryKey: ["bots-automation-form"],
     queryFn: () => listAllBots(),
-  });
-
-  const automationQuery = useQuery({
-    queryKey: ["automation-form", automationId],
-    queryFn: () => getAutomation(automationId as number),
-    enabled: !!isEditMode,
   });
 
   const exclusiveGroupsQuery = useQuery({
@@ -140,39 +237,6 @@ export function AutomationFormPage() {
   const availableCredentialItems = (credentialDetailQuery.data?.items ?? [])
     .map((item: CredentialItemLike) => ({ ...item, resolvedKey: getCredentialItemKey(item) }))
     .filter((item) => item.resolvedKey);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
-  useEffect(() => {
-    if (!automationQuery.data) return;
-
-    const data = automationQuery.data;
-
-    setForm({
-      name: data.name ?? "",
-      label: data.label ?? "",
-      description: data.description ?? "",
-      repository_id: String(data.repository_id ?? ""),
-      bot_id: String(data.bot_id ?? ""),
-      default_priority: String(data.default_priority ?? 5),
-      active: Boolean(data.active),
-      exclusive_group_ids: (data.exclusive_group_ids ?? []).map(String),
-      new_exclusive_group_name: "",
-      success_trigger_automation_ids: (
-        data.success_trigger_automation_ids ?? []
-      ).map(String),
-      default_parameters_json: data.default_parameters_json
-        ? JSON.stringify(data.default_parameters_json, null, 2)
-        : "",
-      default_runtime_parameters_json: data.default_runtime_parameters_json
-        ? JSON.stringify(data.default_runtime_parameters_json, null, 2)
-        : "",
-    });
-  }, [automationQuery.data]);
 
   const availableBots = useMemo(() => {
     const bots = botsQuery.data?.items ?? [];
@@ -211,20 +275,11 @@ export function AutomationFormPage() {
   const createMutation = useMutation({
     mutationFn: (payload: CreateAutomationPayload) => createAutomation(payload),
     onSuccess: (data) => {
-      setToast({
-        type: "success",
-        message: "Automação criada com sucesso.",
-      });
-
-      setTimeout(() => {
-        navigate(`/automations/${data.id}`);
-      }, 800);
+      toast.success(`Automação "${data.name}" criada.`);
+      navigate(`/automations/${data.id}`);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível criar a automação.", error),
-      });
+      toast.error(getApiErrorMessage(error, "Não foi possível criar a automação."));
     },
   });
 
@@ -232,22 +287,17 @@ export function AutomationFormPage() {
     mutationFn: (payload: UpdateAutomationPayload) =>
       updateAutomation(automationId as number, payload),
     onSuccess: () => {
-      setToast({
-        type: "success",
-        message: "Automação atualizada com sucesso.",
-      });
-
-      setTimeout(() => {
-        navigate(`/automations/${automationId}`);
-      }, 800);
+      toast.success("Automação atualizada.");
+      navigate(`/automations/${automationId}`);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível atualizar a automação.", error),
-      });
+      toast.error(getApiErrorMessage(error, "Não foi possível atualizar a automação."));
     },
   });
+
+  function setFieldError(field: keyof FieldErrors, message?: string) {
+    setErrors((prev) => ({ ...prev, [field]: message }));
+  }
 
   function handleChangeField<K extends keyof AutomationFormState>(
     field: K,
@@ -265,6 +315,10 @@ export function AutomationFormPage() {
 
       return next;
     });
+
+    if (field in errors) {
+      setFieldError(field as keyof FieldErrors, undefined);
+    }
   }
 
   function toggleExclusiveGroup(groupId: number) {
@@ -280,8 +334,8 @@ export function AutomationFormPage() {
     });
   }
 
-  function toggleSuccessTriggerAutomation(automationId: number) {
-    const value = String(automationId);
+  function toggleSuccessTriggerAutomation(targetId: number) {
+    const value = String(targetId);
     setForm((prev) => {
       const exists = prev.success_trigger_automation_ids.includes(value);
       return {
@@ -340,15 +394,15 @@ export function AutomationFormPage() {
     const credential = credentialDetailQuery.data;
 
     if (!selectedRepositoryId) {
-      setToast({ type: "error", message: "Selecione um repositório." });
+      toast.error("Selecione um repositório.");
       return;
     }
     if (!selectedCredentialId || !credential) {
-      setToast({ type: "error", message: "Selecione uma credencial." });
+      toast.error("Selecione uma credencial.");
       return;
     }
     if (!selectedKeys.length) {
-      setToast({ type: "error", message: "Selecione pelo menos uma chave." });
+      toast.error("Selecione pelo menos uma chave.");
       return;
     }
 
@@ -391,13 +445,13 @@ export function AutomationFormPage() {
     try {
       const parsed = JSON.parse(trimmed);
       if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) {
-        setJsonErrors((prev) => ({ ...prev, [field]: "Deve ser um objeto JSON. Ex.: { \"chave\": \"valor\" }" }));
+        setFieldError(field, 'Deve ser um objeto JSON. Ex.: { "chave": "valor" }');
         return false;
       }
-      setJsonErrors((prev) => ({ ...prev, [field]: undefined }));
+      setFieldError(field, undefined);
       return parsed as Record<string, unknown>;
     } catch {
-      setJsonErrors((prev) => ({ ...prev, [field]: "JSON inválido. Verifique a sintaxe." }));
+      setFieldError(field, "JSON inválido. Verifique a sintaxe.");
       return false;
     }
   }
@@ -405,19 +459,24 @@ export function AutomationFormPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!form.repository_id || !form.bot_id) {
-      setToast({
-        type: "error",
-        message: "Selecione o repositório e o bot.",
-      });
-      return;
+    const nextErrors: FieldErrors = {};
+    if (!form.name.trim()) nextErrors.name = "Informe o nome.";
+    if (!form.repository_id) nextErrors.repository_id = "Selecione o repositório.";
+    if (!form.bot_id) nextErrors.bot_id = "Selecione o bot.";
+    const priority = Number(form.default_priority);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 10) {
+      nextErrors.default_priority = "Use um número inteiro de 1 a 10.";
     }
 
     const parsedParametersJson = parseJsonField(form.default_parameters_json, "default_parameters_json");
     const parsedRuntimeJson = parseJsonField(form.default_runtime_parameters_json, "default_runtime_parameters_json");
 
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrors }));
+      return;
+    }
+
     if (parsedParametersJson === false || parsedRuntimeJson === false) {
-      setToast({ type: "error", message: "Corrija os erros de JSON antes de salvar." });
       return;
     }
 
@@ -425,11 +484,8 @@ export function AutomationFormPage() {
     setIsPreparingSubmit(true);
     try {
       exclusiveGroupIds = await resolveExclusiveGroupIds();
-    } catch {
-      setToast({
-        type: "error",
-        message: "Não foi possível preparar o grupo exclusivo.",
-      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Não foi possível preparar o grupo exclusivo."));
       setIsPreparingSubmit(false);
       return;
     }
@@ -481,359 +537,255 @@ export function AutomationFormPage() {
   );
 
   return (
-    <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
+    <>
+      <form onSubmit={handleSubmit} noValidate>
+        <div className="space-y-6 px-5 py-5 md:px-6">
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Dados da automação</h2>
+            </div>
 
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
+            <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
+              <FormField label="Nome" error={errors.name}>
+                <input
+                  value={form.name}
+                  onChange={(e) => handleChangeField("name", e.target.value)}
+                  className={input}
+                  required
+                  maxLength={120}
+                  aria-invalid={!!errors.name}
+                />
+              </FormField>
 
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
+              <FormField label="Label" hintText="Nome amigável, opcional.">
+                <input
+                  value={form.label}
+                  onChange={(e) => handleChangeField("label", e.target.value)}
+                  className={input}
+                  maxLength={150}
+                />
+              </FormField>
+
+              <FormField label="Repositório" error={errors.repository_id} asDiv>
+                <SearchableSelect
+                  value={form.repository_id}
+                  onChange={(value) => handleChangeField("repository_id", value)}
+                  options={repositoryOptions}
+                  placeholder="Selecione"
+                  searchPlaceholder="Buscar repositório..."
+                  emptyText="Nenhum repositório encontrado."
+                  loading={repositoriesQuery.isLoading}
+                  required
+                />
+              </FormField>
+
+              <FormField label="Bot" error={errors.bot_id} asDiv>
+                <SearchableSelect
+                  value={form.bot_id}
+                  onChange={(value) => handleChangeField("bot_id", value)}
+                  options={botOptions}
+                  placeholder="Selecione"
+                  searchPlaceholder="Buscar bot..."
+                  emptyText={
+                    form.repository_id
+                      ? "Nenhum bot ativo neste repositório."
+                      : "Nenhum bot encontrado."
+                  }
+                  loading={botsQuery.isLoading}
+                  required
+                />
+              </FormField>
+
+              <FormField label="Prioridade padrão" error={errors.default_priority} hintText="1 roda primeiro, 10 por último.">
+                <input
+                  value={form.default_priority}
+                  onChange={(e) => handleChangeField("default_priority", e.target.value)}
+                  className={input}
+                  type="number"
+                  min={1}
+                  max={10}
+                  required
+                  aria-invalid={!!errors.default_priority}
+                />
+              </FormField>
+
+              <div className="flex items-end pb-2">
+                <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                  <input
+                    checked={form.active}
+                    onChange={(e) => handleChangeField("active", e.target.checked)}
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Automação ativa
+                </label>
+              </div>
+
+              <div className="md:col-span-2">
+                <FormField label="Descrição">
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => handleChangeField("description", e.target.value)}
+                    className={textarea}
+                    maxLength={1000}
+                  />
+                </FormField>
+              </div>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Concorrência</h2>
+            </div>
+
+            <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
+              <FormField label="Grupos exclusivos" asDiv hintText="Automações do mesmo grupo não rodam ao mesmo tempo.">
+                <SearchableMultiSelect
+                  label={exclusiveGroupsQuery.isLoading ? "Carregando..." : "Selecione os grupos"}
+                  options={exclusiveGroupOptions}
+                  selectedValues={form.exclusive_group_ids}
+                  onChange={(next) => handleChangeField("exclusive_group_ids", next)}
+                  disabled={exclusiveGroupsQuery.isLoading}
+                  emptyText="Nenhum grupo cadastrado."
+                  searchPlaceholder="Buscar grupo..."
+                />
+                <SelectedChips
+                  items={selectedExclusiveGroups.map((group) => ({
+                    id: group.id,
+                    label: group.label || group.name,
+                  }))}
+                  onRemove={toggleExclusiveGroup}
+                />
+              </FormField>
+
+              <FormField label="Novo grupo exclusivo" hintText="Cria o grupo ao salvar e já vincula esta automação.">
+                <input
+                  value={form.new_exclusive_group_name}
+                  onChange={(e) =>
+                    handleChangeField("new_exclusive_group_name", e.target.value)
+                  }
+                  className={input}
+                  maxLength={120}
+                  placeholder="Ex.: SAP_ZCONF_LOGIN_PADRAO"
+                />
+              </FormField>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Parâmetros do robô</h2>
+            </div>
+            <div className={cardBody}>
+              <p className="mb-4 text-sm text-slate-500">
+                Parâmetros padrão usados quando esta automação for disparada por gatilho de sucesso
+                e não houver parâmetros herdados.
+              </p>
+              <FormField label="Parâmetros de execução (runtime_parameters_json)" error={errors.default_runtime_parameters_json}>
+                <textarea
+                  value={form.default_runtime_parameters_json}
+                  onChange={(e) =>
+                    handleChangeField("default_runtime_parameters_json", e.target.value)
+                  }
+                  className={cn(textarea, "font-mono", errors.default_runtime_parameters_json && "border-red-400")}
+                  placeholder={'Ex.: { "filial": "001", "safra": "2026" }'}
+                  spellCheck={false}
+                  aria-invalid={!!errors.default_runtime_parameters_json}
+                />
+              </FormField>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Credenciais JSON</h2>
+              <button type="button" onClick={openCredentialsModal} className={btn.secondary}>
+                <KeyRound className="h-4 w-4" />
+                Usar credenciais
+              </button>
+            </div>
+            <div className={cn(cardBody, "space-y-3")}>
+              <p className="text-sm text-slate-500">
+                Credenciais padrão (dados_acesso) usadas quando esta automação for disparada por
+                gatilho de sucesso e não houver credenciais herdadas.
+              </p>
+              <FormField label="Parameters JSON (default_parameters_json)" error={errors.default_parameters_json}>
+                <textarea
+                  value={form.default_parameters_json}
+                  onChange={(e) =>
+                    handleChangeField("default_parameters_json", e.target.value)
+                  }
+                  className={cn(textarea, "min-h-[160px] font-mono", errors.default_parameters_json && "border-red-400")}
+                  placeholder={'Ex.: { "dados_acesso": { "credential_id": 1, "itens": { "email": null } } }'}
+                  spellCheck={false}
+                  aria-invalid={!!errors.default_parameters_json}
+                />
+              </FormField>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Gatilho de sucesso</h2>
+            </div>
+
+            <div className="grid gap-5 px-5 py-5">
+              <FormField label="Ao finalizar com sucesso, disparar" asDiv>
+                <SearchableMultiSelect
+                  label={
+                    triggerAutomationsQuery.isLoading
+                      ? "Carregando..."
+                      : "Selecione as automações"
+                  }
+                  options={triggerSelectOptions}
+                  selectedValues={form.success_trigger_automation_ids}
+                  onChange={(next) =>
+                    handleChangeField("success_trigger_automation_ids", next)
+                  }
+                  disabled={triggerAutomationsQuery.isLoading}
+                  emptyText="Nenhuma automação ativa disponível."
+                  searchPlaceholder="Buscar automação..."
+                />
+                <SelectedChips
+                  items={selectedTriggerAutomations.map((automation) => ({
+                    id: automation.id,
+                    label: automation.label
+                      ? `${automation.name} - ${automation.label}`
+                      : automation.name,
+                  }))}
+                  onRemove={toggleSuccessTriggerAutomation}
+                />
+              </FormField>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-4 md:px-6">
+          <button type="button" onClick={() => navigate(backTo)} className={btn.secondary} disabled={isSubmitting}>
+            Cancelar
+          </button>
+
+          <button type="submit" disabled={isSubmitting} className={btn.primary}>
+            <Save className="h-4 w-4" />
+            {isSubmitting ? "Salvando..." : "Salvar"}
           </button>
         </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(isEditMode ? `/automations/${automationId}` : "/automations")
-                }
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                {isEditMode ? "Voltar para detalhes" : "Voltar para automações"}
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">
-                {isEditMode ? "Editar Automação" : "Nova Automação"}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Cadastro e manutenção de automações.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {isEditMode && automationQuery.isLoading ? (
-          <div className="px-6 py-10 text-sm text-slate-500">
-            Carregando automação...
-          </div>
-        ) : isEditMode && (automationQuery.isError || !automationQuery.data) ? (
-          <div className="px-6 py-10 text-sm text-red-600">
-            Não foi possível carregar os dados da automação.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-6 px-6 py-6">
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Dados da automação
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Nome">
-                    <input
-                      value={form.name}
-                      onChange={(e) => handleChangeField("name", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      required
-                      maxLength={120}
-                    />
-                  </FormField>
-
-                  <FormField label="Label">
-                    <input
-                      value={form.label}
-                      onChange={(e) => handleChangeField("label", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      maxLength={150}
-                    />
-                  </FormField>
-
-                  <FormField label="Repositório">
-                    <SearchableSelect
-                      value={form.repository_id}
-                      onChange={(value) => handleChangeField("repository_id", value)}
-                      options={repositoryOptions}
-                      placeholder="Selecione"
-                      searchPlaceholder="Buscar repositório..."
-                      emptyText="Nenhum repositório encontrado."
-                      loading={repositoriesQuery.isLoading}
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Bot">
-                    <SearchableSelect
-                      value={form.bot_id}
-                      onChange={(value) => handleChangeField("bot_id", value)}
-                      options={botOptions}
-                      placeholder="Selecione"
-                      searchPlaceholder="Buscar bot..."
-                      emptyText={
-                        form.repository_id
-                          ? "Nenhum bot ativo neste repositório."
-                          : "Nenhum bot encontrado."
-                      }
-                      loading={botsQuery.isLoading}
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Prioridade padrão">
-                    <input
-                      value={form.default_priority}
-                      onChange={(e) => handleChangeField("default_priority", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      type="number"
-                      min={1}
-                      max={10}
-                      required
-                    />
-                  </FormField>
-
-                  <div className="flex items-end">
-                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
-                      <input
-                        checked={form.active}
-                        onChange={(e) => handleChangeField("active", e.target.checked)}
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      Automação ativa
-                    </label>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <FormField label="Descrição">
-                      <textarea
-                        value={form.description}
-                        onChange={(e) => handleChangeField("description", e.target.value)}
-                        className="min-h-[120px] w-full border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                        maxLength={1000}
-                      />
-                    </FormField>
-                  </div>
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Concorrencia
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Grupos exclusivos">
-                    <div>
-                      <SearchableMultiSelect
-                        label={exclusiveGroupsQuery.isLoading ? "Carregando..." : "Selecione os grupos"}
-                        options={exclusiveGroupOptions}
-                        selectedValues={form.exclusive_group_ids}
-                        onChange={(next) => handleChangeField("exclusive_group_ids", next)}
-                        disabled={exclusiveGroupsQuery.isLoading}
-                        emptyText="Nenhum grupo cadastrado."
-                        searchPlaceholder="Buscar grupo..."
-                      />
-                      <SelectedChips
-                        items={selectedExclusiveGroups.map((group) => ({
-                          id: group.id,
-                          label: group.label || group.name,
-                        }))}
-                        onRemove={toggleExclusiveGroup}
-                      />
-                    </div>
-                  </FormField>
-
-                  <FormField label="Novo grupo exclusivo">
-                    <input
-                      value={form.new_exclusive_group_name}
-                      onChange={(e) =>
-                        handleChangeField("new_exclusive_group_name", e.target.value)
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      maxLength={120}
-                      placeholder="Ex.: SAP_ZCONF_LOGIN_PADRAO"
-                    />
-                  </FormField>
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Parâmetros do robô
-                  </h2>
-                </div>
-                <div className="px-5 py-5">
-                  <p className="mb-4 text-sm text-slate-500">
-                    Parâmetros padrão usados quando esta automação for disparada por gatilho de sucesso
-                    e não houver parâmetros herdados.
-                  </p>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
-                        Parâmetros de execução (runtime_parameters_json)
-                      </label>
-                      <textarea
-                        value={form.default_runtime_parameters_json}
-                        onChange={(e) =>
-                          handleChangeField("default_runtime_parameters_json", e.target.value)
-                        }
-                        className={`min-h-[120px] w-full border bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900 ${
-                          jsonErrors.default_runtime_parameters_json
-                            ? "border-red-400"
-                            : "border-slate-300"
-                        }`}
-                        placeholder={'Ex.: { "filial": "001", "safra": "2026" }'}
-                        spellCheck={false}
-                      />
-                      {jsonErrors.default_runtime_parameters_json ? (
-                        <p className="mt-1 text-xs text-red-600">
-                          {jsonErrors.default_runtime_parameters_json}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Credenciais JSON
-                  </h2>
-                </div>
-                <div className="space-y-3 px-5 py-5">
-                  <p className="text-sm text-slate-500">
-                    Credenciais padrão (dados_acesso) usadas quando esta automação for disparada por
-                    gatilho de sucesso e não houver credenciais herdadas.
-                  </p>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={openCredentialsModal}
-                      className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                      Usar credenciais
-                    </button>
-                  </div>
-                  <textarea
-                    value={form.default_parameters_json}
-                    onChange={(e) =>
-                      handleChangeField("default_parameters_json", e.target.value)
-                    }
-                    className={`min-h-[160px] w-full border bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900 ${
-                      jsonErrors.default_parameters_json ? "border-red-400" : "border-slate-300"
-                    }`}
-                    placeholder={'Ex.: { "dados_acesso": { "credential_id": 1, "itens": { "email": null } } }'}
-                    spellCheck={false}
-                  />
-                  {jsonErrors.default_parameters_json ? (
-                    <p className="mt-1 text-xs text-red-600">
-                      {jsonErrors.default_parameters_json}
-                    </p>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Gatilho de sucesso
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5">
-                  <FormField label="Ao finalizar com sucesso, disparar">
-                    <div>
-                      <SearchableMultiSelect
-                        label={
-                          triggerAutomationsQuery.isLoading
-                            ? "Carregando..."
-                            : "Selecione as automações"
-                        }
-                        options={triggerSelectOptions}
-                        selectedValues={form.success_trigger_automation_ids}
-                        onChange={(next) =>
-                          handleChangeField("success_trigger_automation_ids", next)
-                        }
-                        disabled={triggerAutomationsQuery.isLoading}
-                        emptyText="Nenhuma automação ativa disponível."
-                        searchPlaceholder="Buscar automação..."
-                      />
-                      <SelectedChips
-                        items={selectedTriggerAutomations.map((automation) => ({
-                          id: automation.id,
-                          label: automation.label
-                            ? `${automation.name} - ${automation.label}`
-                            : automation.name,
-                        }))}
-                        onRemove={toggleSuccessTriggerAutomation}
-                      />
-                    </div>
-                  </FormField>
-                </div>
-              </section>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(isEditMode ? `/automations/${automationId}` : "/automations")
-                }
-                className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-              >
-                <Save className="h-4 w-4" />
-                {isSubmitting ? "Salvando..." : "Salvar"}
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
+      </form>
 
       {credentialsModalOpen ? (
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 px-4 py-6"
           onClick={closeCredentialsModal}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Usar credenciais no Parameters JSON"
         >
           <div
-            className="max-h-[90vh] w-full max-w-3xl overflow-hidden border border-slate-200 bg-white shadow-2xl"
+            className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">
                   Usar credenciais no Parameters JSON
@@ -842,24 +794,18 @@ export function AutomationFormPage() {
                   Selecione um repositório, uma credencial e as chaves que deseja injetar no JSON.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={closeCredentialsModal}
-                className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
-              >
+              <button type="button" onClick={closeCredentialsModal} className={btn.icon} aria-label="Fechar">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="max-h-[calc(90vh-144px)] space-y-6 overflow-y-auto px-6 py-6">
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Seleção da credencial
-                  </h3>
+              <section className={card}>
+                <div className={cardHeader}>
+                  <h3 className={cardTitle}>Seleção da credencial</h3>
                 </div>
                 <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Repositório">
+                  <FormField label="Repositório" asDiv>
                     <SearchableSelect
                       value={selectedRepositoryId ?? ""}
                       onChange={(value) => {
@@ -878,7 +824,7 @@ export function AutomationFormPage() {
                       disabled={credentialRepositoriesQuery.isLoading}
                     />
                   </FormField>
-                  <FormField label="Credencial">
+                  <FormField label="Credencial" asDiv>
                     <SearchableSelect
                       value={selectedCredentialId ?? ""}
                       onChange={(value) => {
@@ -899,7 +845,7 @@ export function AutomationFormPage() {
                 </div>
                 {selectedRepositoryName ? (
                   <div className="border-t border-slate-200 px-5 py-4">
-                    <div className="border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                       <span className="font-medium">Repositório selecionado: </span>
                       {selectedRepositoryName}
                     </div>
@@ -908,26 +854,27 @@ export function AutomationFormPage() {
               </section>
 
               {selectedCredentialId && credentialDetailQuery.isLoading ? (
-                <div className="border border-slate-200 bg-white px-5 py-6 text-sm text-slate-500">
-                  Carregando chaves da credencial...
+                <div className={cn(card, "px-5 py-5")}>
+                  <DetailSkeleton fields={4} />
                 </div>
               ) : null}
 
               {selectedCredentialId && credentialDetailQuery.isError ? (
-                <div className="border border-red-200 bg-red-50 px-5 py-6 text-sm text-red-700">
-                  Erro ao carregar os itens da credencial.
-                </div>
+                <QueryError
+                  error={credentialDetailQuery.error}
+                  what="os itens da credencial"
+                  onRetry={() => credentialDetailQuery.refetch()}
+                  retrying={credentialDetailQuery.isFetching}
+                />
               ) : null}
 
               {credentialDetailQuery.data ? (
-                <section className="border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Chaves disponíveis
-                    </h3>
+                <section className={card}>
+                  <div className={cardHeader}>
+                    <h3 className={cardTitle}>Chaves disponíveis</h3>
                   </div>
                   <div className="space-y-4 px-5 py-5">
-                    <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                       <p>
                         <span className="font-medium">Label:</span>{" "}
                         {credentialDetailQuery.data.label}
@@ -944,17 +891,16 @@ export function AutomationFormPage() {
                           return (
                             <label
                               key={item.id}
-                              className={`flex cursor-pointer items-start gap-3 border px-4 py-3 transition ${
-                                checked
-                                  ? "border-slate-950 bg-slate-50"
-                                  : "border-slate-200 bg-white hover:bg-slate-50"
-                              }`}
+                              className={cn(
+                                "flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 transition",
+                                checked ? "border-blue-500 bg-blue-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
+                              )}
                             >
                               <input
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => toggleSelectedKey(item.resolvedKey)}
-                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-slate-900">
@@ -969,22 +915,18 @@ export function AutomationFormPage() {
                         })}
                       </div>
                     ) : (
-                      <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                        Essa credencial não possui chaves válidas para seleção.
-                      </div>
+                      <EmptyState compact title="Sem chaves válidas" description="Essa credencial não possui chaves válidas para seleção." />
                     )}
                   </div>
                 </section>
               ) : null}
 
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Preview do bloco gerado
-                  </h3>
+              <section className={card}>
+                <div className={cardHeader}>
+                  <h3 className={cardTitle}>Preview do bloco gerado</h3>
                 </div>
-                <div className="px-5 py-5">
-                  <pre className="min-h-[180px] overflow-x-auto border border-slate-300 bg-slate-950 px-4 py-4 font-mono text-xs text-slate-100">
+                <div className={cardBody}>
+                  <pre className="min-h-[180px] overflow-x-auto rounded-lg border border-slate-300 bg-slate-950 px-4 py-4 font-mono text-xs text-slate-100">
 {JSON.stringify(
   {
     dados_acesso: {
@@ -1009,18 +951,14 @@ export function AutomationFormPage() {
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <button
-                type="button"
-                onClick={closeCredentialsModal}
-                className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
+              <button type="button" onClick={closeCredentialsModal} className={btn.secondary}>
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleGenerateCredentialJson}
                 disabled={!selectedRepositoryId || !selectedCredentialId || !selectedKeys.length}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                className={btn.primary}
               >
                 <KeyRound className="h-4 w-4" />
                 Gerar JSON
@@ -1029,24 +967,32 @@ export function AutomationFormPage() {
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
+// asDiv: para campos cujo controle não é um input nativo (SearchableSelect), evita que o clique no
+// label abra/feche o painel duas vezes.
 function FormField({
   label,
+  error,
+  hintText,
+  asDiv = false,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  error?: string;
+  hintText?: string;
+  asDiv?: boolean;
+  children: ReactNode;
 }) {
+  const Wrapper = asDiv ? "div" : "label";
   return (
-    <label className="block text-slate-900">
-      <span className="mb-2 block text-sm font-medium text-slate-700">
-        {label}
-      </span>
+    <Wrapper className="block min-w-0">
+      <span className={labelClass}>{label}</span>
       {children}
-    </label>
+      {error ? <p className={fieldError}>{error}</p> : hintText ? <p className={hint}>{hintText}</p> : null}
+    </Wrapper>
   );
 }
 
@@ -1062,10 +1008,7 @@ function SelectedChips({
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {items.map((item) => (
-        <span
-          key={item.id}
-          className="inline-flex max-w-full items-center gap-1 border border-slate-300 bg-slate-50 py-1 pl-2 pr-1 text-xs text-slate-700"
-        >
+        <span key={item.id} className={cn(chip, "max-w-full pr-1")}>
           <span className="max-w-[260px] truncate" title={item.label}>
             {item.label}
           </span>
@@ -1076,7 +1019,7 @@ function SelectedChips({
               onRemove(item.id);
             }}
             aria-label={`Remover ${item.label}`}
-            className="p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+            className="rounded-full p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
           >
             <X className="h-3 w-3" />
           </button>

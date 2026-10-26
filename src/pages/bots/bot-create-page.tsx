@@ -1,26 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { withApiDetail } from "@/lib/api-error";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  Monitor,
-  Save,
-  Server,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Monitor, Save, Server } from "lucide-react";
 
+import { PageHeader } from "@/components/common/page-header";
 import { SearchableSelect } from "@/components/common/searchable-select";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { badge, btn, card, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, select, textarea, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { createBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
+import { toast } from "@/store/toast-store";
 import type { BotCreatePayload as CreateBotPayload } from "@/types/bot";
 
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
+type ExecutionMode = "background" | "foreground";
 
 type CreateBotFormState = {
   initial_version: string;
@@ -29,7 +22,7 @@ type CreateBotFormState = {
   technology: string;
   repository_id: string;
   source_type: string;
-  execution_mode: "background" | "foreground";
+  execution_mode: ExecutionMode;
   source_url: string;
   entrypoint: string;
   requirements_file: string;
@@ -37,6 +30,8 @@ type CreateBotFormState = {
   active: boolean;
   auto_update: boolean;
 };
+
+type FieldErrors = Partial<Record<keyof CreateBotFormState, string>>;
 
 const initialFormState: CreateBotFormState = {
   initial_version: "1.0.0",
@@ -54,7 +49,7 @@ const initialFormState: CreateBotFormState = {
   auto_update: false,
 };
 
-function getExecutionModeContent(mode: "background" | "foreground") {
+function getExecutionModeContent(mode: ExecutionMode) {
   if (mode === "background") {
     return {
       title: "Execução em background",
@@ -65,10 +60,8 @@ function getExecutionModeContent(mode: "background" | "foreground") {
       warning:
         "Se o bot precisa de tela, janela ativa, sessão logada ou interação visual, ele não vai funcionar corretamente em background.",
       icon: Server,
-      badgeClassName:
-        "border border-emerald-200 bg-emerald-50 text-emerald-700",
-      panelClassName: "border border-emerald-200 bg-emerald-50/50",
-      alertClassName: "border border-red-200 bg-red-50 text-red-800",
+      panelClassName: "border-emerald-200 bg-emerald-50/50",
+      alertClassName: "border-red-200 bg-red-50 text-red-800",
     };
   }
 
@@ -81,17 +74,16 @@ function getExecutionModeContent(mode: "background" | "foreground") {
     warning:
       "Esse modo deve ser usado quando o bot precisa acessar tela. Escolher foreground corretamente evita falhas de execução em bots que dependem da interface do usuário.",
     icon: Monitor,
-    badgeClassName: "border border-amber-200 bg-amber-50 text-amber-700",
-    panelClassName: "border border-amber-200 bg-amber-50/50",
-    alertClassName: "border border-amber-200 bg-amber-50 text-amber-800",
+    panelClassName: "border-amber-200 bg-amber-50/50",
+    alertClassName: "border-amber-200 bg-amber-50 text-amber-800",
   };
 }
 
 export function BotCreatePage() {
   const navigate = useNavigate();
 
-  const [toast, setToast] = useState<ToastState>(null);
   const [form, setForm] = useState<CreateBotFormState>(initialFormState);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const repositoriesQuery = useQuery({
     queryKey: ["repositories-options"],
@@ -103,29 +95,14 @@ export function BotCreatePage() {
     [form.execution_mode]
   );
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
   const createMutation = useMutation({
     mutationFn: (payload: CreateBotPayload) => createBot(payload),
-    onSuccess: () => {
-      setToast({
-        type: "success",
-        message: "Bot cadastrado com sucesso.",
-      });
-
-      setTimeout(() => {
-        navigate("/bots");
-      }, 800);
+    onSuccess: (data) => {
+      toast.success(`Bot "${data.name}" cadastrado.`);
+      navigate("/bots");
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível cadastrar o bot.", error),
-      });
+      toast.error(getApiErrorMessage(error, "Não foi possível cadastrar o bot."));
     },
   });
 
@@ -137,10 +114,34 @@ export function BotCreatePage() {
       ...prev,
       [field]: value,
     }));
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  }
+
+  function validate(): FieldErrors {
+    const next: FieldErrors = {};
+    if (!form.name.trim()) next.name = "Informe o nome.";
+    if (!form.initial_version.trim()) next.initial_version = "Informe a versão inicial (ex.: 1.0.0).";
+    if (!form.repository_id) next.repository_id = "Selecione o repositório.";
+    if (!form.technology.trim()) next.technology = "Informe a tecnologia.";
+    if (!form.source_type.trim()) next.source_type = "Informe o tipo de origem.";
+    if (!form.source_url.trim()) next.source_url = "Informe a URL de origem.";
+    if (!form.entrypoint.trim()) next.entrypoint = "Informe o entrypoint.";
+    if (!form.requirements_file.trim()) next.requirements_file = "Informe o arquivo de requirements.";
+    const timeout = Number(form.timeout_default);
+    if (!Number.isInteger(timeout) || timeout < 1) next.timeout_default = "Use um número inteiro maior que zero.";
+    return next;
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    const nextErrors = validate();
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      return;
+    }
 
     const payload: CreateBotPayload = {
       initial_version: form.initial_version.trim(),
@@ -163,87 +164,43 @@ export function BotCreatePage() {
 
   const repositories = repositoriesQuery.data ?? [];
   const ExecutionModeIcon = executionModeContent.icon;
+  const isSubmitting = createMutation.isPending;
 
   return (
     <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
+      <section className={card}>
+        <PageHeader
+          backTo="/bots"
+          backLabel="Voltar para bots"
+          title="Novo bot"
+          description="Informe onde está o código, como ele roda e o tempo limite padrão."
+        />
 
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate("/bots")}
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para bots
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">
-                Novo Bot
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Cadastro de novo bot no sistema.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-6 px-6 py-6">
-            <section className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                  Dados principais
-                </h2>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="space-y-6 px-5 py-5 md:px-6">
+            <section className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Dados principais</h2>
               </div>
 
               <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                <FormField label="Nome">
+                <FormField label="Nome" error={errors.name}>
                   <input
                     value={form.name}
                     onChange={(e) => handleChangeField("name", e.target.value)}
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    className={input}
                     placeholder="Nome do bot"
-                    required
+                    aria-invalid={!!errors.name}
                   />
                 </FormField>
 
-                <FormField label="Versão inicial">
+                <FormField label="Versão inicial" error={errors.initial_version} hintText="Primeira versão registrada para o bot.">
                   <input
                     value={form.initial_version}
-                    onChange={(e) =>
-                      handleChangeField("initial_version", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("initial_version", e.target.value)}
+                    className={cn(input, "font-mono")}
                     placeholder="1.0.0"
-                    required
+                    aria-invalid={!!errors.initial_version}
                   />
                 </FormField>
 
@@ -251,10 +208,8 @@ export function BotCreatePage() {
                   <FormField label="Descrição">
                     <textarea
                       value={form.description}
-                      onChange={(e) =>
-                        handleChangeField("description", e.target.value)
-                      }
-                      className="min-h-[110px] w-full border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      onChange={(e) => handleChangeField("description", e.target.value)}
+                      className={cn(textarea, "min-h-[110px]")}
                       placeholder="Descrição do bot"
                       maxLength={500}
                     />
@@ -263,23 +218,16 @@ export function BotCreatePage() {
               </div>
             </section>
 
-            <section className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                  Configuração
-                </h2>
+            <section className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Configuração</h2>
               </div>
 
               <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                <FormField label="Repositório">
+                <FormField label="Repositório" error={errors.repository_id} asDiv>
                   <SearchableSelect<number>
                     value={form.repository_id ? Number(form.repository_id) : ""}
-                    onChange={(value) =>
-                      handleChangeField(
-                        "repository_id",
-                        value === "" ? "" : String(value)
-                      )
-                    }
+                    onChange={(value) => handleChangeField("repository_id", value === "" ? "" : String(value))}
                     options={repositories.map((repository) => ({
                       value: repository.id,
                       label: repository.name,
@@ -292,41 +240,31 @@ export function BotCreatePage() {
                   />
                 </FormField>
 
-                <FormField label="Tecnologia">
+                <FormField label="Tecnologia" error={errors.technology}>
                   <input
                     value={form.technology}
-                    onChange={(e) =>
-                      handleChangeField("technology", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("technology", e.target.value)}
+                    className={input}
                     placeholder="python"
-                    required
+                    aria-invalid={!!errors.technology}
                   />
                 </FormField>
 
-                <FormField label="Tipo de origem">
+                <FormField label="Tipo de origem" error={errors.source_type}>
                   <input
                     value={form.source_type}
-                    onChange={(e) =>
-                      handleChangeField("source_type", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("source_type", e.target.value)}
+                    className={input}
                     placeholder="git"
-                    required
+                    aria-invalid={!!errors.source_type}
                   />
                 </FormField>
 
                 <FormField label="Tipo de execução">
                   <select
                     value={form.execution_mode}
-                    onChange={(e) =>
-                      handleChangeField(
-                        "execution_mode",
-                        e.target.value as "background" | "foreground"
-                      )
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    required
+                    onChange={(e) => handleChangeField("execution_mode", e.target.value as ExecutionMode)}
+                    className={select}
                   >
                     <option value="background">Background</option>
                     <option value="foreground">Foreground</option>
@@ -334,14 +272,11 @@ export function BotCreatePage() {
                 </FormField>
 
                 <div className="md:col-span-2">
-                  <div className="rounded-sm border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-sm font-semibold text-slate-900">
-                      Escolha corretamente o tipo de execução
-                    </p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-semibold text-slate-900">Escolha corretamente o tipo de execução</p>
                     <p className="mt-1 text-sm leading-6 text-slate-700">
-                      Essa configuração define como o worker vai executar o bot.
-                      Selecionar o modo errado pode fazer a automação falhar,
-                      mesmo com código correto.
+                      Essa configuração define como o worker vai executar o bot. Selecionar o modo errado pode fazer a
+                      automação falhar, mesmo com código correto.
                     </p>
                   </div>
                 </div>
@@ -352,47 +287,33 @@ export function BotCreatePage() {
                       title="Background"
                       description="Para bots que executam sem depender de tela, interface gráfica ou interação visual."
                       active={form.execution_mode === "background"}
-                      badgeClassName="border border-emerald-200 bg-emerald-50 text-emerald-700"
-                      onClick={() =>
-                        handleChangeField("execution_mode", "background")
-                      }
+                      badgeClassName={tone.success}
+                      onClick={() => handleChangeField("execution_mode", "background")}
                     />
 
                     <ExecutionModeOptionCard
                       title="Foreground"
                       description="Para bots que precisam abrir sistema, clicar, digitar, focar janela ou interagir com a área de trabalho."
                       active={form.execution_mode === "foreground"}
-                      badgeClassName="border border-amber-200 bg-amber-50 text-amber-700"
-                      onClick={() =>
-                        handleChangeField("execution_mode", "foreground")
-                      }
+                      badgeClassName={tone.warning}
+                      onClick={() => handleChangeField("execution_mode", "foreground")}
                     />
                   </div>
                 </div>
 
                 <div className="md:col-span-2">
-                  <div
-                    className={`flex gap-3 px-4 py-4 text-sm text-slate-700 ${executionModeContent.panelClassName}`}
-                  >
+                  <div className={cn("flex gap-3 rounded-lg border px-4 py-4 text-sm text-slate-700", executionModeContent.panelClassName)}>
                     <ExecutionModeIcon className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
-                      <p className="font-semibold text-slate-900">
-                        {executionModeContent.title}
-                      </p>
-                      <p className="mt-1 leading-6 text-slate-700">
-                        {executionModeContent.description}
-                      </p>
-                      <p className="mt-3 leading-6 text-slate-700">
-                        {executionModeContent.importance}
-                      </p>
+                      <p className="font-semibold text-slate-900">{executionModeContent.title}</p>
+                      <p className="mt-1 leading-6 text-slate-700">{executionModeContent.description}</p>
+                      <p className="mt-3 leading-6 text-slate-700">{executionModeContent.importance}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="md:col-span-2">
-                  <div
-                    className={`flex gap-3 border px-4 py-3 ${executionModeContent.alertClassName}`}
-                  >
+                  <div className={cn("flex gap-3 rounded-lg border px-4 py-3", executionModeContent.alertClassName)}>
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <div className="text-sm leading-6">
                       <span className="font-semibold">Atenção: </span>
@@ -401,66 +322,56 @@ export function BotCreatePage() {
                   </div>
                 </div>
 
-                <FormField label="Entrypoint">
+                <FormField label="Entrypoint" error={errors.entrypoint}>
                   <input
                     value={form.entrypoint}
-                    onChange={(e) =>
-                      handleChangeField("entrypoint", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("entrypoint", e.target.value)}
+                    className={cn(input, "font-mono")}
                     placeholder="main.py"
-                    required
+                    aria-invalid={!!errors.entrypoint}
                   />
                 </FormField>
 
-                <FormField label="Requirements file">
+                <FormField label="Requirements file" error={errors.requirements_file}>
                   <input
                     value={form.requirements_file}
-                    onChange={(e) =>
-                      handleChangeField("requirements_file", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("requirements_file", e.target.value)}
+                    className={cn(input, "font-mono")}
                     placeholder="requirements.txt"
-                    required
+                    aria-invalid={!!errors.requirements_file}
                   />
                 </FormField>
 
-                <FormField label="Timeout padrão (segundos)">
+                <FormField label="Timeout padrão (segundos)" error={errors.timeout_default} hintText="Tempo máximo de uma execução antes de ser encerrada.">
                   <input
                     value={form.timeout_default}
-                    onChange={(e) =>
-                      handleChangeField("timeout_default", e.target.value)
-                    }
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                    onChange={(e) => handleChangeField("timeout_default", e.target.value)}
+                    className={input}
                     type="number"
                     min={1}
-                    required
+                    aria-invalid={!!errors.timeout_default}
                   />
                 </FormField>
 
                 <div className="md:col-span-2">
-                  <FormField label="URL de origem">
+                  <FormField label="URL de origem" error={errors.source_url}>
                     <input
                       value={form.source_url}
-                      onChange={(e) =>
-                        handleChangeField("source_url", e.target.value)
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      onChange={(e) => handleChangeField("source_url", e.target.value)}
+                      className={cn(input, "font-mono")}
                       placeholder="https://..."
-                      required
+                      aria-invalid={!!errors.source_url}
                     />
                   </FormField>
                 </div>
 
-                <div className="md:col-span-2 flex flex-col gap-4">
+                <div className="flex flex-col gap-4 md:col-span-2">
                   <label className="inline-flex items-center gap-3 text-sm text-slate-700">
                     <input
                       checked={form.active}
-                      onChange={(e) =>
-                        handleChangeField("active", e.target.checked)
-                      }
+                      onChange={(e) => handleChangeField("active", e.target.checked)}
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     Bot ativo
                   </label>
@@ -469,15 +380,13 @@ export function BotCreatePage() {
                     <label className="inline-flex items-center gap-3 text-sm text-slate-700">
                       <input
                         checked={form.auto_update}
-                        onChange={(e) =>
-                          handleChangeField("auto_update", e.target.checked)
-                        }
+                        onChange={(e) => handleChangeField("auto_update", e.target.checked)}
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300"
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                       Atualização automática
                     </label>
-                    <p className="mt-1 ml-7 text-xs text-slate-500">
+                    <p className={cn(hint, "ml-7")}>
                       Quando ativado, o worker faz git pull antes de cada execução e cria uma nova versão automaticamente se detectar código novo.
                     </p>
                   </div>
@@ -486,22 +395,14 @@ export function BotCreatePage() {
             </section>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={() => navigate("/bots")}
-              className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
+          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-4 md:px-6">
+            <button type="button" onClick={() => navigate("/bots")} className={btn.secondary} disabled={isSubmitting}>
               Cancelar
             </button>
 
-            <button
-              type="submit"
-              disabled={createMutation.isPending}
-              className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-            >
+            <button type="submit" disabled={isSubmitting} className={btn.primary}>
               <Save className="h-4 w-4" />
-              {createMutation.isPending ? "Salvando..." : "Salvar"}
+              {isSubmitting ? "Salvando..." : "Salvar"}
             </button>
           </div>
         </form>
@@ -512,18 +413,24 @@ export function BotCreatePage() {
 
 function FormField({
   label,
+  error,
+  hintText,
+  asDiv = false,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  error?: string;
+  hintText?: string;
+  asDiv?: boolean;
+  children: ReactNode;
 }) {
+  const Wrapper = asDiv ? "div" : "label";
   return (
-    <label className="block text-slate-900">
-      <span className="mb-2 block text-sm font-medium text-slate-700">
-        {label}
-      </span>
+    <Wrapper className="block min-w-0">
+      <span className={labelClass}>{label}</span>
       {children}
-    </label>
+      {error ? <p className={fieldError}>{error}</p> : hintText ? <p className={hint}>{hintText}</p> : null}
+    </Wrapper>
   );
 }
 
@@ -544,23 +451,19 @@ function ExecutionModeOptionCard({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full border px-4 py-4 text-left transition ${
-        active
-          ? "border-slate-900 bg-slate-50"
-          : "border-slate-200 bg-white hover:bg-slate-50"
-      }`}
+      aria-pressed={active}
+      className={cn(
+        "w-full rounded-lg border px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+        active ? "border-blue-500 bg-blue-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-900">{title}</p>
-          <p className="mt-1 text-sm leading-6 text-slate-700">
-            {description}
-          </p>
+          <p className="mt-1 text-sm leading-6 text-slate-700">{description}</p>
         </div>
 
-        <span
-          className={`inline-flex shrink-0 items-center rounded-sm px-2.5 py-1 text-xs font-semibold ${badgeClassName}`}
-        >
+        <span className={cn(badge, "shrink-0", active ? badgeClassName : tone.neutral)}>
           {active ? "Selecionado" : "Opção"}
         </span>
       </div>
