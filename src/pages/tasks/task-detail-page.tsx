@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -18,8 +18,8 @@ import {
   MemoryStick,
   Network,
   OctagonX,
+  ChevronRight,
   RefreshCcw,
-  ScrollText,
   Server,
   ShieldCheck,
   SquareX,
@@ -31,37 +31,47 @@ import {
   getTask,
   listTaskLogs,
   requestStopTask,
+  type TaskLogItem,
+  type TaskRead,
   type TaskStatus,
 } from "@/services/api/tasks";
 import { StatusBadge } from "@/components/common/status-badge";
 import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
 import { withApiDetail } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
+import { TaskLogConsole } from "./task-log-console";
+import { buildConsoleLines, normalizeDisplayText, splitFinalMessage } from "./task-log-utils";
 
 const LIVE_STATUSES = ["running", "waiting", "ready", "stop_requested"];
+const FAILED_STATUSES = ["error", "timeout", "forced_stop", "canceled", "failed"];
 const DETAIL_REFRESH_MS = 5_000;
 
-type TaskLogItem = {
-  id: number;
-  task_id: number;
-  level?: string | null;
-  message?: string | null;
-  reference?: string | null;
-  error_type?: string | null;
-  source?: string | null;
-  sequence_number?: number | null;
-  runner_id?: number | null;
-  event_code?: string | null;
-  created_at?: string | null;
+const EXECUTION_MODE_LABEL: Record<string, string> = {
+  manual: "Manual",
+  api: "API",
+  retry: "Retry automático",
+  reprocess: "Reprocessamento",
+  scheduled: "Agendamento",
 };
 
-type GroupedLog = {
-  id: string;
-  level?: string | null;
-  created_at?: string | null;
-  message: string;
-  lines: TaskLogItem[];
-};
+// "Criado por": o agendamento quando foi automático, senão quem disparou.
+function describeOrigin(task?: TaskRead): { text: string; to?: string } {
+  if (!task) return { text: "---" };
+  if (task.schedule_id || task.schedule_name || task.execution_mode === "scheduled") {
+    return {
+      text: `Agendamento${task.schedule_name ? `: ${task.schedule_name}` : ""}`,
+      to: task.schedule_id ? `/schedules/${task.schedule_id}` : undefined,
+    };
+  }
+  if (task.execution_mode === "retry" && task.parent_task_id) {
+    return { text: `Retry da task #${task.parent_task_id}`, to: `/tasks/${task.parent_task_id}` };
+  }
+  const mode = EXECUTION_MODE_LABEL[task.execution_mode] ?? task.execution_mode;
+  if (task.created_by_name) {
+    return { text: task.execution_mode === "manual" ? task.created_by_name : `${task.created_by_name} (${mode})` };
+  }
+  return { text: mode || "---" };
+}
 
 type TaskParameterItem = {
   id: number;
@@ -121,24 +131,6 @@ function clampPercent(value?: number | null) {
   return Math.max(0, Math.min(100, value));
 }
 
-function getLevelClasses(level?: string | null) {
-  const normalized = String(level || "").toLowerCase();
-
-  if (normalized === "error") {
-    return "border-red-200 bg-red-50 text-red-700";
-  }
-
-  if (normalized === "warning" || normalized === "warn") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  if (normalized === "success") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-
-  return "border-slate-200 bg-slate-100 text-slate-700";
-}
-
 function getHeaderTone(status?: TaskStatus | string | null) {
   const normalized = String(status || "").toLowerCase();
 
@@ -195,53 +187,6 @@ function getPageTitle() {
   return "Detalhes da Task";
 }
 
-function tryDecodeEscapedUnicode(text: string) {
-  if (!text.includes("\\u")) return text;
-
-  try {
-    const escaped = text
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, "\\n")
-      .replace(/\r/g, "\\r")
-      .replace(/\t/g, "\\t");
-
-    return JSON.parse(`"${escaped}"`);
-  } catch {
-    return text;
-  }
-}
-
-function tryFixMojibake(text: string) {
-  const suspicious = /Ã|Â|â|ð|�/.test(text);
-
-  if (!suspicious) return text;
-
-  try {
-    const bytes = Uint8Array.from([...text].map((char) => char.charCodeAt(0) & 0xff));
-    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-
-    if (decoded && decoded !== text) {
-      return decoded;
-    }
-
-    return text;
-  } catch {
-    return text;
-  }
-}
-
-function normalizeDisplayText(value?: string | null) {
-  if (!value) return "---";
-
-  let text = String(value);
-
-  text = tryDecodeEscapedUnicode(text);
-  text = tryFixMojibake(text);
-
-  return text;
-}
-
 function formatResultJson(value?: string | null) {
   const normalized = normalizeDisplayText(value);
 
@@ -252,169 +197,6 @@ function formatResultJson(value?: string | null) {
   } catch {
     return normalized;
   }
-}
-
-function extractTracebackText(value?: string | null) {
-  const normalized = normalizeDisplayText(value);
-
-  if (!normalized || normalized === "---") return "";
-
-  const upper = normalized.toUpperCase();
-  const marker = "TRACEBACK:";
-
-  if (upper.includes(marker)) {
-    const index = upper.indexOf(marker);
-    return normalized.slice(index + marker.length).trim();
-  }
-
-  if (
-    normalized.includes("Traceback") ||
-    normalized.includes("Erro durante") ||
-    normalized.includes("File ") ||
-    normalized.includes("Exception")
-  ) {
-    return normalized.trim();
-  }
-
-  return "";
-}
-
-function isLikelyStructuredBlockLine(message?: string | null) {
-  const text = String(message || "").trim();
-
-  if (!text) return false;
-
-  return (
-    text === "{" ||
-    text === "}" ||
-    text === "[" ||
-    text === "]" ||
-    text.startsWith('"') ||
-    text.includes('":') ||
-    text.startsWith("Traceback") ||
-    text.startsWith("File ") ||
-    text.startsWith("During handling of the above exception") ||
-    text.startsWith("requests.exceptions.") ||
-    text.startsWith("Exception:") ||
-    text.startsWith(
-      "================================================================================"
-    ) ||
-    text.startsWith("[SUCESSO]") ||
-    text.startsWith("[ERRO]") ||
-    text.startsWith("[WARNING]") ||
-    text.startsWith("[INFO]")
-  );
-}
-
-function shouldJoinLogLine(current: TaskLogItem, previous: TaskLogItem | null) {
-  if (!previous) return false;
-
-  const currentLevel = String(current.level || "").toLowerCase();
-  const previousLevel = String(previous.level || "").toLowerCase();
-
-  if (currentLevel !== previousLevel) return false;
-  if ((current.source || null) !== (previous.source || null)) return false;
-  if ((current.error_type || null) !== (previous.error_type || null)) {
-    return false;
-  }
-  if ((current.event_code || null) !== (previous.event_code || null)) {
-    return false;
-  }
-
-  const currentSeq = current.sequence_number;
-  const previousSeq = previous.sequence_number;
-
-  if (
-    typeof currentSeq === "number" &&
-    typeof previousSeq === "number" &&
-    currentSeq === previousSeq + 1
-  ) {
-    const previousLooksStructured = isLikelyStructuredBlockLine(previous.message);
-    const currentLooksStructured = isLikelyStructuredBlockLine(current.message);
-
-    if (previousLooksStructured || currentLooksStructured) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function groupLogs(logs: TaskLogItem[]): GroupedLog[] {
-  if (!logs.length) return [];
-
-  const ordered = [...logs].sort((a, b) => {
-    const seqA =
-      typeof a.sequence_number === "number"
-        ? a.sequence_number
-        : Number.MAX_SAFE_INTEGER;
-    const seqB =
-      typeof b.sequence_number === "number"
-        ? b.sequence_number
-        : Number.MAX_SAFE_INTEGER;
-
-    if (seqA !== seqB) return seqA - seqB;
-
-    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-
-    if (timeA !== timeB) return timeA - timeB;
-
-    return a.id - b.id;
-  });
-
-  const groups: GroupedLog[] = [];
-  let currentGroup: GroupedLog | null = null;
-  let previousLine: TaskLogItem | null = null;
-
-  for (const log of ordered) {
-    if (!currentGroup) {
-      currentGroup = {
-        id: `group-${log.id}`,
-        level: log.level,
-        created_at: log.created_at,
-        message: normalizeDisplayText(log.message),
-        lines: [log],
-      };
-      previousLine = log;
-      continue;
-    }
-
-    if (shouldJoinLogLine(log, previousLine)) {
-      currentGroup.lines.push(log);
-      currentGroup.message = `${currentGroup.message}\n${normalizeDisplayText(log.message)}`;
-      currentGroup.created_at = log.created_at;
-    } else {
-      groups.push(currentGroup);
-      currentGroup = {
-        id: `group-${log.id}`,
-        level: log.level,
-        created_at: log.created_at,
-        message: normalizeDisplayText(log.message),
-        lines: [log],
-      };
-    }
-
-    previousLine = log;
-  }
-
-  if (currentGroup) {
-    groups.push(currentGroup);
-  }
-
-  return groups;
-}
-
-function shouldRenderAsBlock(message?: string | null) {
-  const text = String(message || "");
-
-  return (
-    text.includes("\n") ||
-    text.includes('":') ||
-    text.includes("Traceback") ||
-    text.includes("TRACEBACK") ||
-    text.includes("================================================================================")
-  );
 }
 
 function tryFormatJson(value?: string | null) {
@@ -640,7 +422,7 @@ export function TaskDetailPage() {
 
   const taskLogsQuery = useQuery({
     queryKey: ["task-logs", taskId],
-    queryFn: () => listTaskLogs(taskId),
+    queryFn: () => listTaskLogs(taskId, 500),
     enabled: Number.isFinite(taskId) && taskId > 0,
     refetchInterval: isLive ? DETAIL_REFRESH_MS : false,
     refetchIntervalInBackground: false,
@@ -693,21 +475,24 @@ export function TaskDetailPage() {
     requestStopMutation.isPending ||
     forceStopMutation.isPending;
 
-  const rawLogs = useMemo<TaskLogItem[]>(() => {
-    return (taskLogsQuery.data?.items ?? []) as TaskLogItem[];
-  }, [taskLogsQuery.data]);
+  const rawLogs = useMemo<TaskLogItem[]>(() => taskLogsQuery.data?.items ?? [], [taskLogsQuery.data]);
 
-  const logs = useMemo(() => {
-    return groupLogs(rawLogs);
-  }, [rawLogs]);
+  const failed = FAILED_STATUSES.includes(status);
+  const consoleLines = useMemo(
+    () => buildConsoleLines(rawLogs, task?.final_message, failed, task?.finished_at),
+    [rawLogs, task?.final_message, failed, task?.finished_at]
+  );
 
-  // motivo da espera: ultimo log de sistema enquanto a task esta waiting/ready
+  // motivo da espera: log de sistema mais recente enquanto a task esta waiting/ready
   const waitingReason = useMemo(() => {
     if (status !== "waiting" && status !== "ready") return null;
     const systemLogs = rawLogs.filter(
       (log) => String(log.source ?? "").toLowerCase() === "system" && log.message
     );
-    return systemLogs.length > 0 ? systemLogs[systemLogs.length - 1] : null;
+    return systemLogs.reduce<TaskLogItem | null>(
+      (newest, log) => (!newest || log.id > newest.id ? log : newest),
+      null
+    );
   }, [rawLogs, status]);
 
   const executionDuration = useMemo(() => {
@@ -730,9 +515,9 @@ export function TaskDetailPage() {
   }, [task]);
 
   const headerTone = getHeaderTone(task?.status);
-  const finalMessage = normalizeDisplayText(task?.final_message);
-  const tracebackText = extractTracebackText(task?.final_message);
+  const finalSummary = splitFinalMessage(task?.final_message);
   const resultJsonText = formatResultJson(task?.result_json);
+  const origin = describeOrigin(task);
 
   async function handleRefresh() {
     await taskQuery.refetch();
@@ -890,7 +675,7 @@ export function TaskDetailPage() {
               {activeTab === "general" ? (
                 <div className="space-y-6">
                   <section className={`border ${headerTone.wrapper} px-5 py-4`}>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="flex min-w-0 items-start gap-3">
                         <div className={`rounded-xl border p-3 ${headerTone.icon}`}>
                           {String(task.status || "").toLowerCase() === "finished" ? (
@@ -903,22 +688,32 @@ export function TaskDetailPage() {
                         </div>
 
                         <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Visão geral
-                          </p>
-                          <h2 className={`mt-1 text-xl font-semibold break-words ${headerTone.title}`}>
+                          <h2 className={`text-xl font-semibold break-words ${headerTone.title}`}>
                             {task.automation_name || "Task"} #{task.id}
                           </h2>
-                          <p className={`mt-1 text-sm ${headerTone.text}`}>
-                            Informações principais da execução com os vínculos corretos da task.
-                          </p>
+                          {finalSummary.headline ? (
+                            <p className={`mt-1 text-sm break-words ${headerTone.text}`}>{finalSummary.headline}</p>
+                          ) : (
+                            <p className={`mt-1 text-sm ${headerTone.text}`}>
+                              {status === "running" || status === "stop_requested"
+                                ? "Execução em andamento."
+                                : status === "waiting" || status === "ready"
+                                  ? "Na fila, aguardando uma máquina."
+                                  : status === "scheduled"
+                                    ? "Agendada para começar mais tarde."
+                                    : "Sem mensagem final."}
+                            </p>
+                          )}
+                          {finalSummary.errorLine && finalSummary.errorLine !== finalSummary.headline ? (
+                            <p className="mt-1 font-mono text-xs break-words text-red-700">{finalSummary.errorLine}</p>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                         <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
                           <Clock3 className="h-4 w-4 text-slate-400" />
-                          <span>Duração: {formatDuration(executionDuration)}</span>
+                          <span>{formatDuration(executionDuration)}</span>
                         </div>
 
                         <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
@@ -926,187 +721,94 @@ export function TaskDetailPage() {
                           <span>Processados: {String(task.items_processed ?? 0)}</span>
                         </div>
 
-                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                        <div
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 ${
+                            (task.items_failed ?? 0) > 0
+                              ? "border-amber-300 bg-amber-50 text-amber-800"
+                              : "border-slate-200 bg-white"
+                          }`}
+                        >
                           <AlertCircle className="h-4 w-4 text-amber-600" />
-                          <span>Falhas: {String(task.items_failed ?? 0)}</span>
+                          <span>Com falha: {String(task.items_failed ?? 0)}</span>
                         </div>
                       </div>
                     </div>
                   </section>
 
                   <Section title="Resumo">
-                    <div className="grid gap-x-8 gap-y-7 md:grid-cols-2 xl:grid-cols-4">
-                      <InfoItem label="ID" value={String(task.id)} />
-                      <InfoItem label="Status" value={<StatusBadge status={task.status} />} />
-                      <InfoItem label="Prioridade" value={String(task.priority)} />
-                      <InfoItem label="Modo de execução" value={task.execution_mode || "---"} />
-
-                      <InfoItem label="Automação" value={task.automation_name || "---"} />
+                    <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-4">
+                      <InfoItem
+                        label="Automação"
+                        value={
+                          <Link className="hover:underline" to={`/automations/${task.automation_id}`}>
+                            {task.automation_name || `#${task.automation_id}`}
+                          </Link>
+                        }
+                      />
                       <InfoItem label="Versão do bot" value={task.bot_version_label || "---"} />
                       <InfoItem
-                        label="Runner executor"
-                        value={task.runner_display_name || task.runner_name || "---"}
-                      />
-                      <InfoItem label="Criado por" value={task.created_by_name || "---"} />
-
-                      <InfoItem label="Agendamento" value={task.schedule_name || "---"} />
-                      <InfoItem label="Fila" value={task.queue_name || "---"} />
-                      <InfoItem label="Correlation ID" value={task.correlation_id || "---"} />
-                      <InfoItem
-                        label="Tempo de execução"
+                        label="Máquina"
                         value={
-                          <span className="inline-flex items-center gap-2">
-                            <Clock3 className="h-4 w-4 text-slate-400" />
-                            {formatDuration(executionDuration)}
-                          </span>
+                          task.runner_id ? (
+                            <Link className="hover:underline" to={`/runners/${task.runner_id}`}>
+                              {task.runner_display_name || task.runner_name || `#${task.runner_id}`}
+                            </Link>
+                          ) : (
+                            <span className="text-slate-500">Ainda não atribuída</span>
+                          )
+                        }
+                      />
+                      <InfoItem
+                        label="Criado por"
+                        value={
+                          origin.to ? (
+                            <Link className="hover:underline" to={origin.to}>
+                              {origin.text}
+                            </Link>
+                          ) : (
+                            origin.text
+                          )
                         }
                       />
 
-                      <InfoItem label="Itens processados" value={String(task.items_processed ?? 0)} />
-                      <InfoItem label="Itens com falha" value={String(task.items_failed ?? 0)} />
-                      <InfoItem
-                        label="Timeout"
-                        value={task.timeout_seconds ? `${task.timeout_seconds}s` : "---"}
-                      />
-                      <InfoItem
-                        label="Timeout de inatividade"
-                        value={
-                          task.inactivity_timeout_seconds
-                            ? `${task.inactivity_timeout_seconds}s`
-                            : "---"
-                        }
-                      />
-
-                      <InfoItem label="Retry count" value={String(task.retry_count ?? 0)} />
-                      <InfoItem
-                        label="Dispatch attempts"
-                        value={String(task.dispatch_attempts ?? 0)}
-                      />
-                      <InfoItem
-                        label="Stop requested"
-                        value={formatBoolean(task.stop_requested)}
-                      />
-                    </div>
-                  </Section>
-
-                  <Section title="Datas">
-                    <div className="grid gap-x-8 gap-y-7 md:grid-cols-2 xl:grid-cols-3">
                       <InfoItem label="Criada em" value={formatDateTime(task.created_at)} />
-                      <InfoItem label="Atualizada em" value={formatDateTime(task.updated_at)} />
-                      <InfoItem
-                        label="Solicitada para"
-                        value={formatDateTime(task.requested_start_at)}
-                      />
                       <InfoItem label="Iniciada em" value={formatDateTime(task.started_at)} />
                       <InfoItem label="Finalizada em" value={formatDateTime(task.finished_at)} />
-                      <InfoItem
-                        label="Última atualização"
-                        value={formatDateTime(task.last_update_at)}
-                      />
-                      <InfoItem
-                        label="Runner claimed at"
-                        value={formatDateTime(task.runner_claimed_at)}
-                      />
+                      <InfoItem label="Duração" value={formatDuration(executionDuration)} />
+
+                      <InfoItem label="Prioridade" value={String(task.priority)} />
+                      {task.requested_start_at ? (
+                        <InfoItem label="Solicitada para" value={formatDateTime(task.requested_start_at)} />
+                      ) : null}
+                      {(task.retry_count ?? 0) > 0 ? (
+                        <InfoItem label="Tentativas (retry)" value={String(task.retry_count)} />
+                      ) : null}
+                      {task.queue_name ? <InfoItem label="Fila" value={task.queue_name} /> : null}
+                      {task.correlation_id ? (
+                        <InfoItem label="Correlation ID" value={task.correlation_id} />
+                      ) : null}
                     </div>
                   </Section>
 
-                  <Section
-                    title="Mensagem final"
-                    icon={<FileText className="h-4 w-4 text-slate-500" />}
-                  >
-                    <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 whitespace-pre-wrap break-words">
-                      {finalMessage}
-                    </div>
-                  </Section>
+                  <TaskLogConsole
+                    lines={consoleLines}
+                    loading={taskLogsQuery.isLoading}
+                    error={taskLogsQuery.isError}
+                    live={isLive}
+                    total={taskLogsQuery.data?.total ?? 0}
+                    loaded={rawLogs.length}
+                  />
 
                   {resultJsonText ? (
                     <Section
                       title="Resultado JSON"
                       icon={<FileCode2 className="h-4 w-4 text-slate-500" />}
                     >
-                      <pre className="overflow-x-auto whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 font-mono leading-7">
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 font-mono leading-6">
                         {resultJsonText}
                       </pre>
                     </Section>
                   ) : null}
-
-                  {tracebackText ? (
-                    <Section
-                      title="Stacktrace"
-                      icon={<FileCode2 className="h-4 w-4 text-slate-500" />}
-                    >
-                      <pre className="overflow-x-auto whitespace-pre-wrap break-words border border-slate-800 bg-[#020b25] px-4 py-4 text-sm text-white font-mono leading-7 shadow-inner">
-                        {tracebackText}
-                      </pre>
-                    </Section>
-                  ) : null}
-
-                  <Section
-                    title="Runner"
-                    icon={<Server className="h-4 w-4 text-slate-500" />}
-                  >
-                    <div className="grid gap-x-10 gap-y-7 md:grid-cols-2 xl:grid-cols-4">
-                      <InfoItem
-                        label="Runner name"
-                        value={task.runner_details?.name || task.runner_name || "---"}
-                      />
-                      <InfoItem
-                        label="Label"
-                        value={task.runner_details?.label || task.runner_display_name || "---"}
-                      />
-                      <InfoItem
-                        label="UUID"
-                        value={task.runner_details?.uuid || "---"}
-                      />
-                      <InfoItem
-                        label="Status"
-                        value={task.runner_details?.status || "---"}
-                      />
-
-                      <InfoItem
-                        label="Host name"
-                        value={task.runner_details?.host_name || "---"}
-                      />
-                      <InfoItem
-                        label="IP"
-                        value={task.runner_details?.ip || "---"}
-                      />
-                      <InfoItem
-                        label="Sistema operacional"
-                        value={
-                          task.runner_details?.os_name
-                            ? `${task.runner_details.os_name} ${task.runner_details.os_version || ""}`.trim()
-                            : "---"
-                        }
-                      />
-                      <InfoItem
-                        label="Arquitetura CPU"
-                        value={task.runner_details?.cpu_arch || "---"}
-                      />
-
-                      <InfoItem
-                        label="Memória total"
-                        value={
-                          task.runner_details?.memory_total !== null &&
-                          task.runner_details?.memory_total !== undefined
-                            ? formatMb(task.runner_details.memory_total)
-                            : "---"
-                        }
-                      />
-                      <InfoItem
-                        label="Acesso remoto"
-                        value={formatBoolean(task.runner_details?.access_remote)}
-                      />
-                      <InfoItem
-                        label="Habilitado"
-                        value={formatBoolean(task.runner_details?.enabled)}
-                      />
-                      <InfoItem
-                        label="Último heartbeat"
-                        value={formatDateTime(task.runner_details?.last_heartbeat)}
-                      />
-                    </div>
-                  </Section>
 
                   <Section
                     title="Parâmetros"
@@ -1137,59 +839,70 @@ export function TaskDetailPage() {
                     )}
                   </Section>
 
-                  <Section
-                    title="Logs"
-                    icon={<ScrollText className="h-4 w-4 text-slate-500" />}
-                  >
-                    {taskLogsQuery.isLoading ? (
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Carregando logs...
-                      </div>
-                    ) : taskLogsQuery.isError ? (
-                      <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                        Não foi possível carregar os logs.
-                      </div>
-                    ) : logs.length ? (
-                      <div className="space-y-3">
-                        {logs.map((log) => (
-                          <div
-                            key={log.id}
-                            className="overflow-hidden rounded-xl border border-slate-200 bg-white"
-                          >
-                            <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                              <span
-                                className={`inline-flex w-fit items-center border px-2.5 py-1 text-xs font-medium uppercase tracking-wide ${getLevelClasses(
-                                  log.level
-                                )}`}
-                              >
-                                {log.level}
-                              </span>
+                  <details className="group border border-slate-200 bg-white shadow-sm">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 bg-slate-50 px-5 py-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
+                      <ChevronRight className="h-4 w-4 text-slate-500 transition group-open:rotate-90" />
+                      <Server className="h-4 w-4 text-slate-500" />
+                      Detalhes técnicos
+                    </summary>
 
-                              <span className="text-xs text-slate-500">
-                                {formatDateTime(log.created_at)}
-                              </span>
-                            </div>
+                    <div className="space-y-6 border-t border-slate-200 px-5 py-5">
+                      <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-4">
+                        <InfoItem label="ID" value={String(task.id)} />
+                        <InfoItem label="Status" value={<StatusBadge status={task.status} />} />
+                        <InfoItem
+                          label="Modo de execução"
+                          value={EXECUTION_MODE_LABEL[task.execution_mode] ?? (task.execution_mode || "---")}
+                        />
+                        <InfoItem label="Envios para máquina" value={String(task.dispatch_attempts ?? 0)} />
+                        <InfoItem
+                          label="Timeout"
+                          value={task.timeout_seconds ? formatDuration(task.timeout_seconds) : "---"}
+                        />
+                        <InfoItem
+                          label="Timeout de inatividade"
+                          value={
+                            task.inactivity_timeout_seconds
+                              ? formatDuration(task.inactivity_timeout_seconds)
+                              : "---"
+                          }
+                        />
+                        <InfoItem label="Parada solicitada" value={formatBoolean(task.stop_requested)} />
+                        <InfoItem label="Assumida pela máquina" value={formatDateTime(task.runner_claimed_at)} />
+                        <InfoItem label="Última atualização" value={formatDateTime(task.last_update_at)} />
+                      </div>
 
-                            {shouldRenderAsBlock(log.message) ? (
-                              <pre className="overflow-x-auto whitespace-pre-wrap break-words px-4 py-3 text-sm text-slate-700 font-mono leading-6">
-                                {log.message}
-                              </pre>
-                            ) : (
-                              <div className="px-4 py-3 text-sm text-slate-700 break-words whitespace-pre-wrap">
-                                {log.message}
-                              </div>
-                            )}
+                      {task.runner_details ? (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Máquina</p>
+                          <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-4">
+                            <InfoItem label="Nome" value={task.runner_details.name || "---"} />
+                            <InfoItem label="Host / IP" value={`${task.runner_details.host_name || "---"} · ${task.runner_details.ip || "---"}`} />
+                            <InfoItem
+                              label="Sistema operacional"
+                              value={
+                                task.runner_details.os_name
+                                  ? `${task.runner_details.os_name} ${task.runner_details.os_version || ""}`.trim()
+                                  : "---"
+                              }
+                            />
+                            <InfoItem label="Status" value={task.runner_details.status || "---"} />
+                            <InfoItem label="UUID" value={task.runner_details.uuid || "---"} />
+                            <InfoItem
+                              label="Memória total"
+                              value={
+                                task.runner_details.memory_total !== null &&
+                                task.runner_details.memory_total !== undefined
+                                  ? formatMb(task.runner_details.memory_total)
+                                  : "---"
+                              }
+                            />
+                            <InfoItem label="Último heartbeat" value={formatDateTime(task.runner_details.last_heartbeat)} />
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <FileText className="h-4 w-4" />
-                        Nenhum log encontrado.
-                      </div>
-                    )}
-                  </Section>
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
                 </div>
               ) : (
                 <div className="space-y-6">

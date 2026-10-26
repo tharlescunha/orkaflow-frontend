@@ -87,7 +87,7 @@ function snippets(url: string, token: string): Record<ClientKey, { intro: string
   };
 }
 
-export function McpTab({ info }: { info: McpInfo }) {
+export function McpTab({ info, url }: { info: McpInfo; url: string }) {
   const [client, setClient] = useState<ClientKey>("claude-code");
   const [token, setToken] = useState("");
 
@@ -100,7 +100,7 @@ export function McpTab({ info }: { info: McpInfo }) {
   }
 
   const tokenValue = token.trim() || "ork_SEU_TOKEN";
-  const blocks = snippets(info.url, tokenValue)[client];
+  const blocks = snippets(url, tokenValue)[client];
   const queries = info.tools.filter((t) => t.kind === "consulta");
   const actions = info.tools.filter((t) => t.kind !== "consulta");
 
@@ -115,11 +115,11 @@ export function McpTab({ info }: { info: McpInfo }) {
         <div className="flex flex-wrap items-stretch gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-3 border border-slate-200 bg-slate-50 px-3 py-2">
             <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">URL do MCP</span>
-            <code className="min-w-0 truncate font-mono text-sm text-slate-900">{info.url}</code>
+            <code className="min-w-0 truncate font-mono text-sm text-slate-900">{url}</code>
           </div>
           <button
             type="button"
-            onClick={() => copyText(info.url)}
+            onClick={() => copyText(url)}
             className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             <Copy className="h-4 w-4" />

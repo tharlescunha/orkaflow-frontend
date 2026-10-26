@@ -19,6 +19,7 @@ import {
   Activity,
   Variable,
   Plug,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -68,11 +69,17 @@ const menuGroups = [
     items: [{ label: "Credenciais", to: "/credentials", icon: KeyRound }],
   },
   {
+    title: "Integração",
+    items: [
+      { label: "MCP", to: "/integration/mcp", icon: Plug },
+      { label: "API", to: "/integration/api", icon: BookOpen },
+      { label: "Notificações", to: "/notifications", icon: Bell },
+    ],
+  },
+  {
     title: "Administração",
     items: [
       { label: "Usuários", to: "/users", icon: Users },
-      { label: "Notificações", to: "/notifications", icon: Bell },
-      { label: "Integração", to: "/integration", icon: Plug },
       { label: "Perfil", to: "/profile", icon: UserCircle2 },
     ],
   },

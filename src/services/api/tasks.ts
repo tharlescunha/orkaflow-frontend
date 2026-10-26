@@ -282,9 +282,11 @@ export async function forceStopTask(taskId: number) {
   return response.data;
 }
 
-export async function listTaskLogs(taskId: number) {
+// A API devolve as linhas mais recentes primeiro (limite máximo 500).
+export async function listTaskLogs(taskId: number, limit = 100) {
   const response = await api.get<TaskLogListResponse>(
-    `/api/v1/task-logs/task/${taskId}`
+    `/api/v1/task-logs/task/${taskId}`,
+    { params: { limit } }
   );
   return response.data;
 }

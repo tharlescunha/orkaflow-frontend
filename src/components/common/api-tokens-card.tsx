@@ -115,7 +115,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
             ? `Tokens para ${userName ?? "este usuário"} usar o MCP do OrkaFlow numa IA (Claude, Cursor...) ou chamar a API. O token tem as mesmas permissões do usuário.`
             : "Use o token para conectar o MCP do OrkaFlow numa IA (Claude, Cursor...) ou chamar a API em scripts. Ele tem as mesmas permissões que você."}{" "}
           {!hideGuideLink && (
-            <Link to="/integration" className="font-medium text-slate-900 underline underline-offset-2">
+            <Link to="/integration/mcp" className="font-medium text-slate-900 underline underline-offset-2">
               Ver como configurar
             </Link>
           )}

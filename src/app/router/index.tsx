@@ -52,7 +52,8 @@ import { NotificationsPage } from "../../pages/notifications/notifications-page"
 import { UserCreatePage } from "../../pages/users/user-create-page";
 import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
-import { IntegrationPage } from "../../pages/integration/integration-page";
+import { IntegrationMcpPage } from "../../pages/integration/integration-mcp-page";
+import { IntegrationApiPage } from "../../pages/integration/integration-api-page";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((state) => state.accessToken);
@@ -129,7 +130,9 @@ export const router = createBrowserRouter([
       { path: "users/:userId", element: <UserDetailPage /> },
       { path: "users/:userId/edit", element: <UserEditPage /> },
 
-      { path: "integration", element: <IntegrationPage /> },
+      { path: "integration", element: <Navigate to="/integration/mcp" replace /> },
+      { path: "integration/mcp", element: <IntegrationMcpPage /> },
+      { path: "integration/api", element: <IntegrationApiPage /> },
 
       { path: "worker-registration", element: <WorkerRegistrationPage /> },
       { path: "profile", element: <ProfilePage /> },

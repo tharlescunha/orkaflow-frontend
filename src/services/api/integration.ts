@@ -31,6 +31,7 @@ export type McpTool = {
 
 export type McpInfo = {
   enabled: boolean;
+  public_url_configured?: boolean;
   url: string;
   api_base_url: string;
   tools: McpTool[];
