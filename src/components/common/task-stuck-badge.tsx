@@ -36,13 +36,13 @@ export function TaskStuckBadge({ task, runner }: Props) {
     : "sem runner atribuído, aguardando máquina disponível";
 
   return (
+    // Compacta na tabela: o motivo fica na dica (title) para não quebrar a coluna em várias linhas.
     <span
-      className="mt-1 inline-flex items-center gap-1 border border-red-300 bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
-      title={reason ? `Provável motivo: ${reason}` : "Sem atualização recente."}
+      className="mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+      title={reason ? `Parada há ${formatMinutes(minutes)}. Provável motivo: ${reason}` : "Sem atualização recente."}
     >
       <Clock className="h-3 w-3 shrink-0" />
       parada há {formatMinutes(minutes)}
-      {reason ? ` - ${reason}` : ""}
     </span>
   );
 }

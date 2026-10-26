@@ -17,7 +17,7 @@ type PageHeaderProps = {
 // Cabeçalho padrão de todas as telas: mesmo tamanho de título, mesma posição dos botões.
 export function PageHeader({ title, description, backTo, backLabel = "Voltar", actions, meta }: PageHeaderProps) {
   return (
-    <div className="border-b border-slate-200 px-5 py-5 md:px-6">
+    <div className="border-b border-slate-100 px-5 py-5 md:px-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           {backTo && (
@@ -27,7 +27,7 @@ export function PageHeader({ title, description, backTo, backLabel = "Voltar", a
             </Link>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
             {meta}
           </div>
           {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}

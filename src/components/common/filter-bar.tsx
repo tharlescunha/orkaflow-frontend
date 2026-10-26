@@ -17,7 +17,7 @@ export function FilterBar({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-3", className)}>
+    <div className={cn("flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3", className)}>
       {children}
       {hasActiveFilters && onClear && (
         <button type="button" onClick={onClear} className={cn(btn.ghost, "h-9 px-3 text-xs")}>
@@ -93,7 +93,7 @@ export function Pagination({
 }) {
   const safeTotalPages = Math.max(1, totalPages);
   return (
-    <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
       <span>
         <span className="font-medium text-slate-900">{total}</span> {label}
       </span>

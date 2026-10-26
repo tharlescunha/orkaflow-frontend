@@ -52,10 +52,10 @@ export function SystemHealthBanner() {
 
   if (total === 0 || !hasNew) return null;
 
-  const linkClass = "underline decoration-white/60 underline-offset-2 hover:decoration-white";
+  const linkClass = "underline decoration-red-300 underline-offset-2 hover:decoration-red-700";
 
   return (
-    <div role="alert" className="shrink-0 bg-red-700 px-4 py-1.5 text-sm text-white">
+    <div role="alert" className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-900">
       {/* Resumo em uma linha; os detalhes abrem sob demanda. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {failedTasks.length > 0 && (
@@ -80,7 +80,7 @@ export function SystemHealthBanner() {
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="ml-auto inline-flex items-center gap-1 text-xs text-white/90 hover:text-white"
+          className="ml-auto inline-flex items-center gap-1 text-xs text-red-800/80 hover:text-red-900"
           aria-expanded={expanded}
         >
           {expanded ? "Ocultar detalhes" : "Ver detalhes"}
@@ -91,7 +91,7 @@ export function SystemHealthBanner() {
           type="button"
           onClick={dismiss}
           title="Esconder este aviso até aparecer um erro, runner ou task parada novos"
-          className="inline-flex items-center gap-1 border-l border-white/30 pl-3 text-xs text-white/90 hover:text-white"
+          className="inline-flex items-center gap-1 border-l border-red-200 pl-3 text-xs text-red-800/80 hover:text-red-900"
         >
           <X className="h-3.5 w-3.5" />
           Dispensar
@@ -99,11 +99,11 @@ export function SystemHealthBanner() {
       </div>
 
       {expanded && (
-        <div className="mt-2 max-h-48 space-y-2 overflow-y-auto border-t border-white/25 pt-2">
+        <div className="mt-2 max-h-48 space-y-2 overflow-y-auto border-t border-red-200 pt-2">
           {failedTasks.length > 0 && (
             <div>
               <span className="font-semibold">Tasks com erro, timeout ou parada forçada: </span>
-              <span className="text-white/85">
+              <span className="text-red-800/90">
                 {failedTasks.slice(0, 12).map((task, index) => (
                   <span key={task.id}>
                     {index > 0 && ", "}
@@ -120,7 +120,7 @@ export function SystemHealthBanner() {
           {problemRunners.length > 0 && (
             <div>
               <span className="font-semibold">Runners: </span>
-              <span className="text-white/85">
+              <span className="text-red-800/90">
                 {problemRunners.map(({ runner, reason }, index) => (
                   <span key={runner.id}>
                     {index > 0 && "; "}
@@ -137,7 +137,7 @@ export function SystemHealthBanner() {
           {stuckTasks.length > 0 && (
             <div>
               <span className="font-semibold">Tasks paradas há mais de 10 min: </span>
-              <span className="text-white/85">
+              <span className="text-red-800/90">
                 {stuckTasks.slice(0, 12).map(({ task, minutes }, index) => (
                   <span key={task.id}>
                     {index > 0 && ", "}

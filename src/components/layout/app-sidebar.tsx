@@ -1,34 +1,10 @@
-import {
-  Bot,
-  CalendarClock,
-  ClipboardList,
-  FileText,
-  FolderGit2,
-  KeyRound,
-  LayoutDashboard,
-  PlusSquare,
-  PlaySquare,
-  ScrollText,
-  Server,
-  Settings2,
-  Siren,
-  UserCircle2,
-  Users,
-  Boxes,
-  Bell,
-  Activity,
-  Variable,
-  Plug,
-  BookOpen,
-} from "lucide-react";
-import { NavLink } from "react-router-dom";
-import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { useSystemHealth } from "@/hooks/use-system-health";
+import { NavLink } from "react-router-dom";
 
-// VITE_ENV_LABEL no build (ex.: "Homologação"); sem ela, pelo modo do Vite.
-const ENVIRONMENT_LABEL: string =
-  (import.meta.env.VITE_ENV_LABEL as string | undefined) || (import.meta.env.DEV ? "Desenvolvimento" : "Produção");
+import { useSystemHealth } from "@/hooks/use-system-health";
+import { ENVIRONMENT_LABEL, NAV_GROUPS, isExactOnly } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
+import { UserMenu } from "./user-menu";
 
 type AppSidebarProps = {
   collapsed: boolean;
@@ -38,63 +14,7 @@ type AppSidebarProps = {
   onNavigate?: () => void;
 };
 
-const menuGroups = [
-  {
-    title: "Operação",
-    items: [
-      { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
-
-      // 🔥 AJUSTADO AQUI
-      { label: "Health", to: "/automations/health", icon: Activity },
-
-      { label: "Tasks", to: "/tasks", icon: ClipboardList },
-      { label: "Nova Task", to: "/tasks/new", icon: PlusSquare },
-      { label: "Logs", to: "/logs", icon: ScrollText },
-      { label: "Erros", to: "/errors", icon: Siren, badgeKey: "errors" },
-    ],
-  },
-  {
-    title: "Execução",
-    items: [
-      { label: "Runners", to: "/runners", icon: Server },
-      { label: "Runner Config", to: "/runner-configs", icon: Settings2 },
-      { label: "Guia do Bot", to: "/worker-registration", icon: FileText },
-    ],
-  },
-  {
-    title: "Automação",
-    items: [
-      { label: "Bots", to: "/bots", icon: Bot },
-      { label: "Versões de Bot", to: "/bot-versions", icon: Boxes },
-      { label: "Automações", to: "/automations", icon: PlaySquare },
-      { label: "Agendamentos", to: "/schedules", icon: CalendarClock },
-      { label: "Repositórios", to: "/repositories", icon: FolderGit2 },
-      { label: "Variáveis", to: "/env-variables", icon: Variable },
-    ],
-  },
-  {
-    title: "Segurança",
-    items: [{ label: "Credenciais", to: "/credentials", icon: KeyRound }],
-  },
-  {
-    title: "Integração",
-    items: [
-      { label: "MCP", to: "/integration/mcp", icon: Plug },
-      { label: "API", to: "/integration/api", icon: BookOpen },
-      { label: "Notificações", to: "/notifications", icon: Bell },
-    ],
-  },
-  {
-    title: "Administração",
-    items: [
-      { label: "Usuários", to: "/users", icon: Users },
-      { label: "Perfil", to: "/profile", icon: UserCircle2 },
-    ],
-  },
-];
-
-const ALL_ITEM_PATHS = menuGroups.flatMap((group) => group.items.map((item) => item.to));
-
+// Sidebar clara: mesma família de cor do conteúdo, item ativo em azul suave, usuário no rodapé.
 export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebarProps) {
   const [hovered, setHovered] = useState(false);
 
@@ -112,73 +32,69 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
         if (collapsed) setHovered(false);
       }}
       className={cn(
-        "h-full shrink-0 border-r border-slate-200 bg-slate-950 text-slate-100",
+        "h-full shrink-0 border-r border-slate-200/70 bg-white/75 text-slate-700 backdrop-blur-md",
         "overflow-hidden transition-[width] duration-300 ease-out",
-        mobile ? "flex w-full flex-col" : "hidden md:flex md:flex-col",
-        !mobile && (isOpen ? "w-[280px]" : "w-[84px]")
+        mobile ? "flex w-full flex-col bg-white" : "hidden md:flex md:flex-col",
+        !mobile && (isOpen ? "w-[248px]" : "w-[76px]")
       )}
     >
       <div className="flex h-full min-h-0 flex-col">
+        {/* Marca */}
+        <NavLink to="/" onClick={onNavigate} className={cn("flex items-center gap-2.5 px-4 pb-2 pt-5", !isOpen && "justify-center px-0")}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-md shadow-blue-600/30">
+            <img src="/favicon.svg" alt="" className="h-5 w-5 brightness-0 invert" />
+          </span>
+          {isOpen && (
+            <span className="min-w-0">
+              <span className="block truncate text-[15px] font-semibold leading-tight text-slate-900">OrkaFlow</span>
+              <span className="block truncate text-[11px] text-slate-500">{ENVIRONMENT_LABEL}</span>
+            </span>
+          )}
+        </NavLink>
+
         <nav
           className={cn(
-            "flex-1 min-h-0 px-3 py-4",
-            "overflow-y-auto overflow-x-hidden",
-            "scroll-smooth",
-            "[scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.35)_transparent]",
-            "[&::-webkit-scrollbar]:w-2",
-            "[&::-webkit-scrollbar-track]:bg-transparent",
-            "[&::-webkit-scrollbar-thumb]:rounded-full",
-            "[&::-webkit-scrollbar-thumb]:bg-slate-700/60",
-            "[&::-webkit-scrollbar-thumb:hover]:bg-slate-600/80"
+            "min-h-0 flex-1 px-3 py-3",
+            "overflow-y-auto overflow-x-hidden scroll-smooth",
+            "[scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.45)_transparent]",
+            "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/70"
           )}
         >
-          <div className="space-y-6 pr-1">
-            {menuGroups.map((group) => (
+          <div className="space-y-5">
+            {NAV_GROUPS.map((group) => (
               <div key={group.title}>
                 {isOpen && (
-                  <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    {group.title}
-                  </div>
+                  <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.title}</div>
                 )}
-
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {group.items.map((item) => {
                     const Icon = item.icon;
-
+                    const showBadge = item.badgeKey === "errors" && errorsBadge > 0;
                     return (
                       <NavLink
                         key={item.to}
                         to={item.to}
-                        // end: um item cujo caminho é prefixo de outro (ex.: /automations e /automations/health)
-                        // só acende na rota exata, senão os dois ficam selecionados juntos.
-                        end={ALL_ITEM_PATHS.some((other) => other !== item.to && other.startsWith(`${item.to}/`))}
+                        end={isExactOnly(item.to)}
                         onClick={onNavigate}
                         className={({ isActive }) =>
                           cn(
-                            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm",
-                            "transition-colors duration-200 ease-out",
+                            "group flex items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] transition-colors duration-150",
                             isOpen ? "justify-start" : "justify-center",
-                            isActive
-                              ? "bg-blue-600 text-white shadow-sm"
-                              : "text-slate-300 hover:bg-white/10 hover:text-white"
+                            isActive ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                           )
                         }
                         title={!isOpen ? item.label : undefined}
                       >
                         <span className="relative shrink-0">
                           <Icon className="h-4 w-4" />
-                          {!isOpen && "badgeKey" in item && errorsBadge > 0 && (
+                          {!isOpen && showBadge && (
                             <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
                               {errorsBadge > 99 ? "99+" : errorsBadge}
                             </span>
                           )}
                         </span>
-                        {isOpen && (
-                          <span className="truncate transition-opacity duration-200 ease-out">
-                            {item.label}
-                          </span>
-                        )}
-                        {isOpen && "badgeKey" in item && errorsBadge > 0 && (
+                        {isOpen && <span className="truncate">{item.label}</span>}
+                        {isOpen && showBadge && (
                           <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white">
                             {errorsBadge > 99 ? "99+" : errorsBadge}
                           </span>
@@ -192,12 +108,10 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
           </div>
         </nav>
 
-        {isOpen && (
-          <div className="shrink-0 border-t border-slate-800 p-4">
-            <div className="rounded-xl bg-white/5 p-3">
-              <p className="text-sm font-medium">Ambiente</p>
-              <p className="mt-1 text-xs text-slate-400">{ENVIRONMENT_LABEL}</p>
-            </div>
+        {/* Usuário no rodapé (no celular ele fica no topo). */}
+        {!mobile && (
+          <div className={cn("shrink-0 border-t border-slate-200/70 p-3", !isOpen && "px-2")}>
+            <UserMenu compact={!isOpen} />
           </div>
         )}
       </div>

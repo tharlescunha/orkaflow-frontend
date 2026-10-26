@@ -6,8 +6,8 @@
 
 :root {
   font-family: "Inter", sans-serif;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #040b22;
+  color: #1e293b;
+  background-color: #f4f6fb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,7 +24,7 @@ body,
   min-height: 100%;
   margin: 0;
   padding: 0;
-  background: #040b22;
+  background: #f4f6fb;
 }
 
 body {
@@ -40,4 +40,26 @@ select {
 
 button {
   cursor: pointer;
+}
+
+/* Entrada suave de cada tela e dos blocos que aparecem (listas, diálogos). */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-enter 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
 }
