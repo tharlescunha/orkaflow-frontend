@@ -21,22 +21,22 @@ function BootSplash() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#040b22] px-6 text-slate-100">
+    <div className="flex min-h-screen items-center justify-center bg-[#f3f4f6] px-6 text-slate-800">
       <div className="flex flex-col items-center gap-4 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-          <img src="/favicon.svg" alt="" className="h-7 w-7" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-md shadow-blue-600/30">
+          <img src="/favicon.svg" alt="" className="h-7 w-7 brightness-0 invert" />
         </div>
         <div>
-          <p className="text-lg font-semibold">OrkaFlow</p>
-          <p className="mt-1 text-sm text-slate-400">Conectando ao servidor...</p>
+          <p className="text-lg font-semibold text-slate-900">OrkaFlow</p>
+          <p className="mt-1 text-sm text-slate-500">Conectando ao servidor...</p>
         </div>
         {slow && (
-          <div className="max-w-sm border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          <div className="max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             O servidor está demorando para responder. Se não abrir em instantes, confira a rede ou se a API está no ar.
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-2 block font-medium text-amber-200 underline underline-offset-2"
+              className="mt-2 block font-medium text-amber-800 underline underline-offset-2"
             >
               Tentar de novo
             </button>
