@@ -25,6 +25,10 @@ const EXAMPLE_QUESTIONS = [
   "Roda a automação Automacao_Estoque_PO agora na fila manual.",
   "Tem versão nova no Git do bot RPA_Sigam? Se tiver, cria a versão.",
   "Pausa o agendamento da automação X até eu avisar.",
+  "Cria um agendamento da automação X de segunda a sexta às 06:00.",
+  "Vincula a máquina SRV-RPA-02 na automação X.",
+  "Muda o timeout do bot RPA_Sigam para 90 minutos.",
+  "Cadastra a variável SAP_URL só para a automação X.",
 ];
 
 function snippets(url: string, token: string): Record<ClientKey, { intro: string; file?: string; code: string }[]> {
@@ -109,8 +113,10 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
       <section className="space-y-3">
         <p className="text-sm text-slate-700">
           O <strong>MCP</strong> (Model Context Protocol) deixa uma IA como o Claude consultar e operar o OrkaFlow
-          conversando: ver status das automações, erros, máquinas, criar tasks... A IA usa as mesmas permissões do dono do
-          token, e as ações (criar task, parar, pausar agendamento, criar versão) ela confirma com você antes.
+          conversando: tudo que o painel faz em Operação, Execução, Automação e Segurança — consultar status e erros,
+          rodar e parar tasks, cadastrar e alterar bots, versões, automações, vínculos de máquina, agendamentos,
+          variáveis e credenciais. A IA usa as mesmas permissões do dono do token e confirma com você antes de qualquer
+          alteração. Valores de credenciais nunca são mostrados a ela.
         </p>
         <div className="flex flex-wrap items-stretch gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-3 border border-slate-200 bg-slate-50 px-3 py-2">
