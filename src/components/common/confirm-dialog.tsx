@@ -20,9 +20,9 @@ type ConfirmDialogProps = {
 };
 
 const CONFIRM_CLASS = {
-  default: "bg-slate-950 hover:bg-slate-800",
+  default: "bg-blue-600 hover:bg-blue-700",
   warning: "bg-amber-600 hover:bg-amber-700",
-  danger: "bg-red-700 hover:bg-red-800",
+  danger: "bg-red-600 hover:bg-red-700",
 } as const;
 
 // Diálogo de confirmação único do painel (substitui window.confirm e os modais copiados por tela).
@@ -68,7 +68,7 @@ function ConfirmBody({
     <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="absolute inset-0 bg-slate-950/55" onClick={() => !isPending && onCancel()} />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="relative z-10 w-full max-w-md border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="relative z-10 w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4">
             <div className="flex items-start gap-3">
               {tone !== "default" && (
@@ -95,7 +95,7 @@ function ConfirmBody({
                     autoFocus
                     value={typed}
                     onChange={(e) => setTyped(e.target.value)}
-                    className="h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-slate-900"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   />
                 </label>
               )}
@@ -107,7 +107,7 @@ function ConfirmBody({
               type="button"
               onClick={onCancel}
               disabled={isPending}
-              className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {cancelLabel}
             </button>
@@ -116,7 +116,7 @@ function ConfirmBody({
               onClick={onConfirm}
               disabled={isPending || locked}
               className={cn(
-                "inline-flex h-10 items-center gap-2 px-4 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60",
+                "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60",
                 CONFIRM_CLASS[tone]
               )}
             >

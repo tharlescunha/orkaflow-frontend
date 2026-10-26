@@ -17,11 +17,11 @@ type PageHeaderProps = {
 // Cabeçalho padrão de todas as telas: mesmo tamanho de título, mesma posição dos botões.
 export function PageHeader({ title, description, backTo, backLabel = "Voltar", actions, meta }: PageHeaderProps) {
   return (
-    <div className="border-b border-slate-200 px-6 py-5">
+    <div className="border-b border-slate-200 px-5 py-5 md:px-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           {backTo && (
-            <Link to={backTo} className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-slate-900">
+            <Link to={backTo} className="mb-3 inline-flex items-center gap-2 rounded-sm text-sm font-medium text-slate-600 transition hover:text-blue-700">
               <ArrowLeft className="h-4 w-4" />
               {backLabel}
             </Link>
