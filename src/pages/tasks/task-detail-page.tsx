@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
-  ArrowLeft,
   BarChart3,
   CheckCircle2,
   Clock3,
@@ -14,12 +13,11 @@ import {
   FileText,
   HardDrive,
   ListFilter,
-  Loader2,
   MemoryStick,
   Network,
   OctagonX,
   ChevronRight,
-  RefreshCcw,
+  RotateCcw,
   Server,
   ShieldCheck,
   SquareX,
@@ -27,6 +25,7 @@ import {
 
 import {
   cancelTask,
+  createTask,
   forceStopTask,
   getTask,
   listTaskLogs,
@@ -35,16 +34,29 @@ import {
   type TaskRead,
   type TaskStatus,
 } from "@/services/api/tasks";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { DetailSkeleton } from "@/components/common/skeleton";
 import { StatusBadge } from "@/components/common/status-badge";
 import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
-import { withApiDetail } from "@/lib/api-error";
+import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
+import { EMPTY, formatBoolean, formatDateTime, formatDuration, formatNumber, formatPercent } from "@/lib/format";
+import { rerunPayload } from "@/lib/run-task";
+import { btn, card, cardBody, cardHeader, cardTitle, link } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { toast } from "@/store/toast-store";
 import { TaskLogConsole } from "./task-log-console";
 import { buildConsoleLines, normalizeDisplayText, splitFinalMessage } from "./task-log-utils";
 
 const LIVE_STATUSES = ["running", "waiting", "ready", "stop_requested"];
 const FAILED_STATUSES = ["error", "timeout", "forced_stop", "canceled", "failed"];
+const FINAL_STATUSES = ["finished", "error", "timeout", "canceled", "forced_stop"];
 const DETAIL_REFRESH_MS = 5_000;
+
+// Qual confirmação está aberta.
+type PendingConfirm = "cancel" | "request-stop" | "force-stop" | "rerun" | null;
 
 const EXECUTION_MODE_LABEL: Record<string, string> = {
   manual: "Manual",
@@ -80,50 +92,9 @@ type TaskParameterItem = {
   is_secret?: boolean | null;
 };
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
-
-function formatDuration(seconds?: number | null) {
-  if (seconds === null || seconds === undefined) return "---";
-
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
-  if (minutes > 0) return `${minutes}m ${secs}s`;
-  return `${secs}s`;
-}
-
-function formatNumber(value?: number | null, fractionDigits = 2) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "---";
-
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: fractionDigits,
-  }).format(value);
-}
-
-function formatPercent(value?: number | null) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "---";
-  return `${formatNumber(value, 2)}%`;
-}
-
 function formatMb(value?: number | null) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "---";
+  if (value === null || value === undefined || Number.isNaN(value)) return EMPTY;
   return `${formatNumber(value, 2)} MB`;
-}
-
-function formatBoolean(value?: boolean | null) {
-  if (value === null || value === undefined) return "---";
-  return value ? "Sim" : "Não";
 }
 
 function clampPercent(value?: number | null) {
@@ -181,10 +152,6 @@ function getHeaderTone(status?: TaskStatus | string | null) {
     title: "text-slate-950",
     text: "text-slate-600",
   };
-}
-
-function getPageTitle() {
-  return "Detalhes da Task";
 }
 
 function formatResultJson(value?: string | null) {
@@ -293,17 +260,15 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+    <section className={card}>
+      <div className={cardHeader}>
         <div className="flex items-center gap-2">
           {icon}
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            {title}
-          </h2>
+          <h2 className={cardTitle}>{title}</h2>
         </div>
       </div>
 
-      <div className="px-5 py-5">{children}</div>
+      <div className={cardBody}>{children}</div>
     </section>
   );
 }
@@ -385,11 +350,11 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition ${
-        active
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-      }`}
+      aria-pressed={active}
+      className={cn(
+        btn.secondary,
+        active && "border-blue-600 bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+      )}
     >
       {children}
     </button>
@@ -400,8 +365,10 @@ export function TaskDetailPage() {
   const navigate = useNavigate();
   const params = useParams<{ taskId: string }>();
   const [activeTab, setActiveTab] = useState<"general" | "telemetry">("general");
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
 
   const taskId = Number(params.taskId);
+  const validId = Number.isFinite(taskId) && taskId > 0;
 
   const queryClient = useQueryClient();
 
@@ -437,7 +404,8 @@ export function TaskDetailPage() {
   const cancelMutation = useMutation({
     mutationFn: () => cancelTask(taskId),
     onSuccess: async () => {
-      toast.success("Task cancelada com sucesso.");
+      toast.success("Task cancelada.");
+      setPendingConfirm(null);
       await refreshAfterAction();
     },
     onError: (error) => {
@@ -448,7 +416,8 @@ export function TaskDetailPage() {
   const requestStopMutation = useMutation({
     mutationFn: () => requestStopTask(taskId),
     onSuccess: async () => {
-      toast.success("Solicitação de parada registrada. O bot será encerrado com segurança.");
+      toast.success("Parada solicitada. O robô encerra com segurança no próximo ponto seguro.");
+      setPendingConfirm(null);
       await refreshAfterAction();
     },
     onError: (error) => {
@@ -459,7 +428,8 @@ export function TaskDetailPage() {
   const forceStopMutation = useMutation({
     mutationFn: () => forceStopTask(taskId),
     onSuccess: async () => {
-      toast.success("Parada forçada aplicada com sucesso.");
+      toast.success("Parada forçada aplicada.");
+      setPendingConfirm(null);
       await refreshAfterAction();
     },
     onError: (error) => {
@@ -467,13 +437,36 @@ export function TaskDetailPage() {
     },
   });
 
+  // "Rodar de novo": nova task com os mesmos parâmetros, ligada a esta por parent_task_id.
+  const rerunMutation = useMutation({
+    mutationFn: (original: TaskRead) => createTask(rerunPayload(original)),
+    onSuccess: async (response) => {
+      toast.success(`Task #${response.task.id} criada a partir da #${taskId}.`);
+      setPendingConfirm(null);
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      navigate(`/tasks/${response.task.id}`);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Não foi possível rodar a task de novo."));
+    },
+  });
+
   const status = String(task?.status ?? "");
   const canCancelTask = ["waiting", "scheduled", "ready"].includes(status);
   const canStopTask = ["running", "stop_requested"].includes(status);
+  const canRerunTask = FINAL_STATUSES.includes(status);
   const actionPending =
     cancelMutation.isPending ||
     requestStopMutation.isPending ||
-    forceStopMutation.isPending;
+    forceStopMutation.isPending ||
+    rerunMutation.isPending;
+
+  function handleConfirm() {
+    if (pendingConfirm === "cancel") cancelMutation.mutate();
+    else if (pendingConfirm === "request-stop") requestStopMutation.mutate();
+    else if (pendingConfirm === "force-stop") forceStopMutation.mutate();
+    else if (pendingConfirm === "rerun" && task) rerunMutation.mutate(task);
+  }
 
   const rawLogs = useMemo<TaskLogItem[]>(() => taskLogsQuery.data?.items ?? [], [taskLogsQuery.data]);
 
@@ -524,66 +517,30 @@ export function TaskDetailPage() {
     await taskLogsQuery.refetch();
   }
 
-  if (!Number.isFinite(taskId) || taskId <= 0) {
+  if (!validId) {
     return (
-      <div className="space-y-5">
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <button
-              type="button"
-              onClick={() => navigate("/tasks")}
-              className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Voltar para tasks
-            </button>
-          </div>
-
-          <div className="px-6 py-10">
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              ID de task inválido.
-            </div>
-          </div>
-        </section>
-      </div>
+      <section className={card}>
+        <PageHeader title="Task" backTo="/tasks" backLabel="Voltar para tasks" />
+        <div className="p-5">
+          <QueryError error={new Error("ID de task inválido.")} what="a task" />
+        </div>
+      </section>
     );
   }
 
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate("/tasks")}
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para tasks
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">
-                {getPageTitle()} #{taskId}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Visualização completa da execução, parâmetros, logs e telemetria.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {task?.status ? <StatusBadge status={task.status} /> : null}
-
+      <section className={card}>
+        <PageHeader
+          title={`Task #${taskId}`}
+          description={task?.automation_name ? task.automation_name : "Execução, parâmetros, logs e telemetria."}
+          backTo="/tasks"
+          backLabel="Voltar para tasks"
+          meta={task?.status ? <StatusBadge status={task.status} /> : null}
+          actions={
+            <>
               {canCancelTask ? (
-                <button
-                  type="button"
-                  disabled={actionPending}
-                  onClick={() => {
-                    if (window.confirm(`Cancelar a task #${taskId}?`)) cancelMutation.mutate();
-                  }}
-                  className="inline-flex h-10 items-center gap-2 border border-amber-300 bg-white px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
-                >
+                <button type="button" disabled={actionPending} onClick={() => setPendingConfirm("cancel")} className={btn.secondary}>
                   <SquareX className="h-4 w-4" />
                   Cancelar
                 </button>
@@ -594,61 +551,48 @@ export function TaskDetailPage() {
                   <button
                     type="button"
                     disabled={actionPending || status === "stop_requested"}
-                    onClick={() => requestStopMutation.mutate()}
-                    className="inline-flex h-10 items-center gap-2 border border-amber-300 bg-white px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-60"
+                    onClick={() => setPendingConfirm("request-stop")}
+                    className={btn.secondary}
                   >
                     <ShieldCheck className="h-4 w-4" />
                     Parar com segurança
                   </button>
 
-                  <button
-                    type="button"
-                    disabled={actionPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Aplicar parada forçada na task #${taskId}? O processo será interrompido sem aguardar o bot.`
-                        )
-                      ) {
-                        forceStopMutation.mutate();
-                      }
-                    }}
-                    className="inline-flex h-10 items-center gap-2 border border-red-300 bg-white px-4 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-60"
-                  >
+                  <button type="button" disabled={actionPending} onClick={() => setPendingConfirm("force-stop")} className={btn.dangerOutline}>
                     <OctagonX className="h-4 w-4" />
                     Parada forçada
                   </button>
                 </>
               ) : null}
 
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
-            </div>
-          </div>
-        </div>
+              {canRerunTask ? (
+                <button type="button" disabled={actionPending} onClick={() => setPendingConfirm("rerun")} className={btn.primary}>
+                  <RotateCcw className="h-4 w-4" />
+                  Rodar de novo
+                </button>
+              ) : null}
 
-        <div className="px-6 py-6">
+              <RefreshIndicator
+                updatedAt={taskQuery.dataUpdatedAt}
+                isFetching={taskQuery.isFetching || taskLogsQuery.isFetching}
+                onRefresh={handleRefresh}
+                intervalMs={isLive ? DETAIL_REFRESH_MS : undefined}
+              />
+            </>
+          }
+        />
+
+        <div className="px-5 py-5 md:px-6">
           {taskQuery.isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando detalhes da task...
-            </div>
+            <DetailSkeleton fields={8} />
           ) : taskQuery.isError ? (
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              Não foi possível carregar os detalhes da task.
-            </div>
+            <QueryError error={taskQuery.error} what="a task" onRetry={() => taskQuery.refetch()} retrying={taskQuery.isFetching} />
           ) : task ? (
             <div className="space-y-6">
               <TaskStuckBadge task={task} runner={task.runner_details} />
 
               {waitingReason ? (
-                <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <span className="font-semibold">Motivo da espera (log do sistema): </span>
                   {waitingReason.message}
                 </div>
@@ -674,7 +618,7 @@ export function TaskDetailPage() {
 
               {activeTab === "general" ? (
                 <div className="space-y-6">
-                  <section className={`border ${headerTone.wrapper} px-5 py-4`}>
+                  <section className={`rounded-xl border ${headerTone.wrapper} px-5 py-4`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="flex min-w-0 items-start gap-3">
                         <div className={`rounded-xl border p-3 ${headerTone.icon}`}>
@@ -740,7 +684,7 @@ export function TaskDetailPage() {
                       <InfoItem
                         label="Automação"
                         value={
-                          <Link className="hover:underline" to={`/automations/${task.automation_id}`}>
+                          <Link className={link} to={`/automations/${task.automation_id}`}>
                             {task.automation_name || `#${task.automation_id}`}
                           </Link>
                         }
@@ -750,7 +694,7 @@ export function TaskDetailPage() {
                         label="Máquina"
                         value={
                           task.runner_id ? (
-                            <Link className="hover:underline" to={`/runners/${task.runner_id}`}>
+                            <Link className={link} to={`/runners/${task.runner_id}`}>
                               {task.runner_display_name || task.runner_name || `#${task.runner_id}`}
                             </Link>
                           ) : (
@@ -762,7 +706,7 @@ export function TaskDetailPage() {
                         label="Criado por"
                         value={
                           origin.to ? (
-                            <Link className="hover:underline" to={origin.to}>
+                            <Link className={link} to={origin.to}>
                               {origin.text}
                             </Link>
                           ) : (
@@ -1087,6 +1031,53 @@ export function TaskDetailPage() {
           ) : null}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={pendingConfirm === "cancel"}
+        title={`Cancelar a task #${taskId}?`}
+        description="A task sai da fila e não é executada."
+        confirmLabel="Cancelar task"
+        cancelLabel="Voltar"
+        tone="warning"
+        isPending={cancelMutation.isPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm === "request-stop"}
+        title={`Parar a task #${taskId} com segurança?`}
+        description="O robô recebe o pedido e encerra no próximo ponto seguro. Pode levar alguns minutos."
+        confirmLabel="Parar com segurança"
+        cancelLabel="Voltar"
+        isPending={requestStopMutation.isPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm === "force-stop"}
+        title={`Parada forçada da task #${taskId}`}
+        description="O processo é interrompido na hora, sem esperar o robô terminar o que estava fazendo. Itens em andamento podem ficar pela metade. Use só quando a parada segura não funcionou."
+        confirmLabel="Forçar parada"
+        cancelLabel="Voltar"
+        tone="danger"
+        requireText={String(taskId)}
+        isPending={forceStopMutation.isPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm === "rerun"}
+        title={`Rodar de novo a task #${taskId}?`}
+        description={`Uma nova task da automação ${task?.automation_name ?? `#${task?.automation_id ?? ""}`} é criada com os mesmos parâmetros e entra na fila agora.`}
+        confirmLabel="Rodar de novo"
+        cancelLabel="Voltar"
+        isPending={rerunMutation.isPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }
