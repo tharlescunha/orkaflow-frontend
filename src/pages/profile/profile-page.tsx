@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { ApiTokensCard } from "@/components/common/api-tokens-card";
 import { useAuthStore } from "../../store/auth-store";
 import { getUserById, updateUser } from "../../services/api/users";
 
@@ -224,6 +225,10 @@ export function ProfilePage() {
             </button>
           </div>
         </form>
+
+        <div className="mt-8">
+          <ApiTokensCard />
+        </div>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 
+import { ApiTokensCard } from "@/components/common/api-tokens-card";
 import {
   blockUser,
   getUserById,
@@ -356,6 +357,10 @@ export function UserDetailPage() {
                 </div>
               </div>
             </aside>
+          </div>
+
+          <div className="px-6 pb-6">
+            <ApiTokensCard userId={userId} userName={user.name} />
           </div>
         </section>
 

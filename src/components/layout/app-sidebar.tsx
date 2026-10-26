@@ -18,6 +18,7 @@ import {
   Bell,
   Activity,
   Variable,
+  Plug,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,7 @@ const menuGroups = [
     items: [
       { label: "Usuários", to: "/users", icon: Users },
       { label: "Notificações", to: "/notifications", icon: Bell },
+      { label: "Integração", to: "/integration", icon: Plug },
       { label: "Perfil", to: "/profile", icon: UserCircle2 },
     ],
   },

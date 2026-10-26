@@ -52,6 +52,7 @@ import { NotificationsPage } from "../../pages/notifications/notifications-page"
 import { UserCreatePage } from "../../pages/users/user-create-page";
 import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
+import { IntegrationPage } from "../../pages/integration/integration-page";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((state) => state.accessToken);
@@ -127,6 +128,8 @@ export const router = createBrowserRouter([
       { path: "users/new", element: <UserCreatePage /> },
       { path: "users/:userId", element: <UserDetailPage /> },
       { path: "users/:userId/edit", element: <UserEditPage /> },
+
+      { path: "integration", element: <IntegrationPage /> },
 
       { path: "worker-registration", element: <WorkerRegistrationPage /> },
       { path: "profile", element: <ProfilePage /> },
