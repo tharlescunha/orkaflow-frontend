@@ -1,4 +1,10 @@
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronRight, FileUp, Lock, Plus, Variable } from "lucide-react";
+
+import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
+import { TableSkeleton } from "@/components/common/skeleton";
+import { btn, focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { matchGroup, type VariableGroup } from "./group-utils";
 import { ScopeBadge } from "./scope-badge";
 
@@ -7,31 +13,73 @@ export function VariableGroups({
   search,
   loading,
   error,
+  onRetry,
+  retrying,
+  hasActiveFilters,
+  onClearFilters,
+  onNew,
+  onImport,
   onOpen,
 }: {
   groups: VariableGroup[];
   search: string;
   loading: boolean;
-  error: boolean;
+  error: unknown;
+  onRetry: () => void;
+  retrying?: boolean;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
+  onNew: () => void;
+  onImport: () => void;
   onOpen: (group: VariableGroup) => void;
 }) {
-  if (loading) return <p className="px-6 py-12 text-center text-sm text-slate-500">Carregando variáveis...</p>;
-  if (error) return <p className="px-6 py-12 text-center text-sm text-red-600">Não foi possível carregar as variáveis.</p>;
+  if (loading) return <TableSkeleton rows={5} columns={4} />;
+
+  if (error) {
+    return (
+      <div className="p-5">
+        <QueryError error={error} what="as variáveis" onRetry={onRetry} retrying={retrying} />
+      </div>
+    );
+  }
 
   const rows = groups.map((group) => ({ group, ...matchGroup(group, search) })).filter((r) => r.visible);
 
   if (rows.length === 0) {
-    return (
-      <p className="px-6 py-12 text-center text-sm text-slate-500">
-        {search
-          ? "Nenhum bot, automação ou máquina encontrado com essa busca."
-          : 'Nenhuma variável cadastrada ainda. Use "Nova variável" ou "Importar .env".'}
-      </p>
+    return hasActiveFilters ? (
+      <EmptyState
+        icon={Variable}
+        title="Nenhum alvo com esses filtros"
+        description="Nenhuma automação, bot ou máquina bate com a busca ou o escopo escolhido."
+        action={
+          <button type="button" onClick={onClearFilters} className={btn.secondary}>
+            Limpar filtros
+          </button>
+        }
+      />
+    ) : (
+      <EmptyState
+        icon={Variable}
+        title="Nenhuma variável cadastrada ainda"
+        description="Cadastre uma por uma ou importe um arquivo .env inteiro para uma automação, bot ou máquina."
+        action={
+          <div className="flex flex-wrap justify-center gap-3">
+            <button type="button" onClick={onImport} className={btn.secondary}>
+              <FileUp className="h-4 w-4" />
+              Importar .env
+            </button>
+            <button type="button" onClick={onNew} className={btn.primary}>
+              <Plus className="h-4 w-4" />
+              Nova variável
+            </button>
+          </div>
+        }
+      />
     );
   }
 
   return (
-    <ul className="divide-y divide-slate-200">
+    <ul className="divide-y divide-slate-100">
       {rows.map(({ group, byVariable }) => {
         const secrets = group.variables.filter((v) => v.is_secret).length;
         return (
@@ -39,7 +87,11 @@ export function VariableGroups({
             <button
               type="button"
               onClick={() => onOpen(group)}
-              className="flex w-full items-center gap-4 px-6 py-3 text-left transition hover:bg-slate-50"
+              className={cn(
+                "flex w-full items-center gap-4 px-5 py-3 text-left transition hover:bg-blue-50/40",
+                focusRing,
+                "focus-visible:ring-inset focus-visible:ring-offset-0"
+              )}
             >
               <span className="w-28 shrink-0">
                 <ScopeBadge type={group.scopeType} />

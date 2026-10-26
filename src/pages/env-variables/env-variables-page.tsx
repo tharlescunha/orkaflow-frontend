@@ -1,15 +1,22 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileUp, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, FileUp, Plus } from "lucide-react";
+
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { FilterBar, SearchInput } from "@/components/common/filter-bar";
+import { PageHeader } from "@/components/common/page-header";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { normalizeSearch } from "@/lib/search";
-import { toast } from "@/store/toast-store";
+import { btn, card, focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
   deleteEnvVariable,
   listEnvVariables,
   type EnvScopeType,
   type EnvVariableRead,
 } from "@/services/api/env-variables";
+import { toast } from "@/store/toast-store";
 import { EffectiveTab } from "./effective-tab";
 import { ImportEnvDialog } from "./import-env-dialog";
 import { ScopeBadge } from "./scope-badge";
@@ -21,12 +28,15 @@ import { VariablesTable } from "./variables-table";
 
 type ScopeFilter = EnvScopeType | "all";
 
-const chip = (active: boolean) =>
-  `h-9 border px-3 text-sm font-medium transition ${
+// Chip de filtro/aba: azul quando ativo (cor de destaque do painel).
+const chipClass = (active: boolean) =>
+  cn(
+    "inline-flex h-9 items-center rounded-full border px-3.5 text-sm font-medium transition",
+    focusRing,
     active
-      ? "border-slate-950 bg-slate-950 text-white"
+      ? "border-blue-600 bg-blue-600 text-white"
       : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-  }`;
+  );
 
 export function EnvVariablesPage() {
   const queryClient = useQueryClient();
@@ -90,69 +100,72 @@ export function EnvVariablesPage() {
     setSearch("");
   }
 
+  function clearFilters() {
+    setSearch("");
+    setScope("all");
+  }
+
   // Com um alvo aberto, "Nova variável" e "Importar .env" já vêm nele.
   const defaultScope = openGroup && openGroup.scopeType !== "global" ? openGroup.scopeType : undefined;
   const defaultScopeId = openGroup && openGroup.scopeType !== "global" ? openGroup.scopeId : null;
 
+  const hasActiveFilters = search.trim() !== "" || scope !== "all";
+
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">Variáveis de ambiente</h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-500">
-                Configuração fixa do robô (URLs, usuários, pastas), por automação, bot ou máquina.
-                Use os.environ['NOME'] no robô.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ["env-variables"] })}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
-              <button
-                type="button"
-                onClick={() => setImportOpen(true)}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
+      <section className={card}>
+        <PageHeader
+          title="Variáveis de ambiente"
+          description="Configuração fixa do robô (URLs, usuários, pastas), por automação, bot ou máquina. Use os.environ['NOME'] no robô."
+          actions={
+            <>
+              <RefreshIndicator
+                updatedAt={query.dataUpdatedAt}
+                isFetching={query.isFetching}
+                onRefresh={() => queryClient.invalidateQueries({ queryKey: ["env-variables"] })}
+              />
+              <button type="button" onClick={() => setImportOpen(true)} className={btn.secondary}>
                 <FileUp className="h-4 w-4" />
                 Importar .env
               </button>
-              <button
-                type="button"
-                onClick={openNew}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800"
-              >
+              <button type="button" onClick={openNew} className={btn.primary}>
                 <Plus className="h-4 w-4" />
                 Nova variável
               </button>
-            </div>
-          </div>
+            </>
+          }
+        />
 
-          <div className="mt-5 flex gap-2">
-            <button type="button" className={chip(tab === "cadastro")} onClick={() => setTab("cadastro")}>
-              Cadastro
-            </button>
-            <button type="button" className={chip(tab === "efetivos")} onClick={() => setTab("efetivos")}>
-              Valores finais
-            </button>
-          </div>
+        <div className="flex gap-2 border-b border-slate-200 px-5 py-3" role="tablist" aria-label="Seções">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "cadastro"}
+            className={chipClass(tab === "cadastro")}
+            onClick={() => setTab("cadastro")}
+          >
+            Cadastro
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "efetivos"}
+            className={chipClass(tab === "efetivos")}
+            onClick={() => setTab("efetivos")}
+          >
+            Valores finais
+          </button>
         </div>
 
         {tab === "efetivos" ? (
           <EffectiveTab />
         ) : openGroup ? (
           <>
-            <div className="space-y-3 border-b border-slate-200 bg-slate-50/60 px-6 py-4">
+            <div className="space-y-3 border-b border-slate-200 bg-slate-50/60 px-5 py-3">
               <button
                 type="button"
                 onClick={backToTargets}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-950"
+                className={cn("inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-slate-600 transition hover:text-blue-700", focusRing)}
               >
                 <ArrowLeft className="h-4 w-4" />
                 Todas as automações, bots e máquinas
@@ -167,22 +180,19 @@ export function EnvVariablesPage() {
                     {openGroup.variables.length} variáve{openGroup.variables.length === 1 ? "l" : "is"}
                   </span>
                 </div>
-                <div className="relative md:w-80">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Buscar variável"
-                    className="h-10 w-full border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none focus:border-slate-900"
-                  />
-                </div>
+                <SearchInput value={search} onChange={setSearch} placeholder="Buscar variável" className="md:w-80" />
               </div>
             </div>
             <VariablesTable
               items={openVariables}
               hideScope
               loading={query.isLoading}
-              error={query.isError}
+              error={query.isError ? query.error : null}
+              onRetry={() => query.refetch()}
+              retrying={query.isFetching}
+              searching={search.trim() !== ""}
+              onClearSearch={() => setSearch("")}
+              onNew={openNew}
               onEdit={(item) => {
                 setEditing(item);
                 setFormOpen(true);
@@ -192,29 +202,32 @@ export function EnvVariablesPage() {
           </>
         ) : (
           <>
-            <div className="space-y-3 border-b border-slate-200 bg-slate-50/60 px-6 py-4">
-              <div className="flex flex-wrap gap-2">
+            <FilterBar hasActiveFilters={hasActiveFilters} onClear={clearFilters}>
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar automação, bot, máquina ou variável"
+                className="sm:w-80"
+              />
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Escopo">
                 {filters.map((f) => (
-                  <button key={f} type="button" className={chip(scope === f)} onClick={() => setScope(f)}>
+                  <button key={f} type="button" className={chipClass(scope === f)} onClick={() => setScope(f)}>
                     {f === "all" ? "Todos" : SCOPE_LABELS[f]}
                   </button>
                 ))}
               </div>
-              <div className="relative max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar automação, bot, máquina ou nome de variável"
-                  className="h-10 w-full border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none focus:border-slate-900"
-                />
-              </div>
-            </div>
+            </FilterBar>
             <VariableGroups
               groups={visibleGroups}
               search={search}
               loading={query.isLoading}
-              error={query.isError}
+              error={query.isError ? query.error : null}
+              onRetry={() => query.refetch()}
+              retrying={query.isFetching}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearFilters}
+              onNew={openNew}
+              onImport={() => setImportOpen(true)}
               onOpen={openTarget}
             />
           </>
@@ -239,42 +252,27 @@ export function EnvVariablesPage() {
         />
       )}
 
-      {toDelete && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="w-full max-w-md border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="flex items-start gap-3">
-              <Trash2 className="mt-0.5 h-5 w-5 text-red-600" />
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Excluir variável</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Excluir <span className="font-mono font-medium">{toDelete.name}</span> (
-                  {SCOPE_LABELS[toDelete.scope_type]}
-                  {toDelete.scope_type !== "global" ? `: ${toDelete.scope_label}` : ""})? Esta ação
-                  não pode ser desfeita.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setToDelete(null)}
-                disabled={removeMutation.isPending}
-                className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => removeMutation.mutate(toDelete.id)}
-                disabled={removeMutation.isPending}
-                className="h-10 bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Excluir variável"
+        confirmLabel="Excluir"
+        tone="danger"
+        isPending={removeMutation.isPending}
+        onConfirm={() => toDelete && removeMutation.mutate(toDelete.id)}
+        onCancel={() => {
+          if (!removeMutation.isPending) setToDelete(null);
+        }}
+        description={
+          toDelete ? (
+            <p>
+              Excluir <span className="font-mono font-medium text-slate-900">{toDelete.name}</span> (
+              {SCOPE_LABELS[toDelete.scope_type]}
+              {toDelete.scope_type !== "global" ? `: ${toDelete.scope_label}` : ""})? O robô deixa de receber
+              esta variável. Esta ação não pode ser desfeita.
+            </p>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

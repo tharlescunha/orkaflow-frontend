@@ -1,502 +1,233 @@
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { withApiDetail } from "@/lib/api-error";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  Pencil,
-  Shield,
-  UserRound,
-  UserX,
-  X,
-} from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import { createPortal } from "react-dom";
-import { useEffect, useState } from "react";
+import { Pencil, Shield, UserCheck, UserX } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiTokensCard } from "@/components/common/api-tokens-card";
-import {
-  blockUser,
-  getUserById,
-  unblockUser,
-} from "@/services/api/users";
-
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { withApiDetail } from "@/lib/api-error";
+import { EMPTY, formatDateTime } from "@/lib/format";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, chip, link, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+import { blockUser, getUserById, unblockUser } from "@/services/api/users";
+import { toast } from "@/store/toast-store";
 
 export function UserDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const params = useParams<{ userId: string }>();
   const userId = Number(params.userId);
+  const validId = Number.isFinite(userId) && userId > 0;
 
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [toast, setToast] = useState<ToastState>(null);
 
   const userQuery = useQuery({
     queryKey: ["user", userId],
     queryFn: () => getUserById(userId),
-    enabled: Number.isFinite(userId) && userId > 0,
+    enabled: validId,
   });
 
   const statusMutation = useMutation({
-    mutationFn: async (active: boolean) => {
-      if (active) {
-        return unblockUser(userId);
-      }
-      return blockUser(userId);
-    },
+    mutationFn: async (active: boolean) => (active ? unblockUser(userId) : blockUser(userId)),
     onSuccess: async (_, active) => {
       await queryClient.invalidateQueries({ queryKey: ["users"] });
       await queryClient.invalidateQueries({ queryKey: ["user", userId] });
-
-      setToast({
-        type: "success",
-        message: active
-          ? "Usuário desbloqueado com sucesso."
-          : "Usuário bloqueado com sucesso.",
-      });
-
+      toast.success(active ? "Usuário desbloqueado." : "Usuário bloqueado. Ele perdeu o acesso agora.");
       setConfirmOpen(false);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível alterar o status do usuário.", error),
-      });
+      toast.error(withApiDetail("Não foi possível alterar o status do usuário.", error));
     },
   });
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
-  function goBack() {
-    navigate("/users");
-  }
-
-  function goEdit() {
-    navigate(`/users/${userId}/edit`);
-  }
-
-  if (!Number.isFinite(userId) || userId <= 0) {
+  if (!validId) {
     return (
-      <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        ID de usuário inválido.
-      </div>
+      <section className={card}>
+        <PageHeader title="Usuário" backTo="/users" backLabel="Voltar para usuários" />
+        <div className="p-5">
+          <QueryError error={new Error("ID de usuário inválido.")} what="o usuário" />
+        </div>
+      </section>
     );
   }
 
   if (userQuery.isLoading) {
     return (
-      <div className="border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500 shadow-sm">
-        Carregando usuário...
-      </div>
+      <section className={card}>
+        <PageHeader title="Usuário" backTo="/users" backLabel="Voltar para usuários" />
+        <div className="p-5">
+          <DetailSkeleton fields={6} />
+        </div>
+      </section>
     );
   }
 
   if (userQuery.isError || !userQuery.data) {
     return (
-      <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        Não foi possível carregar os dados do usuário.
-      </div>
+      <section className={card}>
+        <PageHeader title="Usuário" backTo="/users" backLabel="Voltar para usuários" />
+        <div className="p-5">
+          <QueryError error={userQuery.error} what="o usuário" onRetry={() => userQuery.refetch()} retrying={userQuery.isFetching} />
+        </div>
+      </section>
     );
   }
 
   const user = userQuery.data;
-  const isBlocking = user.active;
+  const permissions = user.profile?.permissions ?? [];
 
   return (
-    <>
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
-
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <div className="space-y-5">
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <button
-                  type="button"
-                  onClick={goBack}
-                  className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-slate-900"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Voltar para usuários
-                </button>
-
-                <h1 className="text-2xl font-semibold text-slate-950">
-                  Detalhes do Usuário
-                </h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  Visualize os dados do usuário e o perfil de acesso vinculado.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={goEdit}
-                  className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Editar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConfirmOpen(true)}
-                  className={`inline-flex h-10 items-center gap-2 px-4 text-sm font-medium text-white transition ${
-                    user.active
-                      ? "bg-red-700 hover:bg-red-800"
-                      : "bg-emerald-700 hover:bg-emerald-800"
-                  }`}
-                >
+    <div className="space-y-5">
+      <section className={card}>
+        <PageHeader
+          title={user.name}
+          description={user.email}
+          backTo="/users"
+          backLabel="Voltar para usuários"
+          meta={
+            <span className={cn(badge, user.active ? tone.success : tone.danger)}>{user.active ? "Ativo" : "Bloqueado"}</span>
+          }
+          actions={
+            <>
+              {user.active ? (
+                <button type="button" onClick={() => setConfirmOpen(true)} className={btn.dangerOutline}>
                   <UserX className="h-4 w-4" />
-                  {user.active ? "Bloquear" : "Desbloquear"}
+                  Bloquear
                 </button>
+              ) : (
+                <button type="button" onClick={() => setConfirmOpen(true)} className={btn.success}>
+                  <UserCheck className="h-4 w-4" />
+                  Desbloquear
+                </button>
+              )}
+              <button type="button" onClick={() => navigate(`/users/${userId}/edit`)} className={btn.primary}>
+                <Pencil className="h-4 w-4" />
+                Editar
+              </button>
+            </>
+          }
+        />
+
+        <div className="grid gap-5 p-5 lg:grid-cols-[1.4fr_0.9fr]">
+          <div className="space-y-5">
+            <div className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Acesso</h2>
+              </div>
+              <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+                <InfoItem
+                  label="Status"
+                  value={
+                    <span className={cn(badge, user.active ? tone.success : tone.danger)}>
+                      {user.active ? "Ativo" : "Bloqueado"}
+                    </span>
+                  }
+                />
+                <InfoItem
+                  label="Perfil"
+                  value={
+                    user.profile ? (
+                      <Link to={`/profiles/${user.profile.id}`} className={link} title={user.profile.description || undefined}>
+                        {user.profile.name}
+                      </Link>
+                    ) : (
+                      <span className="text-slate-500">Sem perfil vinculado</span>
+                    )
+                  }
+                />
+                <InfoItem label="Login" value={user.login} />
+                <InfoItem label="E-mail" value={user.email} />
+              </div>
+            </div>
+
+            <div className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Permissões do perfil</h2>
+                {user.profile && (
+                  <span className={cn(badge, user.profile.active ? tone.success : tone.neutral)}>
+                    {user.profile.active ? "Perfil ativo" : "Perfil inativo"}
+                  </span>
+                )}
+              </div>
+              <div className={cardBody}>
+                {!user.profile ? (
+                  <p className="text-sm text-slate-500">
+                    Este usuário não tem perfil, então não tem permissões no painel.{" "}
+                    <Link to={`/users/${userId}/edit`} className={link}>
+                      Vincular um perfil
+                    </Link>
+                  </p>
+                ) : permissions.length === 0 ? (
+                  <p className="text-sm text-slate-500">O perfil {user.profile.name} não tem permissões vinculadas.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {permissions.map((permission) => (
+                      <span key={permission.id} className={chip} title={permission.description || undefined}>
+                        <Shield className="h-3 w-3" />
+                        {permission.module}:{permission.action}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Detalhes técnicos</h2>
+              </div>
+              <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+                <InfoItem label="ID" value={String(user.id)} />
+                <InfoItem label="Role legado" value={user.role || EMPTY} />
+                <InfoItem label="Criado em" value={formatDateTime(user.created_at)} />
+                <InfoItem label="Atualizado em" value={formatDateTime(user.updated_at)} />
               </div>
             </div>
           </div>
 
-          <div className="grid gap-5 p-6 lg:grid-cols-[1.4fr_0.9fr]">
-            <div className="space-y-5">
-              <div className="border border-slate-200">
-                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Dados principais
-                  </h2>
-                </div>
-
-                <div className="grid gap-4 p-4 md:grid-cols-2">
-                  <InfoItem label="Nome" value={user.name} />
-                  <InfoItem label="Login" value={user.login} />
-                  <InfoItem label="E-mail" value={user.email} />
-                  <InfoItem
-                    label="Status"
-                    value={user.active ? "Ativo" : "Bloqueado"}
-                    highlight={user.active ? "success" : "danger"}
-                  />
-                  <InfoItem label="Role legado" value={user.role} />
-                  <InfoItem
-                    label="Criado em"
-                    value={formatDateTime(user.created_at)}
-                  />
-                  <InfoItem
-                    label="Atualizado em"
-                    value={formatDateTime(user.updated_at)}
-                  />
-                </div>
-              </div>
-
-              <div className="border border-slate-200">
-                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Perfil vinculado
-                  </h2>
-                </div>
-
-                <div className="p-4">
-                  {user.profile ? (
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-10 w-10 items-center justify-center border border-slate-200 bg-slate-50">
-                          <Shield className="h-4 w-4 text-slate-700" />
-                        </div>
-
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {user.profile.name}
-                          </p>
-                          <p className="text-sm text-slate-500">
-                            {user.profile.description || "Sem descrição informada."}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <InfoItem
-                          label="Status do perfil"
-                          value={user.profile.active ? "Ativo" : "Inativo"}
-                          highlight={user.profile.active ? "success" : "danger"}
-                        />
-                        <InfoItem
-                          label="Quantidade de permissões"
-                          value={String(user.profile.permissions?.length ?? 0)}
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <p className="text-sm font-medium text-slate-700">
-                          Permissões do perfil
-                        </p>
-
-                        {user.profile.permissions?.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {user.profile.permissions.map((permission) => (
-                              <span
-                                key={permission.id}
-                                className="inline-flex items-center border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700"
-                                title={permission.description || undefined}
-                              >
-                                {permission.module}:{permission.action}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                            Este perfil não possui permissões vinculadas.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      Usuário sem perfil vinculado.
-                    </div>
-                  )}
-                </div>
+          <aside className="space-y-5">
+            <div className={cn(card, "border-amber-200 bg-amber-50")}>
+              <div className="space-y-2 px-5 py-4 text-sm text-amber-900">
+                <p className="font-semibold">Como funciona o acesso</p>
+                <p>O perfil concentra as permissões do usuário. Alterar o perfil muda o que ele pode fazer no painel.</p>
+                <p>Bloquear corta o acesso na hora. Dá para desbloquear depois sem perder nada.</p>
+                <p>O "role legado" existe só por compatibilidade com partes antigas do sistema.</p>
               </div>
             </div>
+          </aside>
+        </div>
 
-            <aside className="space-y-5">
-              <div className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Resumo
-                  </h2>
-                </div>
+        <div className="px-5 pb-5">
+          <ApiTokensCard userId={userId} userName={user.name} />
+        </div>
+      </section>
 
-                <div className="space-y-4 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-9 w-9 items-center justify-center border border-slate-200 bg-slate-50">
-                      <UserRound className="h-4 w-4 text-slate-700" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">
-                        {user.name}
-                      </p>
-                      <p className="text-sm text-slate-500">{user.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 text-sm">
-                    <SummaryItem label="Login" value={user.login} />
-                    <SummaryItem
-                      label="Status"
-                      value={user.active ? "Ativo" : "Bloqueado"}
-                    />
-                    <SummaryItem label="Role legado" value={user.role} />
-                    <SummaryItem
-                      label="Perfil"
-                      value={user.profile?.name || "Sem perfil"}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="border border-amber-200 bg-amber-50">
-                <div className="border-b border-amber-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-amber-700" />
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-800">
-                      Atenção
-                    </h2>
-                  </div>
-                </div>
-
-                <div className="space-y-3 px-4 py-4 text-sm text-amber-900">
-                  <p>
-                    O <strong>perfil</strong> concentra as permissões reais do
-                    usuário no sistema.
-                  </p>
-                  <p>
-                    Se o usuário for <strong>bloqueado</strong>, o backend já
-                    corta o acesso imediatamente.
-                  </p>
-                  <p>
-                    O campo <strong>role legado</strong> ainda existe por
-                    compatibilidade com partes antigas do projeto.
-                  </p>
-                </div>
-              </div>
-            </aside>
-          </div>
-
-          <div className="px-6 pb-6">
-            <ApiTokensCard userId={userId} userName={user.name} />
-          </div>
-        </section>
-
-        {confirmOpen ? (
-          <ConfirmStatusModal
-            loading={statusMutation.isPending}
-            isBlocking={isBlocking}
-            userName={user.name}
-            onCancel={() => {
-              if (statusMutation.isPending) return;
-              setConfirmOpen(false);
-            }}
-            onConfirm={() => statusMutation.mutate(!user.active)}
-          />
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-function InfoItem({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: "success" | "danger";
-}) {
-  const highlightClass =
-    highlight === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : highlight === "danger"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : "border-slate-200 bg-white text-slate-800";
-
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <div className={`border px-3 py-2 text-sm ${highlightClass}`}>
-        {value || "---"}
-      </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title={user.active ? "Bloquear usuário" : "Desbloquear usuário"}
+        description={
+          user.active
+            ? `${user.name} perde o acesso ao painel na hora. Você pode desbloquear depois.`
+            : `${user.name} volta a acessar o painel normalmente.`
+        }
+        confirmLabel={user.active ? "Bloquear" : "Desbloquear"}
+        tone={user.active ? "danger" : "default"}
+        isPending={statusMutation.isPending}
+        onConfirm={() => statusMutation.mutate(!user.active)}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
 
-function SummaryItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function InfoItem({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-800">{value}</span>
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <div className="mt-1 break-words text-sm text-slate-800">{value || EMPTY}</div>
     </div>
-  );
-}
-
-function ConfirmStatusModal({
-  loading,
-  isBlocking,
-  userName,
-  onCancel,
-  onConfirm,
-}: {
-  loading: boolean;
-  isBlocking: boolean;
-  userName: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4">
-      <div className="w-full max-w-md border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-950">
-            {isBlocking ? "Bloquear usuário" : "Desbloquear usuário"}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Confirme a ação para o usuário <strong>{userName}</strong>.
-          </p>
-        </div>
-
-        <div className="px-6 py-5">
-          <div
-            className={`border px-4 py-3 text-sm ${
-              isBlocking
-                ? "border-red-200 bg-red-50 text-red-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800"
-            }`}
-          >
-            {isBlocking
-              ? "Ao bloquear, o usuário perderá acesso ao sistema imediatamente."
-              : "Ao desbloquear, o usuário poderá voltar a acessar o sistema normalmente."}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={loading}
-            className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={loading}
-            className={`inline-flex h-10 items-center gap-2 px-4 text-sm font-medium text-white transition disabled:opacity-50 ${
-              isBlocking
-                ? "bg-red-700 hover:bg-red-800"
-                : "bg-emerald-700 hover:bg-emerald-800"
-            }`}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <UserX className="h-4 w-4" />
-            )}
-            {loading
-              ? "Processando..."
-              : isBlocking
-                ? "Confirmar bloqueio"
-                : "Confirmar desbloqueio"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
   );
 }

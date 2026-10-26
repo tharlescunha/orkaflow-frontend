@@ -1,43 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
-import { withApiDetail } from "@/lib/api-error";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Info,
-  Save,
-  X,
-} from "lucide-react";
+import { CalendarDays, Info, Save, Terminal } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { SearchableSelect } from "@/components/common/searchable-select";
-import type { SearchableOption } from "@/components/common/searchable-select";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { SearchableSelect, type SearchableOption } from "@/components/common/searchable-select";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { withApiDetail } from "@/lib/api-error";
+import { btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, select, textarea } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { getAutomation, listAutomations } from "@/services/api/automations";
-import {
-  createSchedule,
-  getSchedule,
-  updateSchedule,
-} from "@/services/api/schedules";
+import { createSchedule, getSchedule, updateSchedule } from "@/services/api/schedules";
 import type {
   CalendarType,
   CreateSchedulePayload,
   SchedulePolicy,
+  ScheduleRead,
   ScheduleType,
   UpdateSchedulePayload,
 } from "@/types/schedule";
+import { toast } from "@/store/toast-store";
 
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
-
-type CronMode =
-  | "every-x-minutes"
-  | "every-x-hours"
-  | "daily-at"
-  | "weekly-at"
-  | "monthly-at"
-  | "custom";
+type CronMode = "every-x-minutes" | "every-x-hours" | "daily-at" | "weekly-at" | "monthly-at" | "custom";
 
 type FormState = {
   name: string;
@@ -67,6 +52,7 @@ type FormState = {
   cron_monthly_minute: string;
 };
 
+type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const initialFormState: FormState = {
   name: "",
@@ -96,6 +82,32 @@ const initialFormState: FormState = {
   cron_monthly_minute: "0",
 };
 
+const WEEK_DAYS = [
+  { label: "Dom", value: "0" },
+  { label: "Seg", value: "1" },
+  { label: "Ter", value: "2" },
+  { label: "Qua", value: "3" },
+  { label: "Qui", value: "4" },
+  { label: "Sex", value: "5" },
+  { label: "Sáb", value: "6" },
+];
+
+const POLICY_LABELS: Record<SchedulePolicy, string> = {
+  create_always: "Criar sempre",
+  ignore_if_running: "Ignorar se estiver em execução",
+  enqueue_if_none_pending: "Enfileirar se não houver pendência",
+  run_if_missed: "Executar se perdeu a janela",
+  skip_if_missed: "Ignorar se perdeu a janela",
+};
+
+const POLICY_HINTS: Record<SchedulePolicy, string> = {
+  create_always: "Cria uma task em todo horário, mesmo que a anterior ainda esteja rodando.",
+  ignore_if_running: "Se a task anterior ainda estiver em execução, este horário é ignorado.",
+  enqueue_if_none_pending: "Só cria uma task se não houver outra aguardando na fila.",
+  run_if_missed: "Se o horário passou com o sistema parado, executa assim que voltar.",
+  skip_if_missed: "Se o horário passou com o sistema parado, pula e espera o próximo.",
+};
+
 function padCronNumber(value: string) {
   const numeric = Number(value || 0);
   if (Number.isNaN(numeric)) return "0";
@@ -115,26 +127,17 @@ function buildCronExpression(form: FormState) {
     }
 
     case "daily-at": {
-      return `${padCronNumber(form.cron_daily_minute)} ${padCronNumber(
-        form.cron_daily_hour
-      )} * * *`;
+      return `${padCronNumber(form.cron_daily_minute)} ${padCronNumber(form.cron_daily_hour)} * * *`;
     }
 
     case "weekly-at": {
-      const days = form.cron_weekly_days.length
-        ? form.cron_weekly_days.join(",")
-        : "1";
-
-      return `${padCronNumber(form.cron_weekly_minute)} ${padCronNumber(
-        form.cron_weekly_hour
-      )} * * ${days}`;
+      const days = form.cron_weekly_days.length ? form.cron_weekly_days.join(",") : "1";
+      return `${padCronNumber(form.cron_weekly_minute)} ${padCronNumber(form.cron_weekly_hour)} * * ${days}`;
     }
 
     case "monthly-at": {
       const day = Math.min(31, Math.max(1, Number(form.cron_monthly_day || 1)));
-      return `${padCronNumber(form.cron_monthly_minute)} ${padCronNumber(
-        form.cron_monthly_hour
-      )} ${day} * *`;
+      return `${padCronNumber(form.cron_monthly_minute)} ${padCronNumber(form.cron_monthly_hour)} ${day} * *`;
     }
 
     case "custom":
@@ -160,7 +163,7 @@ function parseCronToForm(expression?: string | null) {
   const mode = detectCronMode(cron);
 
   const next = {
-    cron_mode: mode as CronMode,
+    cron_mode: mode,
     cron_expression: cron || "*/5 * * * *",
     cron_every_minutes: "5",
     cron_every_hours: "1",
@@ -205,50 +208,107 @@ function parseCronToForm(expression?: string | null) {
   return next;
 }
 
+function scheduleToForm(schedule: ScheduleRead): FormState {
+  return {
+    name: schedule.name ?? "",
+    automation_id: String(schedule.automation_id ?? ""),
+    priority: String(schedule.priority ?? 5),
+    schedule_type: schedule.schedule_type ?? "calendar",
+    calendar_type: schedule.calendar_type ?? "once",
+    policy: schedule.policy ?? "create_always",
+    timezone: schedule.timezone ?? "America/Sao_Paulo",
+    active: Boolean(schedule.active),
+    use_default_runtime_parameters: schedule.use_default_runtime_parameters ?? true,
+    runtime_parameters_json: schedule.runtime_parameters_json
+      ? JSON.stringify(schedule.runtime_parameters_json, null, 2)
+      : "",
+    calendar_interval_value: String(schedule.interval_value ?? 1),
+    ...parseCronToForm(schedule.cron_expression),
+  };
+}
+
 function formatCalendarPreview(type: CalendarType, intervalValue: string) {
-  if (type === "once") return "Execução única";
+  if (type === "once") return "Roda uma única vez, assim que for ativado e o scheduler passar por ele.";
 
   const interval = Math.max(1, Number(intervalValue || 1));
 
-  const labels: Record<string, string> = {
-    second: "segundo(s)",
-    minute: "minuto(s)",
-    hour: "hora(s)",
-    day: "dia(s)",
-    week: "semana(s)",
-    month: "mês(es)",
+  const labels: Record<string, [string, string]> = {
+    second: ["segundo", "segundos"],
+    minute: ["minuto", "minutos"],
+    hour: ["hora", "horas"],
+    day: ["dia", "dias"],
+    week: ["semana", "semanas"],
+    month: ["mês", "meses"],
   };
 
-  return `A cada ${interval} ${labels[type] ?? "intervalo(s)"}`;
+  const [singular, plural] = labels[type] ?? ["intervalo", "intervalos"];
+  return interval === 1 ? `Roda a cada ${singular}.` : `Roda a cada ${interval} ${plural}.`;
 }
 
-function prettyPolicy(value: SchedulePolicy) {
-  const labels: Record<SchedulePolicy, string> = {
-    create_always: "Criar sempre",
-    ignore_if_running: "Ignorar se estiver em execução",
-    enqueue_if_none_pending: "Enfileirar se não houver pendência",
-    run_if_missed: "Executar se perdeu a janela",
-    skip_if_missed: "Ignorar se perdeu a janela",
-  };
+function pad2(value: string) {
+  return value.padStart(2, "0");
+}
 
-  return labels[value];
+function describeWeekDays(field: string) {
+  const names = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const parts = field.split(",").map((d) => names[Number(d)] ?? d);
+  return parts.join(", ");
+}
+
+// Tradução simples da expressão para quem não lê cron. Cobre os padrões do builder e,
+// para o resto, mostra campo a campo.
+function describeCron(expression: string): { ok: boolean; text: string } {
+  const fields = expression.trim().split(/\s+/).filter(Boolean);
+  if (fields.length !== 5) {
+    return { ok: false, text: "A expressão precisa ter 5 campos separados por espaço: minuto, hora, dia do mês, mês e dia da semana." };
+  }
+
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+  const everyMinute = minute.match(/^\*\/(\d+)$/);
+  const everyHour = hour.match(/^\*\/(\d+)$/);
+  const isNum = (v: string) => /^\d+$/.test(v);
+
+  if (everyMinute && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return { ok: true, text: `Roda a cada ${everyMinute[1]} minuto(s), o dia todo.` };
+  }
+  if (isNum(minute) && everyHour && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return { ok: true, text: `Roda a cada ${everyHour[1]} hora(s), sempre no minuto ${pad2(minute)}.` };
+  }
+  if (isNum(minute) && isNum(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return { ok: true, text: `Roda todos os dias às ${pad2(hour)}:${pad2(minute)}.` };
+  }
+  if (isNum(minute) && isNum(hour) && dayOfMonth === "*" && month === "*" && /^[\d,]+$/.test(dayOfWeek)) {
+    return { ok: true, text: `Roda às ${pad2(hour)}:${pad2(minute)} em: ${describeWeekDays(dayOfWeek)}.` };
+  }
+  if (isNum(minute) && isNum(hour) && dayOfMonth === "*" && month === "*" && /^(\d)-(\d)$/.test(dayOfWeek)) {
+    const [, a, b] = dayOfWeek.match(/^(\d)-(\d)$/) ?? [];
+    return { ok: true, text: `Roda às ${pad2(hour)}:${pad2(minute)}, de ${describeWeekDays(a)} a ${describeWeekDays(b)}.` };
+  }
+  if (isNum(minute) && isNum(hour) && isNum(dayOfMonth) && month === "*" && dayOfWeek === "*") {
+    return { ok: true, text: `Roda no dia ${dayOfMonth} de cada mês às ${pad2(hour)}:${pad2(minute)}.` };
+  }
+
+  const any = (v: string) => (v === "*" ? "qualquer" : v);
+  return {
+    ok: true,
+    text: `Minuto: ${any(minute)} · Hora: ${any(hour)} · Dia do mês: ${any(dayOfMonth)} · Mês: ${any(month)} · Dia da semana: ${any(dayOfWeek)}.`,
+  };
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isValidPriority(value: string) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 10;
+}
 
 export function ScheduleFormPage() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const params = useParams<{ scheduleId: string }>();
 
   const scheduleId = Number(params.scheduleId);
   const isEditMode = Number.isFinite(scheduleId) && scheduleId > 0;
-
-  const [toast, setToast] = useState<ToastState>(null);
-  const [form, setForm] = useState<FormState>(initialFormState);
 
   const automationsQuery = useQuery({
     queryKey: ["automations-options"],
@@ -261,11 +321,77 @@ export function ScheduleFormPage() {
     enabled: isEditMode,
   });
 
+  const title = isEditMode ? "Editar agendamento" : "Novo agendamento";
+  const backTo = isEditMode ? `/schedules/${scheduleId}` : "/schedules";
+  const backLabel = isEditMode ? "Voltar para o agendamento" : "Voltar para agendamentos";
+
+  if (isEditMode && scheduleQuery.isLoading) {
+    return (
+      <section className={card}>
+        <PageHeader title={title} backTo={backTo} backLabel={backLabel} />
+        <div className="p-5">
+          <DetailSkeleton fields={8} />
+        </div>
+      </section>
+    );
+  }
+
+  if (isEditMode && (scheduleQuery.isError || !scheduleQuery.data)) {
+    return (
+      <section className={card}>
+        <PageHeader title={title} backTo={backTo} backLabel={backLabel} />
+        <div className="p-5">
+          <QueryError
+            error={scheduleQuery.error}
+            what="o agendamento"
+            onRetry={() => scheduleQuery.refetch()}
+            retrying={scheduleQuery.isFetching}
+          />
+        </div>
+      </section>
+    );
+  }
+
+  // O formulário só nasce quando os dados chegaram: nada de re-hidratar por efeito depois.
+  const initial = isEditMode && scheduleQuery.data ? scheduleToForm(scheduleQuery.data) : initialFormState;
+
+  return (
+    <ScheduleForm
+      key={isEditMode ? `edit-${scheduleId}` : "new"}
+      initial={initial}
+      scheduleId={isEditMode ? scheduleId : null}
+      title={title}
+      backTo={backTo}
+      backLabel={backLabel}
+      automations={automationsQuery.data ?? []}
+      automationsLoading={automationsQuery.isLoading}
+    />
+  );
+}
+
+type ScheduleFormProps = {
+  initial: FormState;
+  scheduleId: number | null;
+  title: string;
+  backTo: string;
+  backLabel: string;
+  automations: Awaited<ReturnType<typeof listAutomations>>;
+  automationsLoading: boolean;
+};
+
+function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automations, automationsLoading }: ScheduleFormProps) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const isEditMode = scheduleId !== null;
+
+  const [form, setForm] = useState<FormState>(initial);
+  const [errors, setErrors] = useState<FormErrors>({});
+
   const selectedAutomationId = Number(form.automation_id);
 
   // Só automações ativas por padrão; a já vinculada (edição) continua na lista mesmo se inativa.
   const automationOptions = useMemo<SearchableOption<number>[]>(() => {
-    return (automationsQuery.data ?? [])
+    return automations
       .filter((automation) => automation.active || automation.id === selectedAutomationId)
       .map((automation) => ({
         value: automation.id,
@@ -275,7 +401,7 @@ export function ScheduleFormPage() {
             .filter(Boolean)
             .join(" · ") || null,
       }));
-  }, [automationsQuery.data, selectedAutomationId]);
+  }, [automations, selectedAutomationId]);
 
   const automationQuery = useQuery({
     queryKey: ["automation-form-selected", selectedAutomationId],
@@ -283,133 +409,105 @@ export function ScheduleFormPage() {
     enabled: Number.isFinite(selectedAutomationId) && selectedAutomationId > 0,
   });
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
-  useEffect(() => {
-    if (!scheduleQuery.data) return;
-
-    const cronData = parseCronToForm(scheduleQuery.data.cron_expression);
-
-    setForm({
-      name: scheduleQuery.data.name ?? "",
-      automation_id: String(scheduleQuery.data.automation_id ?? ""),
-      priority: String(scheduleQuery.data.priority ?? 5),
-      schedule_type: scheduleQuery.data.schedule_type ?? "calendar",
-      calendar_type: scheduleQuery.data.calendar_type ?? "once",
-      policy: scheduleQuery.data.policy ?? "create_always",
-      timezone: scheduleQuery.data.timezone ?? "America/Sao_Paulo",
-      active: Boolean(scheduleQuery.data.active),
-      use_default_runtime_parameters: scheduleQuery.data.use_default_runtime_parameters ?? true,
-      runtime_parameters_json: scheduleQuery.data.runtime_parameters_json
-        ? JSON.stringify(scheduleQuery.data.runtime_parameters_json, null, 2)
-        : "",
-      calendar_interval_value: String(scheduleQuery.data.interval_value ?? 1),
-
-      ...cronData,
-    });
-  }, [scheduleQuery.data]);
-
   const cronPreview = useMemo(() => buildCronExpression(form), [form]);
+  const cronDescription = useMemo(() => describeCron(cronPreview), [cronPreview]);
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateSchedulePayload) => createSchedule(payload),
     onSuccess: async (created) => {
-      setToast({
-        type: "success",
-        message: "Agendamento cadastrado com sucesso.",
-      });
-
+      toast.success("Agendamento cadastrado.");
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
-
-      setTimeout(() => {
-        navigate(`/schedules/${created.id}`);
-      }, 800);
+      navigate(`/schedules/${created.id}`);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível cadastrar o agendamento.", error),
-      });
+      toast.error(withApiDetail("Não foi possível cadastrar o agendamento.", error));
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: UpdateSchedulePayload) =>
-      updateSchedule(scheduleId, payload),
+    mutationFn: (payload: UpdateSchedulePayload) => updateSchedule(scheduleId as number, payload),
     onSuccess: async () => {
-      setToast({
-        type: "success",
-        message: "Agendamento atualizado com sucesso.",
-      });
-
+      toast.success("Agendamento atualizado.");
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
-      await queryClient.invalidateQueries({
-        queryKey: ["schedule-edit", scheduleId],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["schedule-detail", scheduleId],
-      });
-
-      setTimeout(() => {
-        navigate(`/schedules/${scheduleId}`);
-      }, 800);
+      await queryClient.invalidateQueries({ queryKey: ["schedule-edit", scheduleId] });
+      await queryClient.invalidateQueries({ queryKey: ["schedule-detail", scheduleId] });
+      navigate(`/schedules/${scheduleId}`);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível atualizar o agendamento.", error),
-      });
+      toast.error(withApiDetail("Não foi possível atualizar o agendamento.", error));
     },
   });
 
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
   function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setForm((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
   }
 
   function toggleWeeklyDay(day: string) {
     setForm((prev) => {
       const exists = prev.cron_weekly_days.includes(day);
-
       return {
         ...prev,
-        cron_weekly_days: exists
-          ? prev.cron_weekly_days.filter((item) => item !== day)
-          : [...prev.cron_weekly_days, day].sort(),
+        cron_weekly_days: exists ? prev.cron_weekly_days.filter((item) => item !== day) : [...prev.cron_weekly_days, day].sort(),
       };
     });
+    if (errors.cron_weekly_days) {
+      setErrors((prev) => ({ ...prev, cron_weekly_days: undefined }));
+    }
+  }
+
+  function validate(): { errors: FormErrors; runtimeParameters: Record<string, unknown> | null } {
+    const next: FormErrors = {};
+    let runtimeParameters: Record<string, unknown> | null = null;
+
+    if (!form.name.trim()) next.name = "Informe um nome para o agendamento.";
+    if (!form.automation_id) next.automation_id = "Escolha a automação que vai rodar.";
+    if (!isValidPriority(form.priority)) next.priority = "Use um número inteiro de 1 a 10.";
+    if (!form.timezone.trim()) next.timezone = "Informe o fuso horário (ex.: America/Sao_Paulo).";
+
+    if (form.schedule_type === "calendar") {
+      if (form.calendar_type !== "once") {
+        const interval = Number(form.calendar_interval_value);
+        if (!Number.isInteger(interval) || interval < 1) {
+          next.calendar_interval_value = "O intervalo precisa ser um número inteiro maior que zero.";
+        }
+      }
+    } else {
+      if (form.cron_mode === "custom" && !cronDescription.ok) {
+        next.cron_expression = cronDescription.text;
+      }
+      if (form.cron_mode === "weekly-at" && form.cron_weekly_days.length === 0) {
+        next.cron_weekly_days = "Escolha pelo menos um dia da semana.";
+      }
+    }
+
+    if (!form.use_default_runtime_parameters && form.runtime_parameters_json.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(form.runtime_parameters_json);
+        if (!isObjectRecord(parsed)) {
+          next.runtime_parameters_json = "Os parâmetros precisam ser um objeto JSON, ex.: { \"filial\": \"001\" }.";
+        } else {
+          runtimeParameters = parsed;
+        }
+      } catch {
+        next.runtime_parameters_json = "JSON inválido. Confira vírgulas, aspas e chaves.";
+      }
+    }
+
+    return { errors: next, runtimeParameters };
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isPending) return;
 
-    let parsedRuntimeParameters: Record<string, unknown> | null = null;
-
-    if (!form.use_default_runtime_parameters && form.runtime_parameters_json.trim()) {
-      try {
-        const parsed = JSON.parse(form.runtime_parameters_json);
-        if (!isObjectRecord(parsed)) {
-          setToast({
-            type: "error",
-            message: "Parâmetros do robô precisam ser um objeto JSON.",
-          });
-          return;
-        }
-        parsedRuntimeParameters = parsed;
-      } catch {
-        setToast({
-          type: "error",
-          message: "Parâmetros do robô inválidos.",
-        });
-        return;
-      }
-    }
+    const { errors: validationErrors, runtimeParameters } = validate();
+    setErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     const commonPayload = {
       name: form.name.trim(),
@@ -420,7 +518,7 @@ export function ScheduleFormPage() {
       timezone: form.timezone.trim() || "UTC",
       active: form.active,
       use_default_runtime_parameters: form.use_default_runtime_parameters,
-      runtime_parameters_json: form.use_default_runtime_parameters ? null : parsedRuntimeParameters,
+      runtime_parameters_json: form.use_default_runtime_parameters ? null : runtimeParameters,
     };
 
     if (form.schedule_type === "calendar") {
@@ -438,10 +536,7 @@ export function ScheduleFormPage() {
         ...commonPayload,
         calendar_type: form.calendar_type,
         cron_expression: null,
-        interval_value:
-          form.calendar_type === "once"
-            ? null
-            : Math.max(1, Number(form.calendar_interval_value || 1)),
+        interval_value: form.calendar_type === "once" ? null : Math.max(1, Number(form.calendar_interval_value || 1)),
         interval_unit: unitMap[form.calendar_type],
       };
 
@@ -450,7 +545,6 @@ export function ScheduleFormPage() {
       } else {
         createMutation.mutate(payload);
       }
-
       return;
     }
 
@@ -469,602 +563,444 @@ export function ScheduleFormPage() {
     }
   }
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  function handleKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      e.currentTarget.requestSubmit();
+    }
+  }
 
+  const timeInputs = (hourField: keyof FormState, minuteField: keyof FormState) => (
+    <div className="grid gap-5 md:grid-cols-2">
+      <Field label="Hora" error={errors[hourField]}>
+        <input
+          value={String(form[hourField])}
+          onChange={(e) => handleChange(hourField, e.target.value as FormState[typeof hourField])}
+          className={input}
+          type="number"
+          min={0}
+          max={23}
+        />
+      </Field>
+      <Field label="Minuto" error={errors[minuteField]}>
+        <input
+          value={String(form[minuteField])}
+          onChange={(e) => handleChange(minuteField, e.target.value as FormState[typeof minuteField])}
+          className={input}
+          type="number"
+          min={0}
+          max={59}
+        />
+      </Field>
+    </div>
+  );
 
   return (
-    <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
+    <section className={card}>
+      <PageHeader
+        title={title}
+        description="Escolha a automação, quando ela roda e com quais parâmetros."
+        backTo={backTo}
+        backLabel={backLabel}
+      />
 
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(isEditMode ? `/schedules/${scheduleId}` : "/schedules")
-                }
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">
-                {isEditMode ? "Editar Agendamento" : "Novo Agendamento"}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Cadastro assistido com builder visual para cron e modo calendário.
-              </p>
+      <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} noValidate>
+        <div className="space-y-5 p-5">
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Dados principais</h2>
             </div>
-          </div>
-        </div>
 
-        {isEditMode && scheduleQuery.isLoading ? (
-          <div className="px-6 py-10 text-sm text-slate-500">
-            Carregando agendamento...
-          </div>
-        ) : isEditMode && scheduleQuery.isError ? (
-          <div className="px-6 py-10 text-sm text-red-600">
-            Erro ao carregar agendamento.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-6 px-6 py-6">
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Dados principais
-                  </h2>
-                </div>
+            <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+              <Field label="Nome do agendamento" error={errors.name}>
+                <input
+                  value={form.name}
+                  onChange={(e) => handleChange("name", e.target.value)}
+                  className={input}
+                  placeholder="Ex.: Conciliação diária às 6h"
+                  autoFocus={!isEditMode}
+                />
+              </Field>
 
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Nome do agendamento">
-                    <input
-                      value={form.name}
-                      onChange={(e) => handleChange("name", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      placeholder="Ex.: Execução a cada 5 minutos"
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Automação">
-                    <SearchableSelect
-                      value={form.automation_id ? Number(form.automation_id) : ""}
-                      onChange={(value) => handleChange("automation_id", value === "" ? "" : String(value))}
-                      options={automationOptions}
-                      placeholder="Selecione"
-                      searchPlaceholder="Buscar automação, repositório, bot..."
-                      emptyText="Nenhuma automação ativa encontrada."
-                      required
-                      disabled={automationsQuery.isLoading}
-                      loading={automationsQuery.isLoading}
-                    />
-                  </FormField>
-
-                  <FormField label="Prioridade">
-                    <input
-                      value={form.priority}
-                      onChange={(e) => handleChange("priority", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      type="number"
-                      min={1}
-                      max={10}
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Timezone">
-                    <input
-                      value={form.timezone}
-                      onChange={(e) => handleChange("timezone", e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      placeholder="America/Sao_Paulo"
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Policy">
-                    <select
-                      value={form.policy}
-                      onChange={(e) =>
-                        handleChange("policy", e.target.value as SchedulePolicy)
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    >
-                      <option value="create_always">Criar sempre</option>
-                      <option value="ignore_if_running">
-                        Ignorar se estiver em execução
-                      </option>
-                      <option value="enqueue_if_none_pending">
-                        Enfileirar se não houver pendência
-                      </option>
-                      <option value="run_if_missed">
-                        Executar se perdeu a janela
-                      </option>
-                      <option value="skip_if_missed">
-                        Ignorar se perdeu a janela
-                      </option>
-                    </select>
-                  </FormField>
-
-                  <div className="flex items-end">
-                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
-                      <input
-                        checked={form.active}
-                        onChange={(e) => handleChange("active", e.target.checked)}
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      Agendamento ativo
-                    </label>
-                  </div>
-                </div>
-
+              <Field label="Automação" error={errors.automation_id}>
+                <SearchableSelect
+                  value={form.automation_id ? Number(form.automation_id) : ""}
+                  onChange={(value) => handleChange("automation_id", value === "" ? "" : String(value))}
+                  options={automationOptions}
+                  placeholder="Selecione a automação"
+                  searchPlaceholder="Buscar automação, repositório, bot..."
+                  emptyText="Nenhuma automação ativa encontrada."
+                  disabled={automationsLoading}
+                  loading={automationsLoading}
+                />
                 {automationQuery.data ? (
-                  <div className="border-t border-slate-200 px-5 py-4">
-                    <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                      <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-medium">Automação selecionada</p>
-                        <p className="mt-1 [overflow-wrap:anywhere]">
-                          {automationQuery.data.name}
-                          {automationQuery.data.label
-                            ? ` · ${automationQuery.data.label}`
-                            : ""}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  <p className={cn(hint, "flex items-start gap-1.5")}>
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span className="[overflow-wrap:anywhere]">
+                      {automationQuery.data.name}
+                      {automationQuery.data.label ? ` · ${automationQuery.data.label}` : ""}
+                    </span>
+                  </p>
                 ) : null}
-              </section>
+              </Field>
 
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Tipo de agendamento
-                  </h2>
-                </div>
+              <Field label="Prioridade" error={errors.priority} hintText="De 1 (mais urgente) a 10 (menos urgente).">
+                <input
+                  value={form.priority}
+                  onChange={(e) => handleChange("priority", e.target.value)}
+                  className={input}
+                  type="number"
+                  min={1}
+                  max={10}
+                />
+              </Field>
 
-                <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleChange("schedule_type", "calendar")}
-                    className={`border px-4 py-4 text-left transition ${
-                      form.schedule_type === "calendar"
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">Calendário assistido</p>
-                    <p className="mt-1 text-xs opacity-80">
-                      Interface simples para repetição controlada.
-                    </p>
-                  </button>
+              <Field label="Fuso horário" error={errors.timezone} hintText="Os horários da regra seguem este fuso.">
+                <input
+                  value={form.timezone}
+                  onChange={(e) => handleChange("timezone", e.target.value)}
+                  className={input}
+                  placeholder="America/Sao_Paulo"
+                />
+              </Field>
 
-                  <button
-                    type="button"
-                    onClick={() => handleChange("schedule_type", "cron")}
-                    className={`border px-4 py-4 text-left transition ${
-                      form.schedule_type === "cron"
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">Cron avançado assistido</p>
-                    <p className="mt-1 text-xs opacity-80">
-                      Builder visual que gera a expressão cron automaticamente.
-                    </p>
-                  </button>
-                </div>
-              </section>
+              <Field label="Política de execução" hintText={POLICY_HINTS[form.policy]}>
+                <select
+                  value={form.policy}
+                  onChange={(e) => handleChange("policy", e.target.value as SchedulePolicy)}
+                  className={select}
+                >
+                  {(Object.keys(POLICY_LABELS) as SchedulePolicy[]).map((value) => (
+                    <option key={value} value={value}>
+                      {POLICY_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <div className="flex items-end pb-1">
+                <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-slate-700">
+                  <input
+                    checked={form.active}
+                    onChange={(e) => handleChange("active", e.target.checked)}
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Agendamento ativo
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Quando roda</h2>
+            </div>
+
+            <div className={cn(cardBody, "space-y-5")}>
+              <div className="grid gap-4 md:grid-cols-2" role="radiogroup" aria-label="Tipo de agendamento">
+                <TypeOption
+                  selected={form.schedule_type === "calendar"}
+                  onSelect={() => handleChange("schedule_type", "calendar")}
+                  icon={<CalendarDays className="h-4 w-4" />}
+                  title="Calendário"
+                  description="Uma vez ou a cada X minutos, horas, dias..."
+                />
+                <TypeOption
+                  selected={form.schedule_type === "cron"}
+                  onSelect={() => handleChange("schedule_type", "cron")}
+                  icon={<Terminal className="h-4 w-4" />}
+                  title="Cron"
+                  description="Horários fixos: todo dia às 6h, segunda a sexta, dia 1 do mês..."
+                />
+              </div>
 
               {form.schedule_type === "calendar" ? (
-                <section className="border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Configuração de calendário
-                    </h2>
-                  </div>
-
-                  <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                    <FormField label="Frequência">
+                <div className="space-y-4">
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <Field label="Frequência">
                       <select
                         value={form.calendar_type}
-                        onChange={(e) =>
-                          handleChange("calendar_type", e.target.value as CalendarType)
-                        }
-                        className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                        onChange={(e) => handleChange("calendar_type", e.target.value as CalendarType)}
+                        className={select}
                       >
                         <option value="once">Execução única</option>
-                        <option value="second">Repetição por segundo</option>
-                        <option value="minute">Repetição por minuto</option>
-                        <option value="hour">Repetição por hora</option>
-                        <option value="day">Repetição por dia</option>
-                        <option value="week">Repetição por semana</option>
-                        <option value="month">Repetição por mês</option>
+                        <option value="second">A cada X segundos</option>
+                        <option value="minute">A cada X minutos</option>
+                        <option value="hour">A cada X horas</option>
+                        <option value="day">A cada X dias</option>
+                        <option value="week">A cada X semanas</option>
+                        <option value="month">A cada X meses</option>
                       </select>
-                    </FormField>
+                    </Field>
 
                     {form.calendar_type !== "once" ? (
-                      <FormField label="Intervalo">
+                      <Field label="Intervalo" error={errors.calendar_interval_value}>
                         <input
                           value={form.calendar_interval_value}
-                          onChange={(e) =>
-                            handleChange("calendar_interval_value", e.target.value)
-                          }
-                          className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                          onChange={(e) => handleChange("calendar_interval_value", e.target.value)}
+                          className={input}
                           type="number"
                           min={1}
-                          required
                         />
-                      </FormField>
-                    ) : (
-                      <div />
-                    )}
+                      </Field>
+                    ) : null}
                   </div>
 
-                  <div className="border-t border-slate-200 px-5 py-4">
-                    <div className="border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Preview
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        {formatCalendarPreview(
-                          form.calendar_type,
-                          form.calendar_interval_value
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </section>
+                  <Preview label="Resumo">{formatCalendarPreview(form.calendar_type, form.calendar_interval_value)}</Preview>
+                </div>
               ) : (
-                <section className="border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Builder de cron
-                    </h2>
-                  </div>
+                <div className="space-y-5">
+                  <Field label="Modelo">
+                    <select
+                      value={form.cron_mode}
+                      onChange={(e) => handleChange("cron_mode", e.target.value as CronMode)}
+                      className={select}
+                    >
+                      <option value="every-x-minutes">A cada X minutos</option>
+                      <option value="every-x-hours">A cada X horas</option>
+                      <option value="daily-at">Todos os dias em um horário</option>
+                      <option value="weekly-at">Dias da semana em um horário</option>
+                      <option value="monthly-at">Dia fixo do mês em um horário</option>
+                      <option value="custom">Expressão cron manual</option>
+                    </select>
+                  </Field>
 
-                  <div className="space-y-5 px-5 py-5">
-                    <FormField label="Modelo de agendamento">
-                      <select
-                        value={form.cron_mode}
-                        onChange={(e) =>
-                          handleChange("cron_mode", e.target.value as CronMode)
-                        }
-                        className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      >
-                        <option value="every-x-minutes">A cada X minutos</option>
-                        <option value="every-x-hours">A cada X horas</option>
-                        <option value="daily-at">Todos os dias em um horário</option>
-                        <option value="weekly-at">Semanal em dias selecionados</option>
-                        <option value="monthly-at">Mensal em dia fixo</option>
-                        <option value="custom">Cron customizado</option>
-                      </select>
-                    </FormField>
-
-                    {form.cron_mode === "every-x-minutes" ? (
-                      <div className="grid gap-5 md:grid-cols-2">
-                        <FormField label="Executar a cada quantos minutos">
-                          <input
-                            value={form.cron_every_minutes}
-                            onChange={(e) =>
-                              handleChange("cron_every_minutes", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={1}
-                          />
-                        </FormField>
-                      </div>
-                    ) : null}
-
-                    {form.cron_mode === "every-x-hours" ? (
-                      <div className="grid gap-5 md:grid-cols-2">
-                        <FormField label="Executar a cada quantas horas">
-                          <input
-                            value={form.cron_every_hours}
-                            onChange={(e) =>
-                              handleChange("cron_every_hours", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={1}
-                          />
-                        </FormField>
-                      </div>
-                    ) : null}
-
-                    {form.cron_mode === "daily-at" ? (
-                      <div className="grid gap-5 md:grid-cols-2">
-                        <FormField label="Hora">
-                          <input
-                            value={form.cron_daily_hour}
-                            onChange={(e) =>
-                              handleChange("cron_daily_hour", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={0}
-                            max={23}
-                          />
-                        </FormField>
-
-                        <FormField label="Minuto">
-                          <input
-                            value={form.cron_daily_minute}
-                            onChange={(e) =>
-                              handleChange("cron_daily_minute", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={0}
-                            max={59}
-                          />
-                        </FormField>
-                      </div>
-                    ) : null}
-
-                    {form.cron_mode === "weekly-at" ? (
-                      <div className="space-y-5">
-                        <div>
-                          <span className="mb-2 block text-sm font-medium text-slate-700">
-                            Dias da semana
-                          </span>
-
-                          <div className="flex flex-wrap gap-2">
-                            {[
-                              { label: "Dom", value: "0" },
-                              { label: "Seg", value: "1" },
-                              { label: "Ter", value: "2" },
-                              { label: "Qua", value: "3" },
-                              { label: "Qui", value: "4" },
-                              { label: "Sex", value: "5" },
-                              { label: "Sáb", value: "6" },
-                            ].map((day) => {
-                              const selected = form.cron_weekly_days.includes(day.value);
-
-                              return (
-                                <button
-                                  key={day.value}
-                                  type="button"
-                                  onClick={() => toggleWeeklyDay(day.value)}
-                                  className={`h-10 min-w-[52px] border px-3 text-sm font-medium transition ${
-                                    selected
-                                      ? "border-slate-950 bg-slate-950 text-white"
-                                      : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                                  }`}
-                                >
-                                  {day.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-5 md:grid-cols-2">
-                          <FormField label="Hora">
-                            <input
-                              value={form.cron_weekly_hour}
-                              onChange={(e) =>
-                                handleChange("cron_weekly_hour", e.target.value)
-                              }
-                              className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                              type="number"
-                              min={0}
-                              max={23}
-                            />
-                          </FormField>
-
-                          <FormField label="Minuto">
-                            <input
-                              value={form.cron_weekly_minute}
-                              onChange={(e) =>
-                                handleChange("cron_weekly_minute", e.target.value)
-                              }
-                              className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                              type="number"
-                              min={0}
-                              max={59}
-                            />
-                          </FormField>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {form.cron_mode === "monthly-at" ? (
-                      <div className="grid gap-5 md:grid-cols-3">
-                        <FormField label="Dia do mês">
-                          <input
-                            value={form.cron_monthly_day}
-                            onChange={(e) =>
-                              handleChange("cron_monthly_day", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={1}
-                            max={31}
-                          />
-                        </FormField>
-
-                        <FormField label="Hora">
-                          <input
-                            value={form.cron_monthly_hour}
-                            onChange={(e) =>
-                              handleChange("cron_monthly_hour", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={0}
-                            max={23}
-                          />
-                        </FormField>
-
-                        <FormField label="Minuto">
-                          <input
-                            value={form.cron_monthly_minute}
-                            onChange={(e) =>
-                              handleChange("cron_monthly_minute", e.target.value)
-                            }
-                            className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                            type="number"
-                            min={0}
-                            max={59}
-                          />
-                        </FormField>
-                      </div>
-                    ) : null}
-
-                    {form.cron_mode === "custom" ? (
-                      <FormField label="Expressão cron">
+                  {form.cron_mode === "every-x-minutes" ? (
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <Field label="A cada quantos minutos">
                         <input
-                          value={form.cron_expression}
-                          onChange={(e) =>
-                            handleChange("cron_expression", e.target.value)
-                          }
-                          className="h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                          placeholder="*/5 * * * *"
+                          value={form.cron_every_minutes}
+                          onChange={(e) => handleChange("cron_every_minutes", e.target.value)}
+                          className={input}
+                          type="number"
+                          min={1}
+                          max={59}
                         />
-                      </FormField>
-                    ) : null}
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Preview cron
-                        </p>
-                        <p className="mt-1 break-all font-mono text-sm font-semibold text-slate-950">
-                          {cronPreview}
-                        </p>
-                      </div>
-
-                      <div className="border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Policy atual
-                        </p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">
-                          {prettyPolicy(form.policy)}
-                        </p>
-                      </div>
+                      </Field>
                     </div>
-                  </div>
-                </section>
+                  ) : null}
+
+                  {form.cron_mode === "every-x-hours" ? (
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <Field label="A cada quantas horas">
+                        <input
+                          value={form.cron_every_hours}
+                          onChange={(e) => handleChange("cron_every_hours", e.target.value)}
+                          className={input}
+                          type="number"
+                          min={1}
+                          max={23}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+
+                  {form.cron_mode === "daily-at" ? timeInputs("cron_daily_hour", "cron_daily_minute") : null}
+
+                  {form.cron_mode === "weekly-at" ? (
+                    <div className="space-y-5">
+                      <div>
+                        <span className={labelClass}>Dias da semana</span>
+                        <div className="flex flex-wrap gap-2">
+                          {WEEK_DAYS.map((day) => {
+                            const selected = form.cron_weekly_days.includes(day.value);
+                            return (
+                              <button
+                                key={day.value}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => toggleWeeklyDay(day.value)}
+                                className={cn(
+                                  btn.secondary,
+                                  "min-w-[56px] px-3",
+                                  selected && "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
+                                )}
+                              >
+                                {day.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {errors.cron_weekly_days ? <p className={fieldError}>{errors.cron_weekly_days}</p> : null}
+                      </div>
+
+                      {timeInputs("cron_weekly_hour", "cron_weekly_minute")}
+                    </div>
+                  ) : null}
+
+                  {form.cron_mode === "monthly-at" ? (
+                    <div className="grid gap-5 md:grid-cols-3">
+                      <Field label="Dia do mês" hintText="Dias 29 a 31 não existem em todo mês.">
+                        <input
+                          value={form.cron_monthly_day}
+                          onChange={(e) => handleChange("cron_monthly_day", e.target.value)}
+                          className={input}
+                          type="number"
+                          min={1}
+                          max={31}
+                        />
+                      </Field>
+                      <Field label="Hora">
+                        <input
+                          value={form.cron_monthly_hour}
+                          onChange={(e) => handleChange("cron_monthly_hour", e.target.value)}
+                          className={input}
+                          type="number"
+                          min={0}
+                          max={23}
+                        />
+                      </Field>
+                      <Field label="Minuto">
+                        <input
+                          value={form.cron_monthly_minute}
+                          onChange={(e) => handleChange("cron_monthly_minute", e.target.value)}
+                          className={input}
+                          type="number"
+                          min={0}
+                          max={59}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+
+                  {form.cron_mode === "custom" ? (
+                    <Field
+                      label="Expressão cron"
+                      error={errors.cron_expression}
+                      hintText="5 campos: minuto (0-59), hora (0-23), dia do mês (1-31), mês (1-12), dia da semana (0=domingo a 6=sábado). Use * para qualquer, */N para a cada N, 1-5 para intervalo, 1,3 para lista. Ex.: 0 6 * * 1-5 = 06:00 de segunda a sexta."
+                    >
+                      <input
+                        value={form.cron_expression}
+                        onChange={(e) => handleChange("cron_expression", e.target.value)}
+                        className={cn(input, "font-mono")}
+                        placeholder="*/5 * * * *"
+                        spellCheck={false}
+                      />
+                    </Field>
+                  ) : null}
+
+                  <Preview label={`Cron: ${cronPreview || "—"}`} tone={cronDescription.ok ? "default" : "danger"}>
+                    {cronDescription.text}
+                  </Preview>
+                </div>
               )}
+            </div>
+          </section>
 
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Parâmetros do robô
-                  </h2>
-                </div>
-
-                <div className="space-y-4 px-5 py-5">
-                  <label className="flex cursor-pointer items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={form.use_default_runtime_parameters}
-                      onChange={(e) =>
-                        handleChange("use_default_runtime_parameters", e.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-slate-300"
-                    />
-                    <span className="text-sm font-medium text-slate-700">
-                      Usar parâmetros da automação
-                    </span>
-                  </label>
-
-                  {form.use_default_runtime_parameters ? (
-                    <div className="border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Preview — parâmetros da automação
-                      </p>
-                      <pre className="font-mono text-xs text-slate-700">
-                        {automationQuery.data?.default_runtime_parameters_json
-                          ? JSON.stringify(automationQuery.data.default_runtime_parameters_json, null, 2)
-                          : "Nenhum parâmetro padrão cadastrado na automação."}
-                      </pre>
-                    </div>
-                  ) : (
-                    <textarea
-                      value={form.runtime_parameters_json}
-                      onChange={(e) => handleChange("runtime_parameters_json", e.target.value)}
-                      className="min-h-[160px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                      placeholder='Ex.: { "filial": "001", "safra": "2026" }'
-                    />
-                  )}
-                </div>
-              </section>
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Parâmetros do robô</h2>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(isEditMode ? `/schedules/${scheduleId}` : "/schedules")
-                }
-                className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
+            <div className={cn(cardBody, "space-y-4")}>
+              <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.use_default_runtime_parameters}
+                  onChange={(e) => handleChange("use_default_runtime_parameters", e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                Usar os parâmetros padrão da automação
+              </label>
 
-              <button
-                type="submit"
-                disabled={isPending}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-              >
-                <Save className="h-4 w-4" />
-                {isPending ? "Salvando..." : isEditMode ? "Salvar alterações" : "Salvar"}
-              </button>
+              {form.use_default_runtime_parameters ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Parâmetros da automação</p>
+                  <pre className="overflow-x-auto font-mono text-xs text-slate-700">
+                    {automationQuery.data?.default_runtime_parameters_json
+                      ? JSON.stringify(automationQuery.data.default_runtime_parameters_json, null, 2)
+                      : selectedAutomationId > 0
+                        ? "Nenhum parâmetro padrão cadastrado na automação."
+                        : "Escolha uma automação para ver os parâmetros."}
+                  </pre>
+                </div>
+              ) : (
+                <Field label="Parâmetros (JSON)" error={errors.runtime_parameters_json} hintText="Um objeto JSON com os valores que o robô recebe nesta execução.">
+                  <textarea
+                    value={form.runtime_parameters_json}
+                    onChange={(e) => handleChange("runtime_parameters_json", e.target.value)}
+                    className={cn(textarea, "min-h-[160px] font-mono")}
+                    placeholder='Ex.: { "filial": "001", "safra": "2026" }'
+                    spellCheck={false}
+                  />
+                </Field>
+              )}
             </div>
-          </form>
-        )}
-      </section>
+          </section>
+        </div>
 
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-4">
+          <button type="button" onClick={() => navigate(backTo)} className={btn.secondary} disabled={isPending}>
+            Cancelar
+          </button>
+
+          <button type="submit" disabled={isPending} className={btn.primary}>
+            <Save className="h-4 w-4" />
+            {isPending ? "Salvando..." : isEditMode ? "Salvar alterações" : "Salvar"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function Field({ label, error, hintText, children }: { label: string; error?: string; hintText?: string; children: ReactNode }) {
+  return (
+    // min-w-0: impede que conteúdo longo (ex.: nome de automação) alargue a coluna do grid.
+    <label className="block min-w-0">
+      <span className={labelClass}>{label}</span>
+      {children}
+      {error ? <p className={fieldError}>{error}</p> : hintText ? <p className={hint}>{hintText}</p> : null}
+    </label>
+  );
+}
+
+function Preview({ label, tone = "default", children }: { label: string; tone?: "default" | "danger"; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-4 py-3",
+        tone === "danger" ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"
+      )}
+    >
+      <p className={cn("font-mono text-xs font-semibold", tone === "danger" ? "text-red-700" : "text-blue-800")}>{label}</p>
+      <p className={cn("mt-1 text-sm", tone === "danger" ? "text-red-800" : "text-blue-900")}>{children}</p>
     </div>
   );
 }
 
-function FormField({
-  label,
-  children,
+function TypeOption({
+  selected,
+  onSelect,
+  icon,
+  title,
+  description,
 }: {
-  label: string;
-  children: React.ReactNode;
+  selected: boolean;
+  onSelect: () => void;
+  icon: ReactNode;
+  title: string;
+  description: string;
 }) {
   return (
-    // min-w-0: impede que conteúdo longo (ex.: nome de automação) alargue a coluna do grid.
-    <label className="block min-w-0">
-      <span className="mb-2 block text-sm font-medium text-slate-700">
-        {label}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+        selected ? "border-blue-600 bg-blue-50 text-blue-900" : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+      )}
+    >
+      <span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600")}>
+        {icon}
       </span>
-      {children}
-    </label>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className={cn("mt-0.5 block text-xs", selected ? "text-blue-800/80" : "text-slate-500")}>{description}</span>
+      </span>
+    </button>
   );
 }

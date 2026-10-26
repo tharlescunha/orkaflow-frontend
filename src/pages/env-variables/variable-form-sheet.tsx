@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/sheet";
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { btn, fieldError, hint, input, label as labelClass, select, textarea } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { toast } from "@/store/toast-store";
 import {
   createEnvVariable,
@@ -21,9 +23,6 @@ import { SCOPE_LABELS } from "./scope-labels";
 import { useScopeOptions } from "./use-scope-options";
 
 const NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
-const input =
-  "w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-500";
-const label = "mb-1 block text-sm font-medium text-slate-700";
 
 type Props = {
   open: boolean;
@@ -49,7 +48,7 @@ export function VariableFormSheet(props: Props) {
       {open && (
         // Fundo escurecido (o overlay do Radix só existe em modo modal).
         // Clique fora fecha pelo próprio Radix (onInteractOutside).
-        <div aria-hidden className="fixed inset-0 z-50 bg-black/10" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-slate-950/40" />
       )}
       <SheetContent
         className="w-full overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
@@ -61,33 +60,34 @@ export function VariableFormSheet(props: Props) {
         }}
       >
         <SheetHeader className="border-b border-slate-200">
-          <SheetTitle className="text-slate-900">
-            {editing ? `Editar ${editing.name}` : "Nova variável"}
+          <SheetTitle className="text-slate-950">
+            {editing ? (
+              <>
+                Editar <span className="font-mono">{editing.name}</span>
+              </>
+            ) : (
+              "Nova variável"
+            )}
           </SheetTitle>
           <SheetDescription className="text-slate-500">
             O worker injeta esta variável no ambiente do robô ao executar.
           </SheetDescription>
         </SheetHeader>
-        <VariableForm {...props} />
+        {/* key: cada abertura/registro monta o formulário do zero com os dados certos. */}
+        {open && <VariableForm key={editing?.id ?? "new"} {...props} />}
       </SheetContent>
     </Sheet>
   );
 }
 
-function VariableForm({
-  editing,
-  defaultScope,
-  defaultScopeId,
-  onClose,
-}: Props) {
+function VariableForm({ editing, defaultScope, defaultScopeId, onClose }: Props) {
   const queryClient = useQueryClient();
   const { byScope, loading } = useScopeOptions();
 
   // Global não é mais oferecido para variáveis novas (só bot, automação e máquina);
   // as globais que já existem continuam editáveis.
   const [scopeType, setScopeType] = useState<EnvScopeType>(
-    editing?.scope_type ??
-      (defaultScope && defaultScope !== "global" ? defaultScope : "automation"),
+    editing?.scope_type ?? (defaultScope && defaultScope !== "global" ? defaultScope : "automation")
   );
   const [scopeId, setScopeId] = useState<number | "">(
     editing
@@ -96,20 +96,29 @@ function VariableForm({
         : editing.scope_id
       : defaultScope && defaultScope !== "global" && defaultScopeId
         ? defaultScopeId
-        : "",
+        : ""
   );
   const [name, setName] = useState(editing?.name ?? "");
-  const [value, setValue] = useState(
-    editing && !editing.is_secret ? (editing.value ?? "") : "",
-  );
+  // Valor secreto gravado nunca vem do servidor: o campo começa vazio (vazio = manter).
+  const [value, setValue] = useState(editing && !editing.is_secret ? (editing.value ?? "") : "");
   const [isSecret, setIsSecret] = useState(editing?.is_secret ?? false);
   const [showValue, setShowValue] = useState(false);
   const [description, setDescription] = useState(editing?.description ?? "");
   const [active, setActive] = useState(editing?.active ?? true);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const nameValid = NAME_PATTERN.test(name);
   const keepSecret = Boolean(editing?.is_secret && isSecret);
+  // Deixou de ser secreta ou virou secreta: o valor precisa ser informado.
+  const valueRequired = Boolean(editing && editing.is_secret !== isSecret);
+
+  const errors = {
+    name: !name ? "Informe o nome." : !nameValid ? "Use letras maiúsculas, números e _, sem começar por número." : null,
+    scope: scopeType !== "global" && scopeId === "" ? "Selecione o alvo do escopo." : null,
+    value: valueRequired && value === "" ? "Informe o valor para salvar com a nova configuração." : null,
+  };
+  const formValid = !errors.name && !errors.scope && !errors.value;
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (editing) {
@@ -139,52 +148,31 @@ function VariableForm({
       onClose();
     },
     onError: (error) => {
-      const message = getApiErrorMessage(
-        error,
-        "Não foi possível salvar a variável.",
-      );
-      setFormError(message);
-      toast.error(message);
+      toast.error(getApiErrorMessage(error, "Não foi possível salvar a variável."));
     },
   });
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    setFormError(null);
-    if (!nameValid) {
-      setFormError(
-        "Nome inválido: use letras maiúsculas, números e _, sem começar por número.",
-      );
-      return;
-    }
-    if (scopeType !== "global" && scopeId === "") {
-      setFormError("Selecione o alvo do escopo.");
-      return;
-    }
+    setSubmitted(true);
+    if (!formValid) return;
     mutation.mutate();
   }
 
   const options = byScope[scopeType];
   const targetOptions = options.map((o) => ({ value: o.id, label: o.label }));
   // Alvo apagado/fora da lista: mantém exibível ao editar.
-  if (
-    editing &&
-    editing.scope_type !== "global" &&
-    !options.some((o) => o.id === editing.scope_id)
-  ) {
-    targetOptions.push({
-      value: editing.scope_id,
-      label: editing.scope_label,
-    });
+  if (editing && editing.scope_type !== "global" && !options.some((o) => o.id === editing.scope_id)) {
+    targetOptions.push({ value: editing.scope_id, label: editing.scope_label });
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 px-4 pb-6">
+    <form onSubmit={submit} noValidate className="flex flex-col gap-4 px-4 pb-6">
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className={label}>Escopo</label>
+          <label className={labelClass}>Escopo</label>
           <select
-            className={`${input} h-10`}
+            className={select}
             value={scopeType}
             disabled={Boolean(editing)}
             onChange={(e) => {
@@ -203,7 +191,7 @@ function VariableForm({
         </div>
         {scopeType !== "global" && (
           <div>
-            <label className={label}>Alvo</label>
+            <label className={labelClass}>Alvo</label>
             <SearchableSelect<number>
               value={scopeId}
               onChange={setScopeId}
@@ -212,80 +200,75 @@ function VariableForm({
               disabled={Boolean(editing)}
               loading={loading[scopeType]}
             />
+            {submitted && errors.scope ? <p className={fieldError}>{errors.scope}</p> : null}
           </div>
         )}
       </div>
-      {editing && (
-        <p className="-mt-2 text-xs text-slate-500">
-          O escopo não pode ser alterado depois de criada.
-        </p>
-      )}
+      {editing && <p className={cn(hint, "-mt-2")}>O escopo não pode ser alterado depois de criada.</p>}
 
       <div>
-        <label className={label}>Nome</label>
+        <label className={labelClass}>Nome</label>
         <input
-          className={`${input} h-10 font-mono`}
+          className={cn(input, "font-mono")}
           value={name}
-          onChange={(e) =>
-            setName(e.target.value.toUpperCase().replace(/\s/g, "_"))
-          }
+          onChange={(e) => setName(e.target.value.toUpperCase().replace(/\s/g, "_"))}
           placeholder="SAP_URL"
           autoComplete="off"
           spellCheck={false}
+          autoFocus={!editing}
         />
-        {name && !nameValid && (
-          <p className="mt-1 text-xs text-red-600">
-            Use apenas letras, números e _, sem começar por número.
-          </p>
+        {(submitted || name) && errors.name ? (
+          <p className={fieldError}>{errors.name}</p>
+        ) : (
+          <p className={hint}>Como o robô vai ler: os.environ['{name || "NOME"}'].</p>
         )}
       </div>
 
       <div>
-        <label className={label}>Valor</label>
+        <label className={labelClass}>Valor</label>
         <div className="flex items-start gap-2">
           {isSecret && !showValue ? (
             <input
               type="password"
-              className={`${input} h-10`}
+              className={input}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={
-                keepSecret ? "Deixe em branco para manter o valor atual" : ""
-              }
+              placeholder={keepSecret ? "Deixe em branco para manter o valor atual" : ""}
               autoComplete="new-password"
             />
           ) : (
             <textarea
               rows={isSecret ? 1 : 3}
-              className={`${input} py-2 font-mono`}
+              className={cn(textarea, "min-h-[80px] font-mono")}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={
-                keepSecret ? "Deixe em branco para manter o valor atual" : ""
-              }
+              placeholder={keepSecret ? "Deixe em branco para manter o valor atual" : ""}
             />
           )}
           {isSecret && (
             <button
               type="button"
               onClick={() => setShowValue((v) => !v)}
-              title={showValue ? "Ocultar" : "Mostrar"}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              title={showValue ? "Ocultar o que está digitando" : "Mostrar o que está digitando"}
+              aria-label={showValue ? "Ocultar valor" : "Mostrar valor"}
+              className={cn(btn.icon, "h-10 w-10")}
             >
-              {showValue ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
+              {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           )}
         </div>
+        {submitted && errors.value ? (
+          <p className={fieldError}>{errors.value}</p>
+        ) : keepSecret ? (
+          <p className={hint}>O valor gravado não pode ser visto, só substituído.</p>
+        ) : null}
       </div>
 
       <div>
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
             type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             checked={isSecret}
             onChange={(e) => {
               setIsSecret(e.target.checked);
@@ -294,25 +277,19 @@ function VariableForm({
           />
           Secreta
         </label>
-        <p className="mt-1 text-xs text-slate-500">
-          Criptografada; depois de salva não pode ser vista, só substituída.
-        </p>
+        <p className={hint}>Criptografada; depois de salva não pode ser vista, só substituída.</p>
         {editing && !editing.is_secret && isSecret && (
-          <p className="mt-1 text-xs text-amber-700">
-            Informe o valor para salvá-lo criptografado.
-          </p>
+          <p className="mt-1 text-xs text-amber-700">Informe o valor para salvá-lo criptografado.</p>
         )}
         {editing?.is_secret && !isSecret && (
-          <p className="mt-1 text-xs text-amber-700">
-            Ao deixar de ser secreta é obrigatório informar o novo valor.
-          </p>
+          <p className="mt-1 text-xs text-amber-700">Ao deixar de ser secreta é obrigatório informar o novo valor.</p>
         )}
       </div>
 
       <div>
-        <label className={label}>Descrição</label>
+        <label className={labelClass}>Descrição</label>
         <input
-          className={`${input} h-10`}
+          className={input}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Opcional"
@@ -322,37 +299,20 @@ function VariableForm({
       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <input
           type="checkbox"
+          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
           checked={active}
           onChange={(e) => setActive(e.target.checked)}
         />
         Ativa
       </label>
 
-      {formError && (
-        <div
-          role="alert"
-          className="border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
-        >
-          {formError}
-        </div>
-      )}
-
-      <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={mutation.isPending}
-          className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
+      <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+        <button type="button" onClick={onClose} disabled={mutation.isPending} className={btn.secondary}>
           Cancelar
         </button>
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-        >
+        <button type="submit" disabled={mutation.isPending || (submitted && !formValid)} className={btn.primary}>
           {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Salvar
+          {mutation.isPending ? "Salvando..." : "Salvar"}
         </button>
       </div>
     </form>

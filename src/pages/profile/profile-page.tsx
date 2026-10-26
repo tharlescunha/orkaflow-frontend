@@ -1,235 +1,285 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { getApiErrorMessage } from "@/lib/api-error";
+import { useState, type FormEvent } from "react";
+import axios from "axios";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Save, Shield } from "lucide-react";
+
 import { ApiTokensCard } from "@/components/common/api-tokens-card";
-import { useAuthStore } from "../../store/auth-store";
-import { getUserById, updateUser } from "../../services/api/users";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, chip, fieldError, hint, input, label, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+import { getUserById, updateUser, type UpdateUserPayload, type UserRead } from "@/services/api/users";
+import { useAuthStore } from "@/store/auth-store";
+import { toast } from "@/store/toast-store";
 
 export function ProfilePage() {
   const authUser = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
+  const userId = authUser?.id;
 
-  const [name, setName] = useState("");
-  const [login, setLogin] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("");
+  const userQuery = useQuery({
+    queryKey: ["user", userId],
+    queryFn: async () => {
+      const user = await getUserById(userId as number);
+      // Mantém o usuário da sessão em dia com o que a API devolveu.
+      setUser(user);
+      return user;
+    },
+    enabled: Boolean(userId),
+  });
 
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-
-  useEffect(() => {
-    async function loadProfile() {
-      if (!authUser?.id) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const user = await getUserById(authUser.id);
-
-        setName(user.name || "");
-        setLogin(user.login || "");
-        setEmail(user.email || "");
-        setRole(user.role || "");
-
-        setUser(user);
-      } catch (error) {
-        setErrorMessage(getApiErrorMessage(error, "Não foi possível carregar o perfil."));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadProfile();
-  }, [authUser?.id, setUser]);
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setMessage("");
-    setErrorMessage("");
-
-    if (password && password !== confirmPassword) {
-      setErrorMessage("A confirmação de senha não confere.");
-      setSaving(false);
-      return;
-    }
-
-    try {
-      const payload = {
-        name,
-        login,
-        email,
-        active: authUser?.active ?? true,
-        role,
-        ...(password ? { password } : {}),
-      };
-
-      const updatedUser = await updateUser(authUser!.id, payload);
-
-      setUser(updatedUser);
-      setName(updatedUser.name || "");
-      setLogin(updatedUser.login || "");
-      setEmail(updatedUser.email || "");
-      setRole(updatedUser.role || "");
-      setPassword("");
-      setConfirmPassword("");
-      setMessage("Perfil atualizado com sucesso.");
-    } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "Não foi possível atualizar o perfil."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
+  if (!userId) {
     return (
-      <div className="mx-auto max-w-5xl">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-sm text-slate-500">Carregando perfil...</p>
+      <section className={card}>
+        <PageHeader title="Meu perfil" />
+        <div className="p-5">
+          <QueryError error={new Error("Sessão sem usuário. Saia e entre de novo.")} what="o seu perfil" />
         </div>
-      </div>
+      </section>
     );
   }
 
-  return (
-    <div className="mx-auto max-w-5xl">
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="mb-8">
-          <h1 className="text-3xl font-semibold text-slate-950">Perfil</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Visualize seus dados e altere sua senha.
-          </p>
+  if (userQuery.isLoading) {
+    return (
+      <section className={card}>
+        <PageHeader title="Meu perfil" description="Seus dados de acesso e tokens de integração." />
+        <div className="p-5">
+          <DetailSkeleton fields={4} />
         </div>
+      </section>
+    );
+  }
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <section className="rounded-3xl border border-slate-200 bg-slate-50/60 p-6">
-            <h2 className="mb-6 text-xl font-semibold text-slate-950">
-              Dados do usuário
-            </h2>
+  if (userQuery.isError || !userQuery.data) {
+    return (
+      <section className={card}>
+        <PageHeader title="Meu perfil" description="Seus dados de acesso e tokens de integração." />
+        <div className="p-5">
+          <QueryError error={userQuery.error} what="o seu perfil" onRetry={() => userQuery.refetch()} retrying={userQuery.isFetching} />
+        </div>
+      </section>
+    );
+  }
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Nome
-                </label>
+  // O formulário só é montado quando os dados chegam; nada de efeito re-hidratando depois.
+  return <ProfileForm key={userQuery.data.id} initial={userQuery.data} />;
+}
+
+type FormState = {
+  name: string;
+  login: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+};
+
+type FormErrors = Partial<Record<keyof FormState, string>> & {
+  submit?: string;
+  forbidden?: boolean;
+};
+
+function ProfileForm({ initial }: { initial: UserRead }) {
+  const setUser = useAuthStore((state) => state.setUser);
+  const queryClient = useQueryClient();
+
+  const [form, setForm] = useState<FormState>({
+    name: initial.name ?? "",
+    login: initial.login ?? "",
+    email: initial.email ?? "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: UpdateUserPayload) => updateUser(initial.id, payload),
+    onSuccess: async (updatedUser) => {
+      setUser(updatedUser);
+      setForm({
+        name: updatedUser.name ?? "",
+        login: updatedUser.login ?? "",
+        email: updatedUser.email ?? "",
+        password: "",
+        confirmPassword: "",
+      });
+      setErrors({});
+      toast.success("Seus dados foram atualizados.");
+      await queryClient.invalidateQueries({ queryKey: ["user", initial.id] });
+    },
+    onError: (error) => {
+      const forbidden = axios.isAxiosError(error) && error.response?.status === 403;
+      setErrors((prev) => ({
+        ...prev,
+        submit: getApiErrorMessage(error, "Não foi possível atualizar seus dados."),
+        forbidden,
+      }));
+    },
+  });
+
+  function setField<K extends keyof FormState>(field: K, value: FormState[K]) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => ({ ...prev, [field]: undefined, submit: undefined, forbidden: undefined }));
+  }
+
+  function validateForm() {
+    const nextErrors: FormErrors = {};
+
+    if (!form.name.trim()) nextErrors.name = "Informe o nome.";
+    if (!form.email.trim()) nextErrors.email = "Informe o e-mail.";
+
+    if (form.password) {
+      if (form.password.length < 6) nextErrors.password = "A senha deve ter pelo menos 6 caracteres.";
+      if (!form.confirmPassword) nextErrors.confirmPassword = "Confirme a nova senha.";
+      else if (form.password !== form.confirmPassword) nextErrors.confirmPassword = "As senhas não conferem.";
+    } else if (form.confirmPassword) {
+      nextErrors.password = "Informe a nova senha.";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validateForm()) return;
+
+    // Só o que a pessoa pode mudar nela mesma: nada de role/active no payload.
+    const payload: UpdateUserPayload = {
+      name: form.name.trim(),
+      login: form.login.trim(),
+      email: form.email.trim(),
+      ...(form.password ? { password: form.password } : {}),
+    };
+
+    updateMutation.mutate(payload);
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className={card}>
+        <PageHeader
+          title="Meu perfil"
+          description="Seus dados de acesso e tokens de integração."
+          meta={
+            <>
+              <span className={cn(badge, initial.active ? tone.success : tone.danger)}>{initial.active ? "Ativo" : "Bloqueado"}</span>
+              {initial.profile?.name && (
+                <span className={chip}>
+                  <Shield className="h-3 w-3" />
+                  {initial.profile.name}
+                </span>
+              )}
+            </>
+          }
+        />
+
+        <form onSubmit={handleSubmit} noValidate className="space-y-5 p-5">
+          <div className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Dados do usuário</h2>
+            </div>
+            <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+              <label className="block">
+                <span className={label}>Nome</span>
                 <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900"
                   type="text"
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  className={input}
                   placeholder="Seu nome"
+                  aria-invalid={Boolean(errors.name)}
                 />
-              </div>
+                {errors.name && <p className={fieldError}>{errors.name}</p>}
+              </label>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Login
-                </label>
-                <input
-                  value={login}
-                  readOnly
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-sm text-slate-600 outline-none"
-                  type="text"
-                />
-              </div>
+              <label className="block">
+                <span className={label}>Login</span>
+                <input type="text" value={form.login} readOnly className={input} />
+                <p className={hint}>O login é definido pelo administrador.</p>
+              </label>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  E-mail
-                </label>
+              <label className="block">
+                <span className={label}>E-mail</span>
                 <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900"
                   type="email"
+                  value={form.email}
+                  onChange={(e) => setField("email", e.target.value)}
+                  className={input}
                   placeholder="seu@email.com"
+                  aria-invalid={Boolean(errors.email)}
                 />
-              </div>
+                {errors.email && <p className={fieldError}>{errors.email}</p>}
+              </label>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Perfil / Role
-                </label>
-                <input
-                  value={role}
-                  readOnly
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-sm text-slate-600 outline-none"
-                  type="text"
-                />
-              </div>
+              <label className="block">
+                <span className={label}>Perfil de acesso</span>
+                <input type="text" value={initial.profile?.name ?? initial.role ?? ""} readOnly className={input} />
+                <p className={hint}>Define o que você pode fazer no painel. Só um administrador altera.</p>
+              </label>
             </div>
-          </section>
+          </div>
 
-          <section className="rounded-3xl border border-slate-200 bg-slate-50/60 p-6">
-            <h2 className="mb-6 text-xl font-semibold text-slate-950">
-              Atualizar senha
-            </h2>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Nova senha
-                </label>
+          <div className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Alterar senha</h2>
+              <span className="text-xs text-slate-500">Deixe em branco para manter a senha atual</span>
+            </div>
+            <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+              <label className="block">
+                <span className={label}>Nova senha</span>
                 <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900"
                   type="password"
-                  placeholder="Digite a nova senha"
+                  value={form.password}
+                  onChange={(e) => setField("password", e.target.value)}
+                  className={input}
+                  placeholder="Mínimo de 6 caracteres"
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(errors.password)}
                 />
-              </div>
+                {errors.password && <p className={fieldError}>{errors.password}</p>}
+              </label>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Confirmar nova senha
-                </label>
+              <label className="block">
+                <span className={label}>Confirmar nova senha</span>
                 <input
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900"
                   type="password"
-                  placeholder="Confirme a nova senha"
+                  value={form.confirmPassword}
+                  onChange={(e) => setField("confirmPassword", e.target.value)}
+                  className={input}
+                  placeholder="Repita a nova senha"
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(errors.confirmPassword)}
                 />
-              </div>
+                {errors.confirmPassword && <p className={fieldError}>{errors.confirmPassword}</p>}
+              </label>
             </div>
+          </div>
 
-            <p className="mt-3 text-sm text-slate-500">
-              Se não quiser alterar a senha, deixe os campos em branco.
-            </p>
-          </section>
-
-          {message ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {message}
+          {errors.submit && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <p>{errors.submit}</p>
+              {errors.forbidden && (
+                <p className="mt-1 text-red-700/80">
+                  Peça a um administrador para alterar seus dados: só quem é administrador consegue editar usuários.
+                </p>
+              )}
             </div>
-          ) : null}
-
-          {errorMessage ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
+          )}
 
           <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-950 px-6 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-70"
-            >
-              {saving ? "Salvando..." : "Salvar alterações"}
+            <button type="submit" disabled={updateMutation.isPending} className={btn.primary}>
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {updateMutation.isPending ? "Salvando..." : "Salvar alterações"}
             </button>
           </div>
         </form>
 
-        <div className="mt-8">
+        <div className="px-5 pb-5">
           <ApiTokensCard />
         </div>
-      </div>
+      </section>
     </div>
   );
 }

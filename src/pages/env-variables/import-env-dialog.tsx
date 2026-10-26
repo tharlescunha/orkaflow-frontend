@@ -5,6 +5,8 @@ import { CheckCircle2, Eye, EyeOff, FileUp, Upload, X } from "lucide-react";
 
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { btn, focusRing, textarea as textareaClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { looksSecret, parseDotEnv, type DotEnvIgnored } from "@/lib/dotenv";
 import {
   importEnvVariables,
@@ -65,12 +67,15 @@ function buildRows(text: string): { rows: Row[]; ignored: DotEnvIgnored[] } {
   return { rows, ignored };
 }
 
+// Chip de escopo: azul quando escolhido (cor de destaque do painel).
 const chip = (active: boolean) =>
-  `h-9 border px-3 text-sm font-medium transition ${
+  cn(
+    "inline-flex h-9 items-center rounded-full border px-3.5 text-sm font-medium transition",
+    focusRing,
     active
-      ? "border-slate-950 bg-slate-950 text-white"
+      ? "border-blue-600 bg-blue-600 text-white"
       : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-  }`;
+  );
 
 export function ImportEnvDialog({
   open,
@@ -184,7 +189,12 @@ export function ImportEnvDialog({
     <div className="fixed inset-0 z-[9000]">
       <div className="absolute inset-0 bg-slate-950/55" onClick={() => !importMutation.isPending && onClose()} />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col border border-slate-200 bg-white shadow-2xl">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Importar arquivo .env"
+          className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
+        >
           <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Importar arquivo .env</h2>
@@ -197,7 +207,7 @@ export function ImportEnvDialog({
               type="button"
               onClick={onClose}
               disabled={importMutation.isPending}
-              className="p-1 text-slate-500 hover:text-slate-900"
+              className={cn("rounded-md p-1 text-slate-400 transition hover:text-slate-700", focusRing)}
               aria-label="Fechar"
             >
               <X className="h-5 w-5" />
@@ -246,7 +256,7 @@ export function ImportEnvDialog({
                 <button
                   type="button"
                   onClick={() => setPasteMode((v) => !v)}
-                  className="text-sm font-medium text-slate-600 underline hover:text-slate-950"
+                  className={cn("rounded-sm text-sm font-medium text-blue-600 underline-offset-2 hover:underline", focusRing)}
                 >
                   {pasteMode ? "Escolher arquivo" : "Colar o conteúdo"}
                 </button>
@@ -258,13 +268,13 @@ export function ImportEnvDialog({
                     value={pasted}
                     onChange={(e) => setPasted(e.target.value)}
                     placeholder={"SAP_URL=https://...\nSAP_USUARIO=robo\nSAP_SENHA=..."}
-                    className="min-h-[140px] w-full border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-slate-900"
+                    className={cn(textareaClass, "min-h-[140px] font-mono text-xs")}
                   />
                   <button
                     type="button"
                     onClick={() => loadText(pasted)}
                     disabled={!pasted.trim()}
-                    className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className={cn(btn.secondary, "h-9 px-3")}
                   >
                     Ler conteúdo
                   </button>
@@ -276,14 +286,14 @@ export function ImportEnvDialog({
                     e.preventDefault();
                     onFile(e.dataTransfer.files?.[0]);
                   }}
-                  className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600"
+                  className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600"
                 >
                   <FileUp className="h-6 w-6 text-slate-400" />
                   <span>{fileName ? `Arquivo: ${fileName}` : "Arraste o arquivo .env aqui ou"}</span>
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
-                    className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-100"
+                    className={cn(btn.secondary, "h-9 px-3")}
                   >
                     {fileName ? "Escolher outro arquivo" : "Escolher arquivo"}
                   </button>
@@ -308,16 +318,16 @@ export function ImportEnvDialog({
                     {rows.length > selectable.length ? `, ${rows.length - selectable.length} com problema` : ""})
                   </span>
                   <div className="flex flex-wrap items-center gap-3 text-sm">
-                    <button type="button" onClick={() => setAllSecret(true)} className="text-slate-600 underline hover:text-slate-950">
+                    <button type="button" onClick={() => setAllSecret(true)} className={cn("rounded-sm text-blue-600 underline-offset-2 hover:underline", focusRing)}>
                       Todas secretas
                     </button>
-                    <button type="button" onClick={() => setAllSecret(false)} className="text-slate-600 underline hover:text-slate-950">
+                    <button type="button" onClick={() => setAllSecret(false)} className={cn("rounded-sm text-blue-600 underline-offset-2 hover:underline", focusRing)}>
                       Nenhuma secreta
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowValues((v) => !v)}
-                      className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-950"
+                      className={cn("inline-flex items-center gap-1 rounded-sm text-slate-600 hover:text-slate-950", focusRing)}
                     >
                       {showValues ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       {showValues ? "Ocultar valores" : "Mostrar valores"}
@@ -325,9 +335,9 @@ export function ImportEnvDialog({
                   </div>
                 </div>
 
-                <div className="max-h-[40vh] overflow-auto border border-slate-200">
+                <div className="max-h-[40vh] overflow-auto rounded-lg border border-slate-200">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="w-10 px-3 py-2">
                           <input
@@ -403,7 +413,7 @@ export function ImportEnvDialog({
             )}
 
             {result && (
-              <section className="space-y-2 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              <section className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                 <p className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="h-4 w-4" />
                   {result.created} criada(s), {result.updated} atualizada(s), {result.skipped} mantida(s)
@@ -429,7 +439,7 @@ export function ImportEnvDialog({
               type="button"
               onClick={onClose}
               disabled={importMutation.isPending}
-              className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className={btn.secondary}
             >
               {result ? "Fechar" : "Cancelar"}
             </button>
@@ -439,7 +449,7 @@ export function ImportEnvDialog({
                 onClick={() => importMutation.mutate()}
                 disabled={!canImport}
                 title={!scopeReady ? "Escolha o alvo do escopo" : undefined}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className={btn.primary}
               >
                 <Upload className="h-4 w-4" />
                 {importMutation.isPending ? "Importando..." : `Importar ${toImport.length} variável(is)`}

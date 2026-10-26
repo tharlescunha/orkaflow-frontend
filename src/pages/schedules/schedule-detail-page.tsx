@@ -1,44 +1,36 @@
-import { useMemo } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  PauseCircle,
-  Pencil,
-  PlayCircle,
-  Power,
-  RefreshCcw,
-} from "lucide-react";
+import { AlertTriangle, PauseCircle, Pencil, PlayCircle, Power, RefreshCcw, SkipForward } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { withApiDetail } from "@/lib/api-error";
+import { EMPTY, formatBoolean, formatDateTime, formatDateTimeShort, formatRelative } from "@/lib/format";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { getAutomation } from "@/services/api/automations";
-import {
-  deactivateSchedule,
-  getSchedule,
-  pauseSchedule,
-  reactivateSchedule,
-} from "@/services/api/schedules";
+import { deactivateSchedule, getSchedule, pauseSchedule, reactivateSchedule } from "@/services/api/schedules";
 import type { ScheduleRead } from "@/types/schedule";
+import { toast } from "@/store/toast-store";
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
+type StatusLabel = "Ativo" | "Pausado" | "Inativo" | "Erro";
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
-
-function formatBoolean(value: boolean) {
-  return value ? "Sim" : "Não";
-}
-
-function getStatusLabel(schedule: ScheduleRead) {
+function getStatusLabel(schedule: ScheduleRead): StatusLabel {
   if (schedule.status === "paused") return "Pausado";
   if (schedule.status === "error") return "Erro";
   if (schedule.status === "inactive") return "Inativo";
-  if (schedule.status === "active") return schedule.active ? "Ativo" : "Inativo";
   return schedule.active ? "Ativo" : "Inativo";
 }
+
+const STATUS_TONE: Record<StatusLabel, string> = {
+  Ativo: tone.success,
+  Pausado: tone.warning,
+  Inativo: tone.neutral,
+  Erro: tone.danger,
+};
 
 function getPolicyLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -49,7 +41,7 @@ function getPolicyLabel(value?: string | null) {
     skip_if_missed: "Ignorar se perdeu a janela",
   };
 
-  return labels[value ?? ""] ?? value ?? "---";
+  return labels[value ?? ""] ?? value ?? EMPTY;
 }
 
 function getCalendarTypeLabel(value?: string | null) {
@@ -63,11 +55,23 @@ function getCalendarTypeLabel(value?: string | null) {
     month: "Mês",
   };
 
-  return labels[value ?? ""] ?? value ?? "---";
+  return labels[value ?? ""] ?? value ?? EMPTY;
+}
+
+function getRuleSummary(schedule: ScheduleRead) {
+  if (schedule.schedule_type === "cron") {
+    return schedule.cron_expression || EMPTY;
+  }
+
+  if (schedule.calendar_type === "once") {
+    return "Execução única";
+  }
+
+  return `A cada ${schedule.interval_value ?? 1} ${getCalendarTypeLabel(schedule.calendar_type).toLowerCase()}(s)`;
 }
 
 function formatParameters(value: unknown) {
-  if (!value) return "---";
+  if (!value) return EMPTY;
 
   try {
     return JSON.stringify(value, null, 2);
@@ -76,17 +80,31 @@ function formatParameters(value: unknown) {
   }
 }
 
+// Mesma regra da lista: o "ignorado" só aparece enquanto for o último acontecimento.
+function isSkipCurrent(schedule: ScheduleRead) {
+  if (!schedule.last_skipped_reason || !schedule.last_skipped_at) return false;
+  if (!schedule.last_run_at) return true;
+  const skipped = new Date(schedule.last_skipped_at).getTime();
+  const ran = new Date(schedule.last_run_at).getTime();
+  if (Number.isNaN(skipped)) return false;
+  if (Number.isNaN(ran)) return true;
+  return skipped > ran;
+}
+
 export function ScheduleDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const params = useParams<{ scheduleId: string }>();
 
   const scheduleId = Number(params.scheduleId);
+  const validId = Number.isFinite(scheduleId) && scheduleId > 0;
+
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
 
   const scheduleQuery = useQuery({
     queryKey: ["schedule-detail", scheduleId],
     queryFn: () => getSchedule(scheduleId),
-    enabled: Number.isFinite(scheduleId) && scheduleId > 0,
+    enabled: validId,
   });
 
   const automationQuery = useQuery({
@@ -95,300 +113,268 @@ export function ScheduleDetailPage() {
     enabled: Boolean(scheduleQuery.data?.automation_id),
   });
 
+  async function invalidate() {
+    await queryClient.invalidateQueries({ queryKey: ["schedule-detail", scheduleId] });
+    await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+  }
+
   const pauseMutation = useMutation({
     mutationFn: () => pauseSchedule(scheduleId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["schedule-detail", scheduleId] });
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      toast.success("Agendamento pausado.");
+      await invalidate();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível pausar o agendamento.", error));
     },
   });
 
   const reactivateMutation = useMutation({
     mutationFn: () => reactivateSchedule(scheduleId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["schedule-detail", scheduleId] });
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      toast.success("Agendamento reativado.");
+      await invalidate();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível reativar o agendamento.", error));
     },
   });
 
   const deactivateMutation = useMutation({
     mutationFn: () => deactivateSchedule(scheduleId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["schedule-detail", scheduleId] });
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      toast.success("Agendamento desativado.");
+      setConfirmDeactivate(false);
+      await invalidate();
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível desativar o agendamento.", error));
     },
   });
 
+  const backTo = "/schedules";
+  const backLabel = "Voltar para agendamentos";
+
+  if (!validId) {
+    return (
+      <section className={card}>
+        <PageHeader title="Agendamento" backTo={backTo} backLabel={backLabel} />
+        <div className="p-5">
+          <QueryError error={new Error("ID de agendamento inválido.")} what="o agendamento" />
+        </div>
+      </section>
+    );
+  }
+
+  if (scheduleQuery.isLoading) {
+    return (
+      <section className={card}>
+        <PageHeader title="Agendamento" backTo={backTo} backLabel={backLabel} />
+        <div className="p-5">
+          <DetailSkeleton fields={8} />
+        </div>
+      </section>
+    );
+  }
+
+  if (scheduleQuery.isError || !scheduleQuery.data) {
+    return (
+      <section className={card}>
+        <PageHeader title="Agendamento" backTo={backTo} backLabel={backLabel} />
+        <div className="p-5">
+          <QueryError
+            error={scheduleQuery.error}
+            what="o agendamento"
+            onRetry={() => scheduleQuery.refetch()}
+            retrying={scheduleQuery.isFetching}
+          />
+        </div>
+      </section>
+    );
+  }
+
   const schedule = scheduleQuery.data;
-
-  const ruleSummary = useMemo(() => {
-    if (!schedule) return "---";
-
-    if (schedule.schedule_type === "cron") {
-      return schedule.cron_expression || "---";
-    }
-
-    if (schedule.calendar_type === "once") {
-      return "Execução única";
-    }
-
-    return `A cada ${schedule.interval_value ?? 1} ${getCalendarTypeLabel(
-      schedule.calendar_type
-    ).toLowerCase()}(s)`;
-  }, [schedule]);
+  const statusLabel = getStatusLabel(schedule);
+  const showSkip = isSkipCurrent(schedule);
+  const automationName = automationQuery.data?.name ?? `Automação #${schedule.automation_id}`;
+  const actionPending = pauseMutation.isPending || reactivateMutation.isPending || deactivateMutation.isPending;
+  const isFetching = scheduleQuery.isFetching || automationQuery.isFetching;
 
   function handleRefresh() {
     scheduleQuery.refetch();
     automationQuery.refetch();
   }
 
-  if (!Number.isFinite(scheduleId) || scheduleId <= 0) {
-    return (
-      <div className="space-y-5">
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="px-6 py-10 text-sm text-red-600">
-            ID de agendamento inválido.
+  return (
+    <section className={card}>
+      <PageHeader
+        title={schedule.name}
+        description={`Agendamento #${schedule.id} · ${automationName}`}
+        backTo={backTo}
+        backLabel={backLabel}
+        meta={<span className={cn(badge, STATUS_TONE[statusLabel])}>{statusLabel}</span>}
+        actions={
+          <>
+            <button type="button" onClick={handleRefresh} className={btn.secondary} disabled={isFetching}>
+              <RefreshCcw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Atualizar
+            </button>
+
+            {schedule.status === "paused" ? (
+              <button type="button" onClick={() => reactivateMutation.mutate()} className={btn.secondary} disabled={actionPending}>
+                <PlayCircle className="h-4 w-4 text-emerald-600" />
+                Reativar
+              </button>
+            ) : schedule.active ? (
+              <button type="button" onClick={() => pauseMutation.mutate()} className={btn.secondary} disabled={actionPending}>
+                <PauseCircle className="h-4 w-4 text-amber-600" />
+                Pausar
+              </button>
+            ) : null}
+
+            {schedule.active ? (
+              <button type="button" onClick={() => setConfirmDeactivate(true)} className={btn.dangerOutline} disabled={actionPending}>
+                <Power className="h-4 w-4" />
+                Desativar
+              </button>
+            ) : null}
+
+            <button type="button" onClick={() => navigate(`/schedules/${scheduleId}/edit`)} className={btn.primary}>
+              <Pencil className="h-4 w-4" />
+              Editar
+            </button>
+          </>
+        }
+      />
+
+      <div className="space-y-5 p-5">
+        {schedule.last_error ? (
+          <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">Último erro do agendamento</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">{schedule.last_error}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {showSkip ? (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <SkipForward className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">Última execução ignorada em {formatDateTime(schedule.last_skipped_at)}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">{schedule.last_skipped_reason}</p>
+            </div>
+          </div>
+        ) : null}
+
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Execução</h2>
+          </div>
+          <div className={cn(cardBody, "grid gap-5 md:grid-cols-2 xl:grid-cols-4")}>
+            <InfoItem
+              label="Próxima execução"
+              value={
+                schedule.next_run_at ? (
+                  <span title={formatDateTime(schedule.next_run_at)}>
+                    {formatRelative(schedule.next_run_at)}
+                    <span className="block text-xs text-slate-500">{formatDateTimeShort(schedule.next_run_at)}</span>
+                  </span>
+                ) : (
+                  EMPTY
+                )
+              }
+            />
+            <InfoItem
+              label="Última execução"
+              value={
+                schedule.last_run_at ? (
+                  <span title={formatDateTime(schedule.last_run_at)}>
+                    {formatRelative(schedule.last_run_at)}
+                    <span className="block text-xs text-slate-500">{formatDateTimeShort(schedule.last_run_at)}</span>
+                  </span>
+                ) : (
+                  EMPTY
+                )
+              }
+            />
+            <InfoItem label="Regra" value={<span className="font-mono">{getRuleSummary(schedule)}</span>} />
+            <InfoItem label="Tipo" value={schedule.schedule_type === "cron" ? "Cron" : `Calendário · ${getCalendarTypeLabel(schedule.calendar_type)}`} />
           </div>
         </section>
-      </div>
-    );
-  }
 
-  return (
-    <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate("/schedules")}
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para agendamentos
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">
-                Detalhes do Agendamento #{scheduleId}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Visualização completa da configuração e do estado atual do schedule.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate(`/schedules/${scheduleId}/edit`)}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800"
-              >
-                <Pencil className="h-4 w-4" />
-                Editar
-              </button>
-
-              {schedule?.status === "paused" ? (
-                <button
-                  type="button"
-                  onClick={() => reactivateMutation.mutate()}
-                  className="inline-flex h-10 items-center gap-2 border border-emerald-300 bg-white px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
-                >
-                  <PlayCircle className="h-4 w-4" />
-                  Reativar
-                </button>
-              ) : schedule?.active ? (
-                <button
-                  type="button"
-                  onClick={() => pauseMutation.mutate()}
-                  className="inline-flex h-10 items-center gap-2 border border-amber-300 bg-white px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
-                >
-                  <PauseCircle className="h-4 w-4" />
-                  Pausar
-                </button>
-              ) : null}
-
-              {schedule?.active ? (
-                <button
-                  type="button"
-                  onClick={() => deactivateMutation.mutate()}
-                  className="inline-flex h-10 items-center gap-2 border border-red-300 bg-white px-4 text-sm font-medium text-red-700 transition hover:bg-red-50"
-                >
-                  <Power className="h-4 w-4" />
-                  Desativar
-                </button>
-              ) : null}
-            </div>
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Configuração</h2>
           </div>
-        </div>
+          <div className={cn(cardBody, "grid gap-5 md:grid-cols-2 xl:grid-cols-4")}>
+            <InfoItem label="Automação" value={automationName} />
+            <InfoItem label="Prioridade" value={String(schedule.priority)} />
+            <InfoItem label="Política" value={getPolicyLabel(schedule.policy)} />
+            <InfoItem label="Fuso horário" value={schedule.timezone} />
+            <InfoItem label="Ativo" value={formatBoolean(schedule.active)} />
+            <InfoItem label="Usa parâmetros da automação" value={formatBoolean(schedule.use_default_runtime_parameters)} />
+            <InfoItem label="Início" value={formatDateTime(schedule.start_at)} />
+            <InfoItem label="Fim" value={formatDateTime(schedule.end_at)} />
+          </div>
+        </section>
 
-        <div className="px-6 py-6">
-          {scheduleQuery.isLoading ? (
-            <p className="text-sm text-slate-500">Carregando agendamento...</p>
-          ) : scheduleQuery.isError ? (
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              Não foi possível carregar os dados do agendamento.
-            </div>
-          ) : schedule ? (
-            <div className="space-y-6">
-              {schedule.last_error ? (
-                <div role="alert" className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-                  <p className="font-semibold">Último erro do agendamento</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">{schedule.last_error}</p>
-                </div>
-              ) : null}
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Parâmetros do robô</h2>
+          </div>
+          <div className={cardBody}>
+            {schedule.use_default_runtime_parameters ? (
+              <p className="text-sm text-slate-500">Este agendamento usa os parâmetros padrão cadastrados na automação.</p>
+            ) : (
+              <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-800">
+                {formatParameters(schedule.runtime_parameters_json)}
+              </pre>
+            )}
+          </div>
+        </section>
 
-              {schedule.last_skipped_reason ? (
-                <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <p className="font-semibold">
-                    Última execução ignorada
-                    {schedule.last_skipped_at
-                      ? ` em ${formatDateTime(schedule.last_skipped_at)}`
-                      : ""}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">
-                    {schedule.last_skipped_reason}
-                  </p>
-                </div>
-              ) : null}
+        <details className={card}>
+          <summary className={cn(cardHeader, "cursor-pointer select-none list-none")}>
+            <span className={cardTitle}>Detalhes técnicos</span>
+          </summary>
+          <div className={cn(cardBody, "grid gap-5 md:grid-cols-2 xl:grid-cols-4")}>
+            <InfoItem label="ID" value={String(schedule.id)} />
+            <InfoItem label="Expressão cron" value={<span className="font-mono">{schedule.cron_expression || EMPTY}</span>} />
+            <InfoItem
+              label="Intervalo"
+              value={
+                schedule.interval_value !== null && schedule.interval_value !== undefined
+                  ? `${schedule.interval_value} ${schedule.interval_unit ?? ""}`.trim()
+                  : EMPTY
+              }
+            />
+            <InfoItem label="Misfire policy" value={schedule.misfire_policy || EMPTY} />
+            <InfoItem label="Criado em" value={formatDateTime(schedule.created_at)} />
+            <InfoItem label="Atualizado em" value={formatDateTime(schedule.updated_at)} />
+          </div>
+        </details>
+      </div>
 
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Resumo
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-                  <InfoItem label="ID" value={String(schedule.id)} />
-                  <InfoItem label="Nome" value={schedule.name} />
-                  <InfoItem
-                    label="Automação"
-                    value={automationQuery.data?.name ?? `Automação #${schedule.automation_id}`}
-                  />
-                  <InfoItem label="Status" value={getStatusLabel(schedule)} />
-                  <InfoItem
-                    label="Ativo"
-                    value={formatBoolean(schedule.active)}
-                  />
-                  <InfoItem label="Tipo" value={schedule.schedule_type === "cron" ? "Cron" : "Calendário"} />
-                  <InfoItem label="Regra" value={ruleSummary} />
-                  <InfoItem label="Timezone" value={schedule.timezone} />
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Configuração
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-                  <InfoItem label="Prioridade" value={String(schedule.priority)} />
-                  <InfoItem label="Policy" value={getPolicyLabel(schedule.policy)} />
-                  <InfoItem
-                    label="Calendar type"
-                    value={getCalendarTypeLabel(schedule.calendar_type)}
-                  />
-                  <InfoItem
-                    label="Cron expression"
-                    value={schedule.cron_expression || "---"}
-                  />
-                  <InfoItem
-                    label="Interval value"
-                    value={
-                      schedule.interval_value !== null &&
-                      schedule.interval_value !== undefined
-                        ? String(schedule.interval_value)
-                        : "---"
-                    }
-                  />
-                  <InfoItem
-                    label="Interval unit"
-                    value={schedule.interval_unit || "---"}
-                  />
-                  <InfoItem
-                    label="Misfire policy"
-                    value={schedule.misfire_policy || "---"}
-                  />
-                  <InfoItem
-                    label="Próxima execução"
-                    value={formatDateTime(schedule.next_run_at)}
-                  />
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Runtime
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-                  <InfoItem label="Início" value={formatDateTime(schedule.start_at)} />
-                  <InfoItem label="Fim" value={formatDateTime(schedule.end_at)} />
-                  <InfoItem
-                    label="Última execução"
-                    value={formatDateTime(schedule.last_run_at)}
-                  />
-                  <InfoItem
-                    label="Próxima execução"
-                    value={formatDateTime(schedule.next_run_at)}
-                  />
-                  <InfoItem
-                    label="Criado em"
-                    value={formatDateTime(schedule.created_at)}
-                  />
-                  <InfoItem
-                    label="Atualizado em"
-                    value={formatDateTime(schedule.updated_at)}
-                  />
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Parâmetros do robô
-                  </h2>
-                </div>
-
-                <div className="px-5 py-5">
-                  <pre className="overflow-x-auto border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
-                    {formatParameters(schedule.runtime_parameters_json)}
-                  </pre>
-                </div>
-              </section>
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </div>
+      <ConfirmDialog
+        open={confirmDeactivate}
+        title="Desativar agendamento"
+        description={`"${schedule.name}" deixa de criar tasks. Você pode editá-lo e marcar como ativo depois.`}
+        confirmLabel="Desativar"
+        tone="danger"
+        isPending={deactivateMutation.isPending}
+        onConfirm={() => deactivateMutation.mutate()}
+        onCancel={() => setConfirmDeactivate(false)}
+      />
+    </section>
   );
 }
 
-function InfoItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function InfoItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       {/* overflow-wrap:anywhere quebra nomes longos sem espaço (ex.: automacao_xxx_yyy) sem alargar a coluna. */}
       <div className="mt-1 text-sm text-slate-800 [overflow-wrap:anywhere]">{value}</div>
     </div>

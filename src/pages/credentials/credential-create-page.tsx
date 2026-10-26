@@ -1,18 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { withApiDetail } from "@/lib/api-error";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Plus, Save, Trash2 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
-import { createCredential, createCredentialItem } from "@/services/api/credentials";
+import { PageHeader } from "@/components/common/page-header";
 import { SearchableSelect } from "@/components/common/searchable-select";
+import { withApiDetail } from "@/lib/api-error";
+import { btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+import { createCredential, createCredentialItem } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
-
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
+import { toast } from "@/store/toast-store";
 
 type SecretFormItem = {
   tempId: string;
@@ -45,19 +44,13 @@ const initialFormState: CreateCredentialFormState = {
 export function CredentialCreatePage() {
   const navigate = useNavigate();
 
-  const [toast, setToast] = useState<ToastState>(null);
   const [form, setForm] = useState<CreateCredentialFormState>(initialFormState);
+  const [submitted, setSubmitted] = useState(false);
 
   const repositoriesQuery = useQuery({
     queryKey: ["repositories-options"],
     queryFn: () => listRepositories({ active: true }),
   });
-
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -68,10 +61,7 @@ export function CredentialCreatePage() {
       });
 
       const validSecrets = form.secrets
-        .map((item) => ({
-          key: item.key.trim(),
-          value: item.value,
-        }))
+        .map((item) => ({ key: item.key.trim(), value: item.value }))
         .filter((item) => item.key && item.value);
 
       for (const secret of validSecrets) {
@@ -87,45 +77,36 @@ export function CredentialCreatePage() {
       return createdCredential;
     },
     onSuccess: (credential) => {
-      setToast({
-        type: "success",
-        message: "Credencial cadastrada com sucesso.",
-      });
-
-      setTimeout(() => {
-        navigate(`/credentials/${credential.id}`);
-      }, 800);
+      toast.success("Credencial cadastrada.");
+      navigate(`/credentials/${credential.id}`);
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível cadastrar a credencial.", error),
-      });
+      toast.error(withApiDetail("Não foi possível cadastrar a credencial.", error));
     },
   });
 
   const repositories = repositoriesQuery.data ?? [];
 
-  const formIsValid = useMemo(() => {
-    const hasMainData = form.label.trim() && form.repository_id;
-    const validSecrets = form.secrets.filter((item) => item.key.trim() && item.value);
-    return Boolean(hasMainData && validSecrets.length > 0);
-  }, [form]);
+  const validSecretsCount = useMemo(
+    () => form.secrets.filter((item) => item.key.trim() && item.value).length,
+    [form.secrets]
+  );
+
+  const errors = {
+    label: form.label.trim() ? null : "Informe o label.",
+    repository: form.repository_id ? null : "Selecione o repositório.",
+    secrets: validSecretsCount > 0 ? null : "Informe pelo menos um segredo com chave e valor.",
+  };
+  const formIsValid = !errors.label && !errors.repository && !errors.secrets;
 
   function handleChangeField<K extends keyof CreateCredentialFormState>(
     field: K,
     value: CreateCredentialFormState[K]
   ) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function updateSecret(
-    tempId: string,
-    updater: (current: SecretFormItem) => SecretFormItem
-  ) {
+  function updateSecret(tempId: string, updater: (current: SecretFormItem) => SecretFormItem) {
     setForm((prev) => ({
       ...prev,
       secrets: prev.secrets.map((item) => (item.tempId === tempId ? updater(item) : item)),
@@ -133,115 +114,62 @@ export function CredentialCreatePage() {
   }
 
   function addSecret() {
-    setForm((prev) => ({
-      ...prev,
-      secrets: [...prev.secrets, createEmptySecret()],
-    }));
+    setForm((prev) => ({ ...prev, secrets: [...prev.secrets, createEmptySecret()] }));
   }
 
   function removeSecret(tempId: string) {
     setForm((prev) => {
       const nextSecrets = prev.secrets.filter((item) => item.tempId !== tempId);
-
-      return {
-        ...prev,
-        secrets: nextSecrets.length > 0 ? nextSecrets : [createEmptySecret()],
-      };
+      return { ...prev, secrets: nextSecrets.length > 0 ? nextSecrets : [createEmptySecret()] };
     });
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSubmitted(true);
     if (!formIsValid) return;
     createMutation.mutate();
   }
 
   return (
     <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
+      <section className={card}>
+        <PageHeader
+          backTo="/credentials"
+          backLabel="Voltar para credenciais"
+          title="Nova credencial"
+          description="Cadastre o label, o repositório e os segredos. Os valores são criptografados no servidor."
+        />
 
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate("/credentials")}
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para credenciais
-              </button>
-
-              <h1 className="text-2xl font-semibold text-slate-950">Nova Credencial</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Cadastro de nova credencial com segredos protegidos.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-6 px-6 py-6">
-            <section className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                  Informações básicas
-                </h2>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className={cn(cardBody, "space-y-5")}>
+            <section className={card}>
+              <div className={cardHeader}>
+                <h2 className={cardTitle}>Informações básicas</h2>
               </div>
 
-              <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                <FormField label="Label">
+              <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+                <Field label="Label" error={submitted ? errors.label : null}>
                   <input
                     value={form.label}
                     onChange={(e) => handleChangeField("label", e.target.value)}
-                    className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                    placeholder="Nome identificador da credencial"
-                    required
+                    className={input}
+                    placeholder="Ex.: SAP produção"
+                    autoFocus
                   />
-                </FormField>
+                </Field>
 
-                <FormField label="Repositório">
+                <Field label="Repositório" error={submitted ? errors.repository : null}>
                   <SearchableSelect<number>
                     value={form.repository_id ? Number(form.repository_id) : ""}
-                    onChange={(value) =>
-                      handleChangeField("repository_id", value === "" ? "" : String(value))
-                    }
-                    options={repositories.map((repository) => ({
-                      value: repository.id,
-                      label: repository.name,
-                    }))}
+                    onChange={(value) => handleChangeField("repository_id", value === "" ? "" : String(value))}
+                    options={repositories.map((repository) => ({ value: repository.id, label: repository.name }))}
                     placeholder="Selecione"
                     searchPlaceholder="Buscar repositório..."
-                    required
                     disabled={repositoriesQuery.isLoading}
                     loading={repositoriesQuery.isLoading}
                   />
-                </FormField>
+                </Field>
 
                 <div className="md:col-span-2">
                   <label className="inline-flex items-center gap-3 text-sm text-slate-700">
@@ -249,7 +177,7 @@ export function CredentialCreatePage() {
                       checked={form.active}
                       onChange={(e) => handleChangeField("active", e.target.checked)}
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     Credencial ativa
                   </label>
@@ -257,58 +185,48 @@ export function CredentialCreatePage() {
               </div>
             </section>
 
-            <section className="border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3">
+            <section className={card}>
+              <div className={cardHeader}>
                 <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Segredos
-                  </h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Os valores serão enviados ao backend para armazenamento criptografado.
+                  <h2 className={cardTitle}>Segredos</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Pares chave/valor. O robô lê pela chave; o valor fica criptografado.
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={addSecret}
-                  className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                >
+                <button type="button" onClick={addSecret} className={cn(btn.secondary, btn.sm)}>
                   <Plus className="h-4 w-4" />
                   Adicionar
                 </button>
               </div>
 
-              <div className="space-y-4 px-5 py-5">
-                {form.secrets.map((secret) => (
-                  <div key={secret.tempId} className="border border-slate-200 bg-slate-50 p-4">
+              <div className={cn(cardBody, "space-y-4")}>
+                {form.secrets.map((secret, index) => (
+                  <div key={secret.tempId} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-                      <FormField label="Chave">
+                      <Field label="Chave">
                         <input
                           value={secret.key}
                           onChange={(e) =>
-                            updateSecret(secret.tempId, (current) => ({
-                              ...current,
-                              key: e.target.value,
-                            }))
+                            updateSecret(secret.tempId, (current) => ({ ...current, key: e.target.value }))
                           }
-                          className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                          className={cn(input, "font-mono")}
                           placeholder="TOKEN"
+                          autoComplete="off"
+                          spellCheck={false}
                         />
-                      </FormField>
+                      </Field>
 
-                      <FormField label="Valor">
+                      <Field label="Valor">
                         <div className="relative">
                           <input
                             value={secret.value}
                             onChange={(e) =>
-                              updateSecret(secret.tempId, (current) => ({
-                                ...current,
-                                value: e.target.value,
-                              }))
+                              updateSecret(secret.tempId, (current) => ({ ...current, value: e.target.value }))
                             }
                             type={secret.showValue ? "text" : "password"}
-                            className="h-10 w-full border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                            className={cn(input, "pr-10")}
                             placeholder="Valor secreto"
+                            autoComplete="new-password"
                           />
                           <button
                             type="button"
@@ -318,23 +236,22 @@ export function CredentialCreatePage() {
                                 showValue: !current.showValue,
                               }))
                             }
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-700"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:text-slate-900"
+                            aria-label={secret.showValue ? "Ocultar valor" : "Mostrar valor"}
+                            title={secret.showValue ? "Ocultar valor" : "Mostrar valor"}
                           >
-                            {secret.showValue ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
+                            {secret.showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
-                      </FormField>
+                      </Field>
 
                       <div className="flex items-end">
                         <button
                           type="button"
                           onClick={() => removeSecret(secret.tempId)}
-                          className="inline-flex h-10 w-10 items-center justify-center border border-red-200 bg-white text-red-600 transition hover:bg-red-50"
+                          className={cn(btn.icon, "h-10 w-10 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700")}
                           title="Remover segredo"
+                          aria-label={`Remover segredo ${index + 1}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -342,26 +259,18 @@ export function CredentialCreatePage() {
                     </div>
                   </div>
                 ))}
+                {submitted && errors.secrets ? <p className={fieldError}>{errors.secrets}</p> : null}
               </div>
             </section>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={() => navigate("/credentials")}
-              className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
+          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-4">
+            <button type="button" onClick={() => navigate("/credentials")} className={btn.secondary}>
               Cancelar
             </button>
-
-            <button
-              type="submit"
-              disabled={createMutation.isPending || !formIsValid}
-              className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-            >
+            <button type="submit" disabled={createMutation.isPending || (submitted && !formIsValid)} className={btn.primary}>
               <Save className="h-4 w-4" />
-              {createMutation.isPending ? "Salvando..." : "Criar"}
+              {createMutation.isPending ? "Salvando..." : "Criar credencial"}
             </button>
           </div>
         </form>
@@ -370,17 +279,22 @@ export function CredentialCreatePage() {
   );
 }
 
-function FormField({
+function Field({
   label,
+  error,
+  help,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  error?: string | null;
+  help?: string;
+  children: ReactNode;
 }) {
   return (
-    <label className="block text-slate-900">
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
+    <div>
+      <label className={labelClass}>{label}</label>
       {children}
-    </label>
+      {error ? <p className={fieldError}>{error}</p> : help ? <p className={hint}>{help}</p> : null}
+    </div>
   );
 }

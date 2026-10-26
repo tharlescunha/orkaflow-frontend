@@ -1,19 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  GitCommitHorizontal,
-  Loader2,
-  RefreshCcw,
-  RotateCcw,
-  Save,
-  X,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, GitCommitHorizontal, Loader2, RefreshCcw, RotateCcw, Save } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { PageHeader } from "@/components/common/page-header";
+import { SearchableSelect } from "@/components/common/searchable-select";
+import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
+import { formatDateTime } from "@/lib/format";
+import { parseApiDate } from "@/lib/health";
+import { btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, textarea } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
   createBotVersion,
   getBotVersionGitPreview,
@@ -23,13 +20,7 @@ import {
   type CreateBotVersionPayload,
 } from "@/services/api/bot-versions";
 import { listAllBots } from "@/services/api/bots";
-import { parseApiDate } from "@/lib/health";
-import { SearchableSelect } from "@/components/common/searchable-select";
-
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
+import { toast } from "@/store/toast-store";
 
 const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
 
@@ -51,22 +42,25 @@ function nextVersion(versions: string[]) {
   return best ? `${best[0]}.${best[1]}.${best[2] + 1}` : "1.0.0";
 }
 
-function formatDateTime(value?: string | null) {
-  const date = parseApiDate(value);
-  return date ? date.toLocaleString("pt-BR") : "---";
+function formatCommitDate(value?: string | null) {
+  return formatDateTime(parseApiDate(value));
 }
+
+type ReleaseTarget = { id: number; version: string };
 
 export function BotVersionCreatePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [toast, setToast] = useState<ToastState>(null);
   const [botId, setBotId] = useState("");
   // null = ainda não editado: mostra o que veio do Git (ou a sugestão do cadastro manual).
   const [versionDraft, setVersionDraft] = useState<string | null>(null);
   const [changelogDraft, setChangelogDraft] = useState<string | null>(null);
   // Sem Git (repositório fora do ar, sem URL...): cadastro manual como antes.
   const [manualMode, setManualMode] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [confirmCreate, setConfirmCreate] = useState(false);
+  const [releaseTarget, setReleaseTarget] = useState<ReleaseTarget | null>(null);
 
   const selectedBotId = Number(botId);
   const hasBot = Number.isFinite(selectedBotId) && selectedBotId > 0;
@@ -99,37 +93,27 @@ export function BotVersionCreatePage() {
     });
   }, [botsQuery.data]);
 
+  const selectedBotName = sortedBots.find((bot) => bot.id === selectedBotId)?.name ?? `Bot #${selectedBotId}`;
+
   const manualSuggestion = useMemo(() => {
     const ofBot = (versionsQuery.data ?? []).filter((v) => v.bot_id === selectedBotId);
     return nextVersion(ofBot.map((v) => v.version));
   }, [versionsQuery.data, selectedBotId]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
-
   // Resultado do Git preenche o formulário; o usuário ainda pode ajustar versão e changelog.
-  const version =
-    versionDraft ?? (manualMode ? manualSuggestion : preview?.suggested_version ?? "");
-  const changelog = changelogDraft ?? (manualMode ? "" : preview?.changelog ?? "");
+  const version = versionDraft ?? (manualMode ? manualSuggestion : (preview?.suggested_version ?? ""));
+  const changelog = changelogDraft ?? (manualMode ? "" : (preview?.changelog ?? ""));
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateBotVersionPayload) => createBotVersion(payload),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["bot-versions"] });
-      setToast({
-        type: "success",
-        message: `Versão ${created.version} criada. Ela passa a ser a executada pelo orquestrador.`,
-      });
-      setTimeout(() => navigate("/bot-versions"), 900);
+      toast.success(`Versão ${created.version} criada. Ela passa a ser a executada pelo orquestrador.`);
+      navigate("/bot-versions");
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível cadastrar a versão.", error),
-      });
+      setConfirmCreate(false);
+      toast.error(withApiDetail("Não foi possível cadastrar a versão.", error));
     },
   });
 
@@ -137,17 +121,12 @@ export function BotVersionCreatePage() {
     mutationFn: (versionId: number) => releaseBotVersion(versionId),
     onSuccess: (released) => {
       queryClient.invalidateQueries({ queryKey: ["bot-versions"] });
-      setToast({
-        type: "success",
-        message: `Release feito: o orquestrador passa a executar a versão ${released.version}.`,
-      });
-      setTimeout(() => navigate("/bot-versions"), 900);
+      toast.success(`Release feito: o orquestrador passa a executar a versão ${released.version}.`);
+      navigate("/bot-versions");
     },
     onError: (error) => {
-      setToast({
-        type: "error",
-        message: withApiDetail("Não foi possível fazer o Release.", error),
-      });
+      setReleaseTarget(null);
+      toast.error(withApiDetail("Não foi possível fazer o Release.", error));
     },
   });
 
@@ -156,22 +135,32 @@ export function BotVersionCreatePage() {
     setManualMode(false);
     setVersionDraft(null);
     setChangelogDraft(null);
+    setSubmitted(false);
   }
 
   function handleManualMode(on: boolean) {
     setManualMode(on);
     setVersionDraft(null);
     setChangelogDraft(null);
+    setSubmitted(false);
   }
 
-  const canSave = manualMode
-    ? hasBot && version.trim() !== ""
-    : preview?.status === "nova_versao" && version.trim() !== "";
+  const versionError = !version.trim()
+    ? "Informe a versão."
+    : !SEMVER_RE.test(version.trim())
+      ? "Use o formato maior.menor.correção (ex.: 1.0.2)."
+      : null;
+
+  const canSave = manualMode ? hasBot && !versionError : preview?.status === "nova_versao" && !versionError;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSubmitted(true);
     if (!canSave) return;
+    setConfirmCreate(true);
+  }
 
+  function confirmAndCreate() {
     const payload: CreateBotVersionPayload =
       manualMode || !preview
         ? {
@@ -199,54 +188,18 @@ export function BotVersionCreatePage() {
 
   return (
     <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <X className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
+      <section className={card}>
+        <PageHeader
+          backTo="/bot-versions"
+          backLabel="Voltar para versões"
+          title="Nova versão de bot"
+          description="Escolha o bot: a versão é lida do Git (último commit, mensagens e data) e o número é calculado a partir da última versão."
+        />
 
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <button
-            type="button"
-            onClick={() => navigate("/bot-versions")}
-            className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Voltar para versões
-          </button>
-
-          <h1 className="text-2xl font-semibold text-slate-950">Nova Versão de Bot</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Escolha o bot: a versão é lida do Git (último commit, mensagens e data) e o
-            número é calculado a partir da última versão.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-6 px-6 py-6">
+        <form onSubmit={handleSubmit} noValidate>
+          <div className={cn(cardBody, "space-y-5")}>
             <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <FormField label="Bot">
+              <Field label="Bot">
                 <SearchableSelect<number>
                   value={botId === "" ? "" : Number(botId)}
                   onChange={(value) => handleSelectBot(value === "" ? "" : String(value))}
@@ -260,18 +213,17 @@ export function BotVersionCreatePage() {
                   searchPlaceholder="Buscar bot ou repositório..."
                   loading={botsQuery.isLoading}
                   disabled={botsQuery.isLoading}
-                  required
                 />
-              </FormField>
+              </Field>
 
               {hasBot && !manualMode ? (
                 <button
                   type="button"
                   onClick={() => previewQuery.refetch()}
                   disabled={previewQuery.isFetching}
-                  className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  className={btn.secondary}
                 >
-                  <RefreshCcw className={`h-4 w-4 ${previewQuery.isFetching ? "animate-spin" : ""}`} />
+                  <RefreshCcw className={cn("h-4 w-4", previewQuery.isFetching && "animate-spin")} />
                   Sincronizar com o Git
                 </button>
               ) : null}
@@ -286,19 +238,21 @@ export function BotVersionCreatePage() {
                     : null
                 }
                 preview={preview}
-                releasing={releaseMutation.isPending}
-                onRelease={(id) => releaseMutation.mutate(id)}
+                onRelease={(target) => setReleaseTarget(target)}
                 onManual={() => handleManualMode(true)}
               />
             ) : null}
 
             {manualMode ? (
-              <div className="flex items-start justify-between gap-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                <span>Cadastro manual, sem ler o Git: a versão não terá commit registrado.</span>
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <span className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  Cadastro manual, sem ler o Git: a versão não terá commit registrado.
+                </span>
                 <button
                   type="button"
                   onClick={() => handleManualMode(false)}
-                  className="shrink-0 font-medium underline"
+                  className="shrink-0 font-medium underline underline-offset-2"
                 >
                   Voltar a usar o Git
                 </button>
@@ -306,27 +260,24 @@ export function BotVersionCreatePage() {
             ) : null}
 
             {(manualMode || preview) && hasBot ? (
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Dados da versão
-                  </h2>
+              <section className={card}>
+                <div className={cardHeader}>
+                  <h2 className={cardTitle}>Dados da versão</h2>
                 </div>
 
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <FormField label="Versão">
+                <div className={cn(cardBody, "grid gap-5 md:grid-cols-2")}>
+                  <Field
+                    label="Versão"
+                    error={submitted ? versionError : null}
+                    help={`Calculada a partir da última${preview?.last_version ? ` (${preview.last_version})` : ""}. Pode ajustar.`}
+                  >
                     <input
                       value={version}
                       onChange={(e) => setVersionDraft(e.target.value)}
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+                      className={cn(input, "font-mono")}
                       placeholder="1.0.0"
-                      required
                     />
-                    <span className="mt-1 block text-xs text-slate-500">
-                      Calculada a partir da última
-                      {preview?.last_version ? ` (${preview.last_version})` : ""}. Pode ajustar.
-                    </span>
-                  </FormField>
+                  </Field>
 
                   {!manualMode && preview ? (
                     <>
@@ -340,9 +291,7 @@ export function BotVersionCreatePage() {
 
                       <ReadOnlyField label="Autor do commit">{preview.head.author}</ReadOnlyField>
 
-                      <ReadOnlyField label="Data do commit">
-                        {formatDateTime(preview.head.committed_at)}
-                      </ReadOnlyField>
+                      <ReadOnlyField label="Data do commit">{formatCommitDate(preview.head.committed_at)}</ReadOnlyField>
 
                       <div className="md:col-span-2">
                         <ReadOnlyField label="Repositório">
@@ -353,33 +302,28 @@ export function BotVersionCreatePage() {
                   ) : null}
 
                   <div className="md:col-span-2">
-                    <FormField label="Changelog">
+                    <Field label="Changelog">
                       <textarea
                         value={changelog}
                         onChange={(e) => setChangelogDraft(e.target.value)}
-                        className="min-h-[140px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-xs leading-5 text-slate-900 outline-none transition focus:border-slate-900"
+                        className={cn(textarea, "min-h-[140px] font-mono text-xs leading-5")}
                         placeholder="O que mudou nesta versão"
                       />
-                    </FormField>
+                    </Field>
                   </div>
                 </div>
               </section>
             ) : null}
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={() => navigate("/bot-versions")}
-              className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
+          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-4">
+            <button type="button" onClick={() => navigate("/bot-versions")} className={btn.secondary}>
               Cancelar
             </button>
-
             <button
               type="submit"
-              disabled={!canSave || createMutation.isPending}
-              className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={createMutation.isPending || (submitted && !canSave) || (!manualMode && preview?.status !== "nova_versao")}
+              className={btn.primary}
             >
               <Save className="h-4 w-4" />
               {createMutation.isPending ? "Salvando..." : "Salvar versão"}
@@ -387,6 +331,54 @@ export function BotVersionCreatePage() {
           </div>
         </form>
       </section>
+
+      <ConfirmDialog
+        open={confirmCreate}
+        title="Criar nova versão"
+        confirmLabel="Criar versão"
+        isPending={createMutation.isPending}
+        onConfirm={confirmAndCreate}
+        onCancel={() => {
+          if (!createMutation.isPending) setConfirmCreate(false);
+        }}
+        description={
+          <div className="space-y-2">
+            <p>
+              Bot: <strong>{selectedBotName}</strong>
+              <br />
+              Versão: <strong className="font-mono">{version.trim()}</strong>
+              {!manualMode && preview ? ` (commit ${preview.head.short})` : " (cadastro manual, sem commit)"}
+            </p>
+            <p>A versão nova passa a ser a executada pelo orquestrador nas próximas tasks desse bot.</p>
+          </div>
+        }
+      />
+
+      <ConfirmDialog
+        open={releaseTarget !== null}
+        title="Release da versão"
+        confirmLabel="Fazer Release"
+        isPending={releaseMutation.isPending}
+        onConfirm={() => releaseTarget && releaseMutation.mutate(releaseTarget.id)}
+        onCancel={() => {
+          if (!releaseMutation.isPending) setReleaseTarget(null);
+        }}
+        description={
+          releaseTarget ? (
+            <div className="space-y-2">
+              <p>
+                Bot: <strong>{selectedBotName}</strong>
+                <br />
+                Versão: <strong className="font-mono">{releaseTarget.version}</strong>
+              </p>
+              <p>
+                O commit atual do Git já está cadastrado nessa versão. As próximas execuções desse bot passam
+                a usá-la.
+              </p>
+            </div>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
@@ -395,20 +387,18 @@ function SyncStatus({
   loading,
   error,
   preview,
-  releasing,
   onRelease,
   onManual,
 }: {
   loading: boolean;
   error: string | null;
   preview?: BotVersionGitPreview;
-  releasing: boolean;
-  onRelease: (versionId: number) => void;
+  onRelease: (target: ReleaseTarget) => void;
   onManual: () => void;
 }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
         <Loader2 className="h-4 w-4 animate-spin" />
         Sincronizando com o Git... (o primeiro acesso a um repositório pode levar alguns segundos)
       </div>
@@ -417,12 +407,12 @@ function SyncStatus({
 
   if (error) {
     return (
-      <div className="flex items-start justify-between gap-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
         <span className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </span>
-        <button type="button" onClick={onManual} className="shrink-0 font-medium underline">
+        <button type="button" onClick={onManual} className="shrink-0 font-medium underline underline-offset-2">
           Cadastrar sem Git
         </button>
       </div>
@@ -433,7 +423,7 @@ function SyncStatus({
 
   if (preview.status === "sincronizado") {
     return (
-      <div className="flex items-start gap-2 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+      <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
         {preview.message} Não há nada novo para criar.
       </div>
@@ -442,7 +432,7 @@ function SyncStatus({
 
   if (preview.status === "ja_registrado") {
     return (
-      <div className="flex flex-col gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 md:flex-row md:items-center md:justify-between">
         <span className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {preview.message}
@@ -450,9 +440,10 @@ function SyncStatus({
         {preview.existing_version_id ? (
           <button
             type="button"
-            disabled={releasing}
-            onClick={() => onRelease(preview.existing_version_id as number)}
-            className="inline-flex h-9 shrink-0 items-center gap-2 bg-amber-600 px-3 font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+            onClick={() =>
+              onRelease({ id: preview.existing_version_id as number, version: preview.existing_version ?? "" })
+            }
+            className={cn(btn.secondary, "h-9 shrink-0 border-amber-300 text-amber-900 hover:bg-amber-100")}
           >
             <RotateCcw className="h-4 w-4" />
             Release da versão {preview.existing_version}
@@ -463,7 +454,7 @@ function SyncStatus({
   }
 
   return (
-    <div className="border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
       <p className="font-medium">{preview.message}</p>
       <p className="mt-1 text-blue-700">
         {preview.commits.length} commit(s) entram nesta versão. Confira e clique em Salvar versão.
@@ -472,32 +463,31 @@ function SyncStatus({
   );
 }
 
-function FormField({
+function Field({
   label,
+  error,
+  help,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block text-slate-900">
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function ReadOnlyField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
+  error?: string | null;
+  help?: string;
+  children: ReactNode;
 }) {
   return (
     <div>
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
-      <div className="flex min-h-10 items-center border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+      <label className={labelClass}>{label}</label>
+      {children}
+      {error ? <p className={fieldError}>{error}</p> : help ? <p className={hint}>{help}</p> : null}
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <span className={labelClass}>{label}</span>
+      <div className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
         {children}
       </div>
     </div>

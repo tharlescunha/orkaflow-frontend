@@ -1,61 +1,47 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import {
-  CalendarClock,
-  Eye,
-  PauseCircle,
-  PlayCircle,
-  Plus,
-  Power,
-  RefreshCcw,
-  Search,
-} from "lucide-react";
+import { CalendarClock, Eye, PauseCircle, Pencil, PlayCircle, Plus, Power, RefreshCcw } from "lucide-react";
 
-import { SearchableSelect } from "@/components/common/searchable-select";
-import type { SearchableOption } from "@/components/common/searchable-select";
+import { ActionsMenu } from "@/components/common/actions-menu";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { EmptyState } from "@/components/common/empty-state";
+import { FilterBar, SearchInput } from "@/components/common/filter-bar";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { SearchableSelect, type SearchableOption } from "@/components/common/searchable-select";
+import { TableSkeleton } from "@/components/common/skeleton";
+import { withApiDetail } from "@/lib/api-error";
+import { EMPTY, formatDateTimeShort, formatRelative } from "@/lib/format";
 import { normalizeSearch } from "@/lib/search";
+import { badge, btn, card, select, table, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { listAutomations } from "@/services/api/automations";
-import {
-  deactivateSchedule,
-  listSchedules,
-  pauseSchedule,
-  reactivateSchedule,
-} from "@/services/api/schedules";
+import { deactivateSchedule, listSchedules, pauseSchedule, reactivateSchedule } from "@/services/api/schedules";
 import type { ScheduleRead } from "@/types/schedule";
+import { toast } from "@/store/toast-store";
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
+type StatusLabel = "Ativo" | "Pausado" | "Inativo" | "Erro";
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
-
-function normalizeText(value?: string | null) {
-  return normalizeSearch(value ?? "");
-}
-
-function getStatusLabel(schedule: ScheduleRead) {
+function getStatusLabel(schedule: ScheduleRead): StatusLabel {
   if (schedule.status === "paused") return "Pausado";
   if (schedule.status === "error") return "Erro";
   if (schedule.status === "inactive") return "Inativo";
-  if (schedule.status === "active") return schedule.active ? "Ativo" : "Inativo";
   return schedule.active ? "Ativo" : "Inativo";
 }
+
+const STATUS_TONE: Record<StatusLabel, string> = {
+  Ativo: tone.success,
+  Pausado: tone.warning,
+  Inativo: tone.neutral,
+  Erro: tone.danger,
+};
 
 // Padrão: esconde só os desativados (status "inactive"). Pausados continuam na lista
 // porque ainda têm ação (Reativar), e os com erro precisam de atenção.
 type SituationFilter = "not_inactive" | "active" | "paused" | "inactive" | "all";
 
-const SITUATION_OPTIONS: SearchableOption<SituationFilter>[] = [
-  { value: "not_inactive", label: "Ativos e pausados" },
-  { value: "active", label: "Somente ativos" },
-  { value: "paused", label: "Somente pausados" },
-  { value: "inactive", label: "Somente inativos" },
-  { value: "all", label: "Todos" },
-];
+const DEFAULT_SITUATION: SituationFilter = "not_inactive";
 
 function matchesSituation(schedule: ScheduleRead, filter: SituationFilter) {
   const label = getStatusLabel(schedule);
@@ -91,7 +77,7 @@ function getTypeLabel(schedule: ScheduleRead) {
 
 function getRuleLabel(schedule: ScheduleRead) {
   if (schedule.schedule_type === "cron") {
-    return schedule.cron_expression || "---";
+    return schedule.cron_expression || EMPTY;
   }
 
   const unitLabels: Record<string, string> = {
@@ -114,24 +100,19 @@ function getRuleLabel(schedule: ScheduleRead) {
   return `A cada ${interval} ${unit}`;
 }
 
-function StatusBadge({ schedule }: { schedule: ScheduleRead }) {
-  const label = getStatusLabel(schedule);
-
-  const classes =
-    label === "Ativo"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : label === "Pausado"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : label === "Erro"
-      ? "border-red-200 bg-red-50 text-red-700"
-      : "border-slate-200 bg-slate-100 text-slate-700";
-
-  return (
-    <span className={`inline-flex items-center border px-2.5 py-1 text-xs font-medium ${classes}`}>
-      {label}
-    </span>
-  );
+// O "Ignorado" só interessa enquanto for o último acontecimento: se depois disso o
+// agendamento voltou a rodar (last_run_at mais recente), o aviso some.
+function isSkipCurrent(schedule: ScheduleRead) {
+  if (!schedule.last_skipped_reason || !schedule.last_skipped_at) return false;
+  if (!schedule.last_run_at) return true;
+  const skipped = new Date(schedule.last_skipped_at).getTime();
+  const ran = new Date(schedule.last_run_at).getTime();
+  if (Number.isNaN(skipped)) return false;
+  if (Number.isNaN(ran)) return true;
+  return skipped > ran;
 }
+
+type ConfirmState = { id: number; name: string } | null;
 
 export function SchedulesPage() {
   const navigate = useNavigate();
@@ -139,7 +120,8 @@ export function SchedulesPage() {
 
   const [search, setSearch] = useState("");
   const [automationFilter, setAutomationFilter] = useState<number | "">("");
-  const [situationFilter, setSituationFilter] = useState<SituationFilter>("not_inactive");
+  const [situationFilter, setSituationFilter] = useState<SituationFilter>(DEFAULT_SITUATION);
+  const [deactivateConfirm, setDeactivateConfirm] = useState<ConfirmState>(null);
 
   const schedulesQuery = useQuery({
     queryKey: ["schedules"],
@@ -154,31 +136,42 @@ export function SchedulesPage() {
   const pauseMutation = useMutation({
     mutationFn: (scheduleId: number) => pauseSchedule(scheduleId),
     onSuccess: async () => {
+      toast.success("Agendamento pausado.");
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível pausar o agendamento.", error));
     },
   });
 
   const reactivateMutation = useMutation({
     mutationFn: (scheduleId: number) => reactivateSchedule(scheduleId),
     onSuccess: async () => {
+      toast.success("Agendamento reativado.");
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível reativar o agendamento.", error));
     },
   });
 
   const deactivateMutation = useMutation({
     mutationFn: (scheduleId: number) => deactivateSchedule(scheduleId),
     onSuccess: async () => {
+      toast.success("Agendamento desativado.");
+      setDeactivateConfirm(null);
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    },
+    onError: (error) => {
+      toast.error(withApiDetail("Não foi possível desativar o agendamento.", error));
     },
   });
 
   const automationMap = useMemo(() => {
     const map = new Map<number, string>();
-
     for (const automation of automationsQuery.data ?? []) {
       map.set(automation.id, automation.name);
     }
-
     return map;
   }, [automationsQuery.data]);
 
@@ -197,7 +190,7 @@ export function SchedulesPage() {
   }, [automationsQuery.data]);
 
   const filteredSchedules = useMemo(() => {
-    const term = normalizeText(search);
+    const term = normalizeSearch(search);
 
     return (schedulesQuery.data ?? []).filter((schedule) => {
       const automationName = automationMap.get(schedule.automation_id) ?? "";
@@ -205,297 +198,250 @@ export function SchedulesPage() {
 
       const matchesText =
         !term ||
-        normalizeText(schedule.name).includes(term) ||
-        normalizeText(automationName).includes(term) ||
-        normalizeText(schedule.cron_expression).includes(term) ||
-        normalizeText(status).includes(term);
+        normalizeSearch(schedule.name).includes(term) ||
+        normalizeSearch(automationName).includes(term) ||
+        normalizeSearch(schedule.cron_expression ?? "").includes(term) ||
+        normalizeSearch(status).includes(term);
 
-      const matchesAutomation =
-        automationFilter === "" || schedule.automation_id === automationFilter;
+      const matchesAutomation = automationFilter === "" || schedule.automation_id === automationFilter;
 
       return matchesText && matchesAutomation && matchesSituation(schedule, situationFilter);
     });
   }, [schedulesQuery.data, automationMap, search, automationFilter, situationFilter]);
+
+  const hasActiveFilters = search !== "" || automationFilter !== "" || situationFilter !== DEFAULT_SITUATION;
+
+  function clearFilters() {
+    setSearch("");
+    setAutomationFilter("");
+    setSituationFilter(DEFAULT_SITUATION);
+  }
 
   function handleRefresh() {
     schedulesQuery.refetch();
     automationsQuery.refetch();
   }
 
+  const isFetching = schedulesQuery.isFetching || automationsQuery.isFetching;
+  const actionPending = pauseMutation.isPending || reactivateMutation.isPending || deactivateMutation.isPending;
+
+  const newButton = (
+    <button type="button" onClick={() => navigate("/schedules/new")} className={btn.primary}>
+      <Plus className="h-4 w-4" />
+      Novo agendamento
+    </button>
+  );
+
   return (
-    <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">
-                Agendamentos
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Listagem dos schedules com automação vinculada, regra de execução e status.
-              </p>
-            </div>
+    <section className={card}>
+      <PageHeader
+        title="Agendamentos"
+        description="Quando cada automação roda sozinha: regra, próxima execução e situação."
+        actions={
+          <>
+            <button type="button" onClick={handleRefresh} className={btn.secondary} disabled={isFetching}>
+              <RefreshCcw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Atualizar
+            </button>
+            {newButton}
+          </>
+        }
+      />
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
+      <FilterBar hasActiveFilters={hasActiveFilters} onClear={clearFilters}>
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, automação ou cron" />
 
-              <button
-                type="button"
-                onClick={() => navigate("/schedules/new")}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800"
-              >
-                <Plus className="h-4 w-4" />
-                Novo agendamento
-              </button>
-            </div>
-          </div>
+        <SearchableSelect<number>
+          value={automationFilter}
+          onChange={setAutomationFilter}
+          options={automationOptions}
+          emptyLabel="Todas as automações"
+          placeholder="Todas as automações"
+          searchPlaceholder="Buscar automação, repositório, bot..."
+          loading={automationsQuery.isLoading}
+          className="w-full sm:w-64"
+        />
+
+        <select
+          value={situationFilter}
+          onChange={(e) => setSituationFilter(e.target.value as SituationFilter)}
+          aria-label="Situação"
+          className={cn(select, "w-full sm:w-48")}
+        >
+          <option value="not_inactive">Ativos e pausados</option>
+          <option value="active">Somente ativos</option>
+          <option value="paused">Somente pausados</option>
+          <option value="inactive">Somente inativos</option>
+          <option value="all">Todos</option>
+        </select>
+
+        <span className="ml-auto hidden text-xs text-slate-500 sm:inline">
+          {filteredSchedules.length} {filteredSchedules.length === 1 ? "agendamento" : "agendamentos"}
+        </span>
+      </FilterBar>
+
+      {schedulesQuery.isLoading ? (
+        <TableSkeleton rows={6} columns={6} />
+      ) : schedulesQuery.isError ? (
+        <div className="p-5">
+          <QueryError
+            error={schedulesQuery.error}
+            what="os agendamentos"
+            onRetry={() => schedulesQuery.refetch()}
+            retrying={schedulesQuery.isFetching}
+          />
         </div>
+      ) : filteredSchedules.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title={hasActiveFilters ? "Nenhum agendamento com esses filtros" : "Nenhum agendamento cadastrado"}
+          description={
+            hasActiveFilters
+              ? "Tente outra busca ou limpe os filtros."
+              : "Crie o primeiro agendamento para uma automação rodar sozinha."
+          }
+          action={
+            hasActiveFilters ? (
+              <button type="button" onClick={clearFilters} className={btn.secondary}>
+                Limpar filtros
+              </button>
+            ) : (
+              newButton
+            )
+          }
+        />
+      ) : (
+        <div className={table.wrap}>
+          <table className={table.table}>
+            <thead className={table.thead}>
+              <tr>
+                <th className={table.th}>Agendamento</th>
+                <th className={table.th}>Automação</th>
+                <th className={table.th}>Tipo</th>
+                <th className={table.th}>Regra</th>
+                <th className={table.th}>Próxima execução</th>
+                <th className={table.th}>Status</th>
+                <th className={table.thRight}>Ações</th>
+              </tr>
+            </thead>
 
-        <div className="space-y-5 px-6 py-6">
-          <section className="border border-slate-200 bg-slate-50">
-            <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Buscar
-                </span>
+            <tbody>
+              {filteredSchedules.map((schedule) => {
+                const automationName = automationMap.get(schedule.automation_id) ?? `Automação #${schedule.automation_id}`;
+                const statusLabel = getStatusLabel(schedule);
+                const showSkip = isSkipCurrent(schedule);
 
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Nome do schedule, automação, cron..."
-                    className="h-10 w-full border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                  />
-                </div>
-              </label>
-
-              <div className="min-w-0">
-                <label
-                  htmlFor="schedules-automation-filter"
-                  className="mb-2 block text-sm font-medium text-slate-700"
-                >
-                  Automação
-                </label>
-                <SearchableSelect
-                  id="schedules-automation-filter"
-                  value={automationFilter}
-                  onChange={setAutomationFilter}
-                  options={automationOptions}
-                  emptyLabel="Todas as automações"
-                  searchPlaceholder="Buscar automação, repositório, bot..."
-                  loading={automationsQuery.isLoading}
-                />
-              </div>
-
-              <div className="min-w-0">
-                <label
-                  htmlFor="schedules-situation-filter"
-                  className="mb-2 block text-sm font-medium text-slate-700"
-                >
-                  Situação
-                </label>
-                <SearchableSelect
-                  id="schedules-situation-filter"
-                  value={situationFilter}
-                  onChange={(value) => setSituationFilter(value || "not_inactive")}
-                  options={SITUATION_OPTIONS}
-                  searchPlaceholder="Buscar situação..."
-                />
-              </div>
-
-              <div className="flex items-end">
-                <div className="w-full border border-slate-200 bg-white px-4 py-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Total listado
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">
-                    {filteredSchedules.length}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="overflow-hidden border border-slate-200 bg-white">
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-slate-50">
-                  <tr className="border-b border-slate-200">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Schedule
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Automação
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Tipo
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Regra
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Próxima execução
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {schedulesQuery.isLoading ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
-                        Carregando agendamentos...
-                      </td>
-                    </tr>
-                  ) : schedulesQuery.isError ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-600">
-                        Não foi possível carregar os agendamentos.
-                      </td>
-                    </tr>
-                  ) : filteredSchedules.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
-                        Nenhum agendamento encontrado.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSchedules.map((schedule) => {
-                      const automationName =
-                        automationMap.get(schedule.automation_id) ??
-                        `Automação #${schedule.automation_id}`;
-
-                      return (
-                        <tr
-                          key={schedule.id}
-                          className="border-b border-slate-200 last:border-b-0"
+                return (
+                  <tr key={schedule.id} className={table.trClickable} onClick={() => navigate(`/schedules/${schedule.id}`)}>
+                    <td className={table.tdStrong}>
+                      <span className={table.truncate} title={schedule.name}>
+                        {schedule.name}
+                      </span>
+                      <span className="block text-xs font-normal text-slate-500">#{schedule.id}</span>
+                      {schedule.last_error ? (
+                        <span
+                          className="block max-w-[280px] truncate text-xs font-medium text-red-700"
+                          title={schedule.last_error}
                         >
-                          <td className="px-4 py-4 align-top">
-                            <div className="flex items-start gap-3">
-                              <div className="mt-0.5 flex h-9 w-9 items-center justify-center border border-slate-200 bg-slate-50">
-                                <CalendarClock className="h-4 w-4 text-slate-700" />
-                              </div>
+                          Erro: {schedule.last_error}
+                        </span>
+                      ) : null}
+                      {showSkip ? (
+                        <span
+                          className="block max-w-[280px] truncate text-xs font-normal text-amber-700"
+                          title={`${schedule.last_skipped_reason} (${formatDateTimeShort(schedule.last_skipped_at)})`}
+                        >
+                          Ignorado: {schedule.last_skipped_reason}
+                        </span>
+                      ) : null}
+                    </td>
 
-                              <div className="min-w-0">
-                                <p
-                                  className="max-w-xs truncate text-sm font-semibold text-slate-900"
-                                  title={schedule.name}
-                                >
-                                  {schedule.name}
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  ID #{schedule.id}
-                                </p>
-                                {schedule.last_error ? (
-                                  <p
-                                    className="mt-1 max-w-xs truncate text-xs font-medium text-red-700"
-                                    title={schedule.last_error}
-                                  >
-                                    Erro: {schedule.last_error}
-                                  </p>
-                                ) : null}
-                                {schedule.last_skipped_reason ? (
-                                  <p
-                                    className="mt-1 max-w-xs truncate text-xs text-amber-700"
-                                    title={schedule.last_skipped_reason}
-                                  >
-                                    Ignorado: {schedule.last_skipped_reason}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
+                    <td className={table.td}>
+                      <span className={table.truncate} title={automationName}>
+                        {automationName}
+                      </span>
+                    </td>
 
-                          <td className="px-4 py-4 align-top text-sm text-slate-700">
-                            <div className="max-w-[280px] truncate" title={automationName}>
-                              {automationName}
-                            </div>
-                          </td>
+                    <td className={cn(table.tdMuted, "whitespace-nowrap")}>{getTypeLabel(schedule)}</td>
 
-                          <td className="px-4 py-4 align-top text-sm text-slate-700">
-                            {getTypeLabel(schedule)}
-                          </td>
+                    <td className={table.td}>
+                      <span className="block max-w-[260px] break-words font-mono text-xs" title={getRuleLabel(schedule)}>
+                        {getRuleLabel(schedule)}
+                      </span>
+                    </td>
 
-                          <td className="px-4 py-4 align-top text-sm text-slate-700">
-                            <div className="max-w-[260px] break-words">
-                              {getRuleLabel(schedule)}
-                            </div>
-                          </td>
+                    <td className={cn(table.td, "whitespace-nowrap")}>
+                      {schedule.next_run_at ? (
+                        <span title={formatDateTimeShort(schedule.next_run_at)}>{formatRelative(schedule.next_run_at)}</span>
+                      ) : (
+                        <span className="text-slate-400">{EMPTY}</span>
+                      )}
+                    </td>
 
-                          <td className="px-4 py-4 align-top text-sm text-slate-700">
-                            {formatDateTime(schedule.next_run_at)}
-                          </td>
+                    <td className={table.td}>
+                      <span className={cn(badge, STATUS_TONE[statusLabel])}>{statusLabel}</span>
+                    </td>
 
-                          <td className="px-4 py-4 align-top">
-                            <StatusBadge schedule={schedule} />
-                          </td>
-
-                          <td className="px-4 py-4 align-top">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/schedules/${schedule.id}`)}
-                                className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                              >
-                                <Eye className="h-4 w-4" />
-                                Ver
-                              </button>
-
-                              {schedule.status === "paused" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => reactivateMutation.mutate(schedule.id)}
-                                  className="inline-flex h-9 items-center gap-2 border border-emerald-300 bg-white px-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
-                                >
-                                  <PlayCircle className="h-4 w-4" />
-                                  Reativar
-                                </button>
-                              ) : schedule.active ? (
-                                <button
-                                  type="button"
-                                  onClick={() => pauseMutation.mutate(schedule.id)}
-                                  className="inline-flex h-9 items-center gap-2 border border-amber-300 bg-white px-3 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
-                                >
-                                  <PauseCircle className="h-4 w-4" />
-                                  Pausar
-                                </button>
-                              ) : null}
-
-                              {schedule.active ? (
-                                <button
-                                  type="button"
-                                  onClick={() => deactivateMutation.mutate(schedule.id)}
-                                  className="inline-flex h-9 items-center gap-2 border border-red-300 bg-white px-3 text-sm font-medium text-red-700 transition hover:bg-red-50"
-                                >
-                                  <Power className="h-4 w-4" />
-                                  Desativar
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                    <td className={table.tdRight}>
+                      <ActionsMenu
+                        label={`Ações de ${schedule.name}`}
+                        items={[
+                          { label: "Ver", icon: Eye, onSelect: () => navigate(`/schedules/${schedule.id}`) },
+                          { label: "Editar", icon: Pencil, onSelect: () => navigate(`/schedules/${schedule.id}/edit`) },
+                          ...(schedule.status === "paused"
+                            ? [
+                                {
+                                  label: "Reativar",
+                                  icon: PlayCircle,
+                                  tone: "success" as const,
+                                  separatorBefore: true,
+                                  disabled: actionPending,
+                                  onSelect: () => reactivateMutation.mutate(schedule.id),
+                                },
+                              ]
+                            : schedule.active
+                              ? [
+                                  {
+                                    label: "Pausar",
+                                    icon: PauseCircle,
+                                    separatorBefore: true,
+                                    disabled: actionPending,
+                                    onSelect: () => pauseMutation.mutate(schedule.id),
+                                  },
+                                ]
+                              : []),
+                          ...(schedule.active
+                            ? [
+                                {
+                                  label: "Desativar",
+                                  icon: Power,
+                                  tone: "danger" as const,
+                                  disabled: actionPending,
+                                  onSelect: () => setDeactivateConfirm({ id: schedule.id, name: schedule.name }),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </section>
-    </div>
+      )}
+
+      <ConfirmDialog
+        open={deactivateConfirm !== null}
+        title="Desativar agendamento"
+        description={`"${deactivateConfirm?.name ?? ""}" deixa de criar tasks. Você pode editá-lo e marcar como ativo depois.`}
+        confirmLabel="Desativar"
+        tone="danger"
+        isPending={deactivateMutation.isPending}
+        onConfirm={() => deactivateConfirm && deactivateMutation.mutate(deactivateConfirm.id)}
+        onCancel={() => setDeactivateConfirm(null)}
+      />
+    </section>
   );
 }
