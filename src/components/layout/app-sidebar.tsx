@@ -32,10 +32,10 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
         if (collapsed) setHovered(false);
       }}
       className={cn(
-        "h-full shrink-0 border-r border-slate-200/70 bg-white/75 text-slate-700 backdrop-blur-md",
+        "h-full shrink-0 border-r border-slate-200 bg-[#f8f9fb] text-slate-700",
         "overflow-hidden transition-[width] duration-300 ease-out",
         mobile ? "flex w-full flex-col bg-white" : "hidden md:flex md:flex-col",
-        !mobile && (isOpen ? "w-[248px]" : "w-[76px]")
+        !mobile && (isOpen ? "w-[256px]" : "w-[76px]")
       )}
     >
       <div className="flex h-full min-h-0 flex-col">
@@ -64,7 +64,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
             {NAV_GROUPS.map((group) => (
               <div key={group.title}>
                 {isOpen && (
-                  <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.title}</div>
+                  <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{group.title}</div>
                 )}
                 <div className="space-y-0.5">
                   {group.items.map((item) => {
@@ -78,15 +78,15 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
                         onClick={onNavigate}
                         className={({ isActive }) =>
                           cn(
-                            "group flex items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] transition-colors duration-150",
+                            "group flex items-center gap-3 rounded-lg px-3 py-2 text-[14.5px] font-medium transition-colors duration-150",
                             isOpen ? "justify-start" : "justify-center",
-                            isActive ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                            isActive ? "bg-slate-200/70 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-200/50 hover:text-slate-900"
                           )
                         }
                         title={!isOpen ? item.label : undefined}
                       >
                         <span className="relative shrink-0">
-                          <Icon className="h-4 w-4" />
+                          <Icon className="h-[18px] w-[18px]" />
                           {!isOpen && showBadge && (
                             <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
                               {errorsBadge > 99 ? "99+" : errorsBadge}
@@ -110,7 +110,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
 
         {/* Usuário no rodapé (no celular ele fica no topo). */}
         {!mobile && (
-          <div className={cn("shrink-0 border-t border-slate-200/70 p-3", !isOpen && "px-2")}>
+          <div className={cn("shrink-0 border-t border-slate-200 p-3", !isOpen && "px-2")}>
             <UserMenu compact={!isOpen} />
           </div>
         )}

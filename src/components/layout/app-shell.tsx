@@ -55,7 +55,7 @@ export function AppShell({ content }: { content?: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-[#f4f6fb] text-slate-800">
+    <div className="flex h-screen w-screen bg-[#f3f4f6] text-slate-800">
       <AppSidebar collapsed={sidebarCollapsed} />
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

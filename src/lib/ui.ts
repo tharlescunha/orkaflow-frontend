@@ -35,12 +35,12 @@ export const hint = "mt-1 text-xs text-slate-500";
 export const fieldError = "mt-1 text-xs font-medium text-red-600";
 
 /** Cartão/seção: branco, cantos grandes, sombra suave. */
-export const card = "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.25)]";
+export const card = "rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_6px_20px_-14px_rgba(15,23,42,0.2)]";
 export const cardHeader = "flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3";
 export const cardTitle = "text-sm font-semibold uppercase tracking-wide text-slate-600";
 export const cardBody = "px-5 py-5";
 /** Cartão que levanta no hover (listas de cards, KPIs). */
-export const cardHover = `${card} transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_30px_-14px_rgba(15,23,42,0.3)]`;
+export const cardHover = `${card} transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-14px_rgba(15,23,42,0.28)]`;
 
 /** Link em texto (ids, nomes clicáveis). */
 export const link = `font-medium text-blue-600 underline-offset-2 hover:underline ${focusRing} rounded-sm`;
@@ -48,15 +48,15 @@ export const link = `font-medium text-blue-600 underline-offset-2 hover:underlin
 export const table = {
   wrap: "overflow-x-auto",
   table: "min-w-full border-collapse text-sm",
-  thead: "",
-  th: "whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400",
-  thRight: "whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400",
-  tr: "border-b border-dashed border-slate-200 transition-colors last:border-b-0 hover:bg-blue-50/40",
-  trClickable: "cursor-pointer border-b border-dashed border-slate-200 transition-colors last:border-b-0 hover:bg-blue-50/40",
-  td: "px-4 py-3 align-middle text-slate-700",
-  tdMuted: "px-4 py-3 align-middle text-slate-500",
-  tdStrong: "px-4 py-3 align-middle font-medium text-slate-900",
-  tdRight: "px-4 py-3 text-right align-middle",
+  thead: "bg-slate-50",
+  th: "whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wide text-slate-500",
+  thRight: "whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-right text-[12px] font-semibold uppercase tracking-wide text-slate-500",
+  tr: "border-b border-slate-100 transition-colors last:border-b-0 hover:bg-slate-50",
+  trClickable: "cursor-pointer border-b border-slate-100 transition-colors last:border-b-0 hover:bg-slate-50",
+  td: "px-4 py-3.5 align-middle text-[14px] text-slate-700",
+  tdMuted: "px-4 py-3.5 align-middle text-[14px] text-slate-500",
+  tdStrong: "px-4 py-3.5 align-middle text-[14px] font-medium text-slate-900",
+  tdRight: "px-4 py-3.5 text-right align-middle",
   /** Nomes longos: largura máxima + reticências; o title mostra o nome inteiro. */
   truncate: "block max-w-[280px] truncate",
 } as const;
