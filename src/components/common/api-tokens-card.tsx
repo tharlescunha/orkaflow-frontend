@@ -5,6 +5,8 @@ import { Link } from "react-router-dom";
 
 import { getApiErrorMessage } from "@/lib/api-error";
 import { copyText } from "@/lib/clipboard";
+import { badge, btn, card, input, select, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { toast } from "@/store/toast-store";
 import {
   createApiToken,
@@ -22,9 +24,9 @@ const EXPIRY_OPTIONS = [
 ];
 
 const STATUS_STYLE: Record<ApiToken["status"], string> = {
-  ativo: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  revogado: "border-slate-200 bg-slate-100 text-slate-500",
-  expirado: "border-amber-200 bg-amber-50 text-amber-700",
+  ativo: tone.success,
+  revogado: tone.neutral,
+  expirado: tone.warning,
 };
 
 function formatDateTime(value?: string | null) {
@@ -88,7 +90,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
   const hiddenCount = tokens.length - tokens.filter((t) => t.status === "ativo").length;
 
   return (
-    <div className="border border-slate-200 bg-white">
+    <div className={card}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
         <div className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-slate-700" />
@@ -101,7 +103,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               setCreated(null);
               setFormOpen(true);
             }}
-            className="inline-flex h-9 items-center gap-2 bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800"
+            className={cn(btn.primary, "h-9 px-3")}
           >
             <Plus className="h-4 w-4" />
             Gerar token
@@ -122,7 +124,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
         </p>
 
         {created && (
-          <div className="space-y-3 border border-emerald-300 bg-emerald-50 p-4">
+          <div className="space-y-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2 text-sm text-emerald-900">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -140,13 +142,13 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               </button>
             </div>
             <div className="flex items-stretch gap-2">
-              <code className="min-w-0 flex-1 break-all border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-900">
+              <code className="min-w-0 flex-1 break-all rounded-lg border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-900">
                 {created.token}
               </code>
               <button
                 type="button"
                 onClick={() => copyText(created.token)}
-                className="inline-flex shrink-0 items-center gap-2 bg-emerald-700 px-3 text-sm font-medium text-white hover:bg-emerald-800"
+                className={cn(btn.success, "px-3")}
               >
                 <Copy className="h-4 w-4" />
                 Copiar
@@ -156,7 +158,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
         )}
 
         {formOpen && (
-          <form onSubmit={handleSubmit} className="grid gap-3 border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1fr_180px_auto] md:items-end">
+          <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1fr_180px_auto] md:items-end">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</span>
               <input
@@ -165,7 +167,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
                 placeholder="Ex.: Claude do notebook"
-                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
+                className={input}
               />
             </label>
             <label className="block">
@@ -173,7 +175,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               <select
                 value={expiry}
                 onChange={(e) => setExpiry(e.target.value)}
-                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
+                className={select}
               >
                 {EXPIRY_OPTIONS.map((option) => (
                   <option key={option.label} value={option.value}>
@@ -186,14 +188,14 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               <button
                 type="button"
                 onClick={() => setFormOpen(false)}
-                className="h-10 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className={btn.secondary}
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={!name.trim() || createMutation.isPending}
-                className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                className={btn.primary}
               >
                 {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Gerar
@@ -207,7 +209,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
         ) : tokensQuery.isError ? (
           <p className="text-sm text-red-700">{getApiErrorMessage(tokensQuery.error, "Não foi possível carregar os tokens.")}</p>
         ) : visible.length === 0 ? (
-          <p className="border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+          <p className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
             Nenhum token ativo.
           </p>
         ) : (
@@ -232,7 +234,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                     </td>
                     <td className="py-2 pr-3 font-mono text-xs text-slate-600">{token.token_prefix}…</td>
                     <td className="py-2 pr-3">
-                      <span className={`inline-flex border px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[token.status]}`}>
+                      <span className={`${badge} ${STATUS_STYLE[token.status]}`}>
                         {token.status}
                       </span>
                     </td>
@@ -246,7 +248,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                         <button
                           type="button"
                           onClick={() => setRevoking(token)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Revogar
@@ -271,7 +273,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
         )}
 
         {revoking && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <span>
               Revogar <strong>{revoking.name}</strong>? Quem estiver usando esse token perde o acesso na hora.
             </span>
@@ -280,7 +282,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                 type="button"
                 onClick={() => setRevoking(null)}
                 disabled={revokeMutation.isPending}
-                className="h-9 border border-red-200 bg-white px-3 font-medium text-red-800 hover:bg-red-100"
+                className={cn(btn.secondary, "h-9 border-red-200 text-red-800 hover:bg-red-100")}
               >
                 Cancelar
               </button>
@@ -288,7 +290,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                 type="button"
                 onClick={() => revokeMutation.mutate(revoking.id)}
                 disabled={revokeMutation.isPending}
-                className="inline-flex h-9 items-center gap-2 bg-red-700 px-3 font-medium text-white hover:bg-red-800 disabled:opacity-50"
+                className={cn(btn.danger, "h-9 px-3")}
               >
                 {revokeMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 Revogar

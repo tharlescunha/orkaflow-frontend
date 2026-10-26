@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getApiErrorMessage } from "@/lib/api-error";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { card } from "@/lib/ui";
 import { getMcpInfo } from "@/services/api/integration";
 import { resolveApiBase } from "./api-base";
 import { McpTab } from "./mcp-tab";
@@ -10,21 +13,17 @@ export function IntegrationMcpPage() {
   const info = infoQuery.data;
 
   return (
-    <section className="border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-6 py-5">
-        <h1 className="text-2xl font-semibold text-slate-950">MCP para IA</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Conecte o OrkaFlow ao Claude ou a outra IA para consultar e operar o orquestrador conversando.
-        </p>
-      </div>
+    <section className={card}>
+      <PageHeader
+        title="MCP para IA"
+        description="Conecte o OrkaFlow ao Claude ou a outra IA para consultar e operar o orquestrador conversando."
+      />
 
-      <div className="p-6">
+      <div className="p-5 md:p-6">
         {infoQuery.isLoading ? (
-          <p className="text-sm text-slate-500">Carregando...</p>
+          <DetailSkeleton fields={4} />
         ) : infoQuery.isError || !info ? (
-          <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {getApiErrorMessage(infoQuery.error, "Não foi possível carregar os dados do MCP.")}
-          </p>
+          <QueryError error={infoQuery.error} what="os dados do MCP" onRetry={() => infoQuery.refetch()} retrying={infoQuery.isFetching} />
         ) : (
           <McpTab info={info} url={`${resolveApiBase(info.url, info.public_url_configured)}/mcp`} />
         )}

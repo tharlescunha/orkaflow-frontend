@@ -4,6 +4,7 @@ import { Bot, Copy, Eye, Wrench } from "lucide-react";
 import { ApiTokensCard } from "@/components/common/api-tokens-card";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { btn, card, input } from "@/lib/ui";
 import type { McpInfo } from "@/services/api/integration";
 import { CodeBlock } from "./api-docs-tab";
 
@@ -97,7 +98,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
 
   if (!info.enabled) {
     return (
-      <p className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
         O MCP está desligado neste servidor (ENABLE_MCP=false).
       </p>
     );
@@ -119,14 +120,14 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
           alteração. Valores de credenciais nunca são mostrados a ela.
         </p>
         <div className="flex flex-wrap items-stretch gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-3 border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">URL do MCP</span>
             <code className="min-w-0 truncate font-mono text-sm text-slate-900">{url}</code>
           </div>
           <button
             type="button"
             onClick={() => copyText(url)}
-            className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={btn.secondary}
           >
             <Copy className="h-4 w-4" />
             Copiar
@@ -151,7 +152,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
             placeholder="ork_..."
             autoComplete="off"
             spellCheck={false}
-            className="h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-slate-900"
+            className={cn(input, "font-mono")}
           />
         </label>
         <div className="flex flex-wrap gap-1 border-b border-slate-200">
@@ -162,7 +163,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
               onClick={() => setClient(c.key)}
               className={cn(
                 "-mb-px border-b-2 px-3 py-2 text-sm font-medium",
-                client === c.key ? "border-slate-950 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-800"
+                client === c.key ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"
               )}
             >
               {c.label}
@@ -189,7 +190,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
         <StepTitle n={3} title="Pergunte" />
         <ul className="grid gap-2 md:grid-cols-2">
           {EXAMPLE_QUESTIONS.map((q) => (
-            <li key={q} className="flex items-start gap-2 border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            <li key={q} className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
               <Bot className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
               {q}
             </li>
@@ -209,7 +210,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
 function StepTitle({ n, title }: { n: number; title: string }) {
   return (
     <h2 className="flex items-center gap-3 text-lg font-semibold text-slate-950">
-      <span className="flex h-7 w-7 items-center justify-center bg-slate-950 text-sm text-white">{n}</span>
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">{n}</span>
       {title}
     </h2>
   );
@@ -218,7 +219,7 @@ function StepTitle({ n, title }: { n: number; title: string }) {
 function ToolList({ title, icon, tools }: { title: string; icon: "eye" | "wrench"; tools: McpInfo["tools"] }) {
   const Icon = icon === "eye" ? Eye : Wrench;
   return (
-    <div className="border border-slate-200 bg-white">
+    <div className={card}>
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
         <Icon className="h-4 w-4 text-slate-600" />
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{title}</h3>

@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Copy, Lock, Search } from "lucide-react";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { copyText } from "@/lib/clipboard";
 import { normalizeSearch } from "@/lib/search";
+import { inputWithIcon } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { getDocumentedOpenApi, type OpenApiSpec } from "@/services/api/integration";
 import { SimpleMarkdown } from "./simple-markdown";
@@ -82,7 +83,7 @@ export function ApiDocsTab({ baseUrl }: { baseUrl: string }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar rota ou assunto"
-            className="h-10 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-slate-900"
+            className={inputWithIcon}
           />
         </div>
         <nav className="hidden max-h-[70vh] space-y-0.5 overflow-y-auto pr-1 lg:block">
@@ -90,7 +91,7 @@ export function ApiDocsTab({ baseUrl }: { baseUrl: string }) {
             <a
               key={g.tag}
               href={`#${slug(g.tag)}`}
-              className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700"
             >
               <span className="truncate">{g.tag}</span>
               <span className="shrink-0 text-xs text-slate-400">{g.operations.length}</span>
@@ -104,7 +105,7 @@ export function ApiDocsTab({ baseUrl }: { baseUrl: string }) {
       </aside>
 
       <div className="min-w-0 space-y-6">
-        <div className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
           <p>
             <strong>{total} rotas</strong> com base <code className="bg-white px-1 font-mono text-xs">{baseUrl}</code>. As
             rotas com <Lock className="inline h-3.5 w-3.5" /> exigem o header{" "}
@@ -142,7 +143,7 @@ function GroupSection({ group, spec, baseUrl }: { group: DocGroup; spec: OpenApi
           </div>
         )}
       </div>
-      <div className="divide-y divide-slate-100 border border-slate-200 bg-white">
+      <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {group.operations.map((operation) => (
           <OperationRow key={operation.key} operation={operation} spec={spec} baseUrl={baseUrl} />
         ))}
@@ -170,7 +171,7 @@ function OperationRow({ operation, spec, baseUrl }: { operation: DocOperation; s
         )}
         <span
           className={cn(
-            "w-16 shrink-0 border py-0.5 text-center font-mono text-[11px] font-bold uppercase",
+            "w-16 shrink-0 rounded-md border py-0.5 text-center font-mono text-[11px] font-bold uppercase",
             METHOD_STYLE[operation.method]
           )}
         >
@@ -270,7 +271,7 @@ type FieldRow = { name: string; where?: string; type: string; required: boolean;
 function FieldTable({ rows }: { rows: FieldRow[] }) {
   const showWhere = rows.some((r) => r.where);
   return (
-    <div className="overflow-x-auto border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -306,13 +307,13 @@ export function CodeBlock({ title, code }: { title: string; code: string }) {
         <button
           type="button"
           onClick={() => copyText(code)}
-          className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900"
+          className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-blue-700"
         >
           <Copy className="h-3.5 w-3.5" />
           Copiar
         </button>
       </div>
-      <pre className="max-h-80 overflow-auto bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-100">{code}</pre>
+      <pre className="max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-100">{code}</pre>
     </div>
   );
 }
