@@ -1,13 +1,7 @@
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { btn, fieldError, hint, input, label as labelClass, select, textarea } from "@/lib/ui";
@@ -33,50 +27,66 @@ type Props = {
   onClose: () => void;
 };
 
-// Clique/Esc dentro da lista do SearchableSelect (portal) não deve fechar o Sheet.
+// Esc dentro da lista do SearchableSelect (portal) fecha só a lista, não o modal.
 function isInsideSelectPanel(target: EventTarget | null) {
   return target instanceof Element && target.closest('[role="listbox"]') !== null;
 }
 
+// Modal centralizado, no mesmo padrão do diálogo de importação e das confirmações
+// (antes era um painel lateral, fora do padrão das outras telas).
 export function VariableFormSheet(props: Props) {
   const { open, editing, onClose } = props;
-  return (
-    // modal={false}: o SearchableSelect abre a lista num portal em document.body,
-    // fora do Sheet. Em modo modal o Radix bloqueia ponteiro (pointer-events:none
-    // no body) e prende o foco no conteúdo, deixando a lista inutilizável.
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()} modal={false}>
-      {open && (
-        // Fundo escurecido (o overlay do Radix só existe em modo modal).
-        // Clique fora fecha pelo próprio Radix (onInteractOutside).
-        <div aria-hidden className="fixed inset-0 z-50 bg-slate-950/40" />
-      )}
-      <SheetContent
-        className="w-full overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
-        onInteractOutside={(event) => {
-          if (isInsideSelectPanel(event.target)) event.preventDefault();
-        }}
-        onEscapeKeyDown={(event) => {
-          if (isInsideSelectPanel(event.target)) event.preventDefault();
-        }}
-      >
-        <SheetHeader className="border-b border-slate-200">
-          <SheetTitle className="text-slate-950">
-            {editing ? (
-              <>
-                Editar <span className="font-mono">{editing.name}</span>
-              </>
-            ) : (
-              "Nova variável"
-            )}
-          </SheetTitle>
-          <SheetDescription className="text-slate-500">
-            O worker injeta esta variável no ambiente do robô ao executar.
-          </SheetDescription>
-        </SheetHeader>
-        {/* key: cada abertura/registro monta o formulário do zero com os dados certos. */}
-        {open && <VariableForm key={editing?.id ?? "new"} {...props} />}
-      </SheetContent>
-    </Sheet>
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isInsideSelectPanel(event.target)) onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9000]" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div
+          className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4">
+            <div>
+              <h2 id={titleId} className="text-lg font-semibold text-slate-950">
+                {editing ? (
+                  <>
+                    Editar <span className="font-mono">{editing.name}</span>
+                  </>
+                ) : (
+                  "Nova variável"
+                )}
+              </h2>
+              <p className="mt-0.5 text-sm text-slate-500">O worker injeta esta variável no ambiente do robô ao executar.</p>
+            </div>
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Fechar">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="overflow-y-auto">
+            {/* key: cada abertura/registro monta o formulário do zero com os dados certos. */}
+            <VariableForm key={editing?.id ?? "new"} {...props} />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
