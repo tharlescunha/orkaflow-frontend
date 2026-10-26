@@ -47,8 +47,9 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
+// Sem agendamento a automação só roda manualmente: não tem regra nem atraso.
 function formatRelativeRule(value?: string | null) {
-  if (!value) return "---";
+  if (!value) return "Manual";
   return value;
 }
 
@@ -717,7 +718,9 @@ export function AutomationHealthPage() {
                     </div>
                     <div>
                       <dt className="text-slate-500">Regra</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.rule_label || "---"}</dd>
+                      <dd className="font-medium text-slate-900">
+                        {selectedItem.schedule?.rule_label || "Manual (sem agendamento)"}
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-slate-500">Intervalo esperado</dt>

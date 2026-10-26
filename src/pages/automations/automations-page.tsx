@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryError } from "@/components/common/query-error";
 import {
   CheckCircle2,
   Eye,
@@ -255,8 +256,13 @@ export function AutomationsPage() {
               Carregando automações...
             </div>
           ) : automationsQuery.isError ? (
-            <div className="px-6 py-10 text-sm text-red-600">
-              Não foi possível carregar as automações.
+            <div className="px-6 py-6">
+              <QueryError
+                error={automationsQuery.error}
+                what="as automações"
+                onRetry={handleRefresh}
+                retrying={automationsQuery.isFetching}
+              />
             </div>
           ) : automations.length === 0 ? (
             <div className="px-6 py-10 text-sm text-slate-500">
