@@ -82,7 +82,7 @@ export function ApiDocsTab({ baseUrl }: { baseUrl: string }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar rota ou assunto"
-            className="h-10 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-900"
+            className="h-10 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-slate-900"
           />
         </div>
         <nav className="hidden max-h-[70vh] space-y-0.5 overflow-y-auto pr-1 lg:block">

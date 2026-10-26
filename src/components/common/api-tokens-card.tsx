@@ -165,7 +165,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
                 placeholder="Ex.: Claude do notebook"
-                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-900"
+                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
               />
             </label>
             <label className="block">
@@ -173,7 +173,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               <select
                 value={expiry}
                 onChange={(e) => setExpiry(e.target.value)}
-                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-900"
+                className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-900"
               >
                 {EXPIRY_OPTIONS.map((option) => (
                   <option key={option.label} value={option.value}>

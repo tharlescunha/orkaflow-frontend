@@ -121,7 +121,7 @@ export function TaskLogConsole({ lines, loading, error, live, total, loaded }: T
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar no log"
-              className="h-8 w-44 border border-slate-300 bg-white pl-8 pr-2 text-xs outline-none focus:border-slate-900"
+              className="h-8 w-44 border border-slate-300 bg-white pl-8 pr-2 text-xs text-slate-900 outline-none focus:border-slate-900"
             />
           </div>
           <button

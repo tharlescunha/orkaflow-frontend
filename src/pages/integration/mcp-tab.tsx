@@ -145,7 +145,7 @@ export function McpTab({ info, url }: { info: McpInfo; url: string }) {
             placeholder="ork_..."
             autoComplete="off"
             spellCheck={false}
-            className="h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm outline-none focus:border-slate-900"
+            className="h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-slate-900"
           />
         </label>
         <div className="flex flex-wrap gap-1 border-b border-slate-200">
