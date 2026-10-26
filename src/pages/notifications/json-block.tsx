@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
+import { btn } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+
 /** Tenta indentar JSON; se não for JSON válido devolve o texto cru. */
 function formatMaybeJson(text: string): string {
   const trimmed = text.trim();
@@ -55,7 +58,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       onClick={handle}
       aria-label={label}
-      className="inline-flex shrink-0 items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      className={cn(btn.secondary, "h-7 gap-1 px-2 text-xs")}
     >
       {state === "ok" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
       {state === "ok" ? "Copiado!" : state === "fail" ? "Não foi possível copiar" : "Copiar"}
@@ -83,11 +86,11 @@ export function JsonBlock({ title, text, copyLabel, emptyText = "Vazio", formatJ
       </div>
       {note && <p className="mb-1 text-xs font-semibold text-amber-700">{note}</p>}
       {has ? (
-        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-800">
+        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-800">
           {shown}
         </pre>
       ) : (
-        <p className="border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">{emptyText}</p>
+        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">{emptyText}</p>
       )}
     </div>
   );

@@ -1,10 +1,12 @@
 import { Plus, Trash2 } from "lucide-react";
+
+import { btn, hint, input } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { newExtractRow, type ExtractRow } from "./step-utils";
 
 type Props = { rows: ExtractRow[]; onChange: (rows: ExtractRow[]) => void };
 
-const inputClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900";
+const inputClass = cn(input, "font-mono");
 
 export function ExtractEditor({ rows, onChange }: Props) {
   const update = (id: number, patch: Partial<ExtractRow>) =>
@@ -34,7 +36,7 @@ export function ExtractEditor({ rows, onChange }: Props) {
             type="button"
             onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
             title="Remover linha"
-            className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-red-600 hover:bg-red-50"
+            className={cn(btn.icon, "h-10 w-10 text-red-600 hover:bg-red-50 hover:text-red-700")}
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -43,12 +45,12 @@ export function ExtractEditor({ rows, onChange }: Props) {
       <button
         type="button"
         onClick={() => onChange([...rows, newExtractRow()])}
-        className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        className={cn(btn.secondary, "h-9")}
       >
         <Plus className="h-4 w-4" />
         Adicionar variável
       </button>
-      <p className="text-xs text-slate-500">
+      <p className={hint}>
         Caminho vazio = resposta inteira. Use ponto para campos e números para itens de lista (ex.:
         token, data.token, 0).
       </p>

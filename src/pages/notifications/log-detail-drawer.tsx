@@ -4,6 +4,9 @@ import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { formatDateTime } from "@/lib/format";
+import { badge, btn, chip, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { getNotificationLog, type NotificationLogDetail } from "@/services/api/notifications";
 import { CopyButton, JsonBlock } from "./json-block";
 
@@ -26,7 +29,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Unavailable() {
   return (
-    <p className="border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">{UNAVAILABLE}</p>
+    <p className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">{UNAVAILABLE}</p>
   );
 }
 
@@ -36,7 +39,7 @@ function Summary({ log }: { log: NotificationLogDetail }) {
     <div className="space-y-2 text-sm">
       <dl className="grid grid-cols-[100px_1fr] items-center gap-x-3 gap-y-1">
         <dt className="text-slate-500">Data</dt>
-        <dd className="text-slate-800">{new Date(log.created_at).toLocaleString("pt-BR")}</dd>
+        <dd className="text-slate-800">{formatDateTime(log.created_at)}</dd>
         <dt className="text-slate-500">Tipo</dt>
         <dd className="text-slate-800">{KIND_LABEL[log.kind] ?? log.kind}</dd>
         <dt className="text-slate-500">Agendamento</dt>
@@ -56,11 +59,7 @@ function Summary({ log }: { log: NotificationLogDetail }) {
         <dt className="text-slate-500">Resultado</dt>
         <dd>
           <span
-            className={`inline-flex items-center gap-1 border px-2 py-0.5 text-xs font-semibold ${
-              log.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-red-200 bg-red-50 text-red-700"
-            }`}
+            className={cn(badge, log.ok ? tone.success : tone.danger)}
           >
             {log.ok ? "OK" : "Falhou"}
             {log.status_code != null && ` · HTTP ${log.status_code}`}
@@ -70,7 +69,7 @@ function Summary({ log }: { log: NotificationLogDetail }) {
         <dd className="text-slate-800">{log.paused_schedule ? "Sim, o agendamento foi pausado" : "Não"}</dd>
       </dl>
       {log.error && (
-        <pre className="whitespace-pre-wrap break-all border border-red-200 bg-red-50 p-3 font-mono text-xs text-red-700">
+        <pre className="whitespace-pre-wrap break-all rounded-lg border border-red-200 bg-red-50 p-3 font-mono text-xs text-red-700">
           {log.error}
         </pre>
       )}
@@ -82,7 +81,7 @@ function Steps({ steps }: { steps: NonNullable<NotificationLogDetail["steps"]> }
   return (
     <ul className="space-y-1">
       {steps.map((s, i) => (
-        <li key={i} className="border border-slate-200 bg-white px-3 py-2">
+        <li key={i} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             {s.ok ? (
               <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label="Sucesso" />
@@ -93,9 +92,7 @@ function Steps({ steps }: { steps: NonNullable<NotificationLogDetail["steps"]> }
               {i + 1}. {s.name || "Etapa sem nome"}
             </span>
             {s.status_code != null && (
-              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-                HTTP {s.status_code}
-              </span>
+              <span className={chip}>HTTP {s.status_code}</span>
             )}
           </div>
           {s.error && <div className="mt-1 break-all text-xs text-red-700">{s.error}</div>}
@@ -123,7 +120,7 @@ function RequestSection({ request }: { request: NonNullable<NotificationLogDetai
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 break-all font-mono text-xs text-slate-800">
-          <span className="mr-2 border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-semibold">
+          <span className="mr-2 rounded-md border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-semibold">
             {request.method}
           </span>
           {request.url}
@@ -135,7 +132,7 @@ function RequestSection({ request }: { request: NonNullable<NotificationLogDetai
         {headers.length === 0 ? (
           <p className="text-xs text-slate-500">Nenhum cabeçalho.</p>
         ) : (
-          <div className="overflow-x-auto border border-slate-200">
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-left text-xs">
               <tbody>
                 {headers.map(([k, v]) => (
@@ -191,9 +188,7 @@ function Detail({ log }: { log: NotificationLogDetail }) {
             )}
           </div>
         ) : (
-          <p className="border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">
-            Resposta vazia
-          </p>
+          <p className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">Resposta vazia</p>
         )}
       </Section>
     </div>
@@ -227,7 +222,7 @@ export function LogDetailDrawer({ logId, onClose }: { logId: number | null; onCl
             <button
               type="button"
               onClick={() => query.refetch()}
-              className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className={cn(btn.secondary, btn.sm)}
             >
               Tentar de novo
             </button>

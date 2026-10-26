@@ -1,19 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  AlertTriangle,
-  Bot,
-  CheckCircle2,
-  Clock3,
-  Cpu,
-  Loader2,
-  PlayCircle,
-  RefreshCcw,
-  Server,
-  XCircle,
-} from "lucide-react";
+import { Activity, BarChart3, Bot, CheckCircle2, Clock3, Cpu, PlayCircle, Server, XCircle } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { EmptyState } from "@/components/common/empty-state";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { Skeleton, TableSkeleton } from "@/components/common/skeleton";
+import { StatusBadge } from "@/components/common/status-badge";
 import {
   getDashboardBots,
   getDashboardOverview,
@@ -25,116 +21,73 @@ import {
   type DashboardRunnerMetrics,
   type DashboardTaskStatus,
 } from "@/services/api/dashboard";
+import { EMPTY, formatDateTime, formatDuration, formatNumber, formatPercent } from "@/lib/format";
+import { badge, card, cardHeader, cardTitle, chip, table, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
 type TabKey = "overview" | "runners" | "bots" | "recent";
 
-type ToastState = {
-  type: "success" | "error";
-  message: string;
-} | null;
+const REFRESH_MS = 30_000;
+const SUCCESS_COLOR = "#059669"; // emerald-600
+const ERROR_COLOR = "#dc2626"; // red-600
+const MAX_CHART_BOTS = 12;
 
 const PERIOD_OPTIONS: Array<{ label: string; value: DashboardPeriod }> = [
   { label: "1 dia", value: "1d" },
-  { label: "1 semana", value: "7d" },
+  { label: "7 dias", value: "7d" },
   { label: "15 dias", value: "15d" },
-  { label: "1 mês", value: "30d" },
+  { label: "30 dias", value: "30d" },
 ];
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
+const PERIOD_LABEL: Record<DashboardPeriod, string> = {
+  "1d": "Últimas 24 horas",
+  "7d": "Últimos 7 dias",
+  "15d": "Últimos 15 dias",
+  "30d": "Últimos 30 dias",
+};
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
+const TASK_STATUSES: DashboardTaskStatus[] = [
+  "waiting",
+  "scheduled",
+  "ready",
+  "running",
+  "stop_requested",
+  "forced_stop",
+  "canceled",
+  "finished",
+  "error",
+  "timeout",
+];
+
+function isTaskStatus(status?: string | null): status is DashboardTaskStatus {
+  return Boolean(status) && TASK_STATUSES.includes(status as DashboardTaskStatus);
 }
 
-function formatNumber(value?: number | null) {
-  if (value === null || value === undefined) return "0";
-  return new Intl.NumberFormat("pt-BR").format(value);
-}
-
-function formatPercent(value?: number | null) {
-  if (value === null || value === undefined) return "0%";
-  return `${value.toLocaleString("pt-BR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })}%`;
-}
-
-function formatSecondsToFriendly(value?: number | null) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "---";
-
-  const total = Math.max(0, Math.round(value));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
-function formatStatus(status?: DashboardTaskStatus | string | null) {
-  if (!status) return "---";
-
+function formatRunnerStatus(status?: string | null) {
   const map: Record<string, string> = {
-    waiting: "Na fila",
-    scheduled: "Agendada",
-    ready: "Pronta",
-    running: "Executando",
-    stop_requested: "Parada solicitada",
-    forced_stop: "Parada forçada",
-    canceled: "Cancelada",
-    finished: "Sucesso",
-    error: "Erro",
-    timeout: "Timeout",
     online: "Online",
     offline: "Offline",
     busy: "Ocupada",
     maintenance: "Manutenção",
     blocked: "Bloqueada",
   };
-
-  return map[String(status)] ?? String(status);
+  return status ? (map[status] ?? status) : EMPTY;
 }
 
-function getStatusBadgeClass(status?: DashboardTaskStatus | string | null) {
-  const normalized = String(status ?? "").toLowerCase();
-
-  if (normalized === "finished" || normalized === "online") {
-    return "border border-emerald-200 bg-emerald-50 text-emerald-700";
+function getRunnerStatusTone(status?: string | null): keyof typeof tone {
+  switch ((status ?? "").toLowerCase()) {
+    case "online":
+      return "success";
+    case "busy":
+      return "info";
+    case "maintenance":
+      return "warning";
+    case "offline":
+    case "blocked":
+      return "danger";
+    default:
+      return "neutral";
   }
-
-  if (
-    normalized === "error" ||
-    normalized === "timeout" ||
-    normalized === "forced_stop" ||
-    normalized === "offline" ||
-    normalized === "blocked"
-  ) {
-    return "border border-red-200 bg-red-50 text-red-700";
-  }
-
-  if (normalized === "running" || normalized === "busy") {
-    return "border border-blue-200 bg-blue-50 text-blue-700";
-  }
-
-  if (
-    normalized === "waiting" ||
-    normalized === "scheduled" ||
-    normalized === "ready" ||
-    normalized === "maintenance" ||
-    normalized === "stop_requested"
-  ) {
-    return "border border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  if (normalized === "canceled") {
-    return "border border-slate-200 bg-slate-100 text-slate-700";
-  }
-
-  return "border border-slate-200 bg-slate-50 text-slate-700";
 }
 
 function getProgressWidth(value: number) {
@@ -142,950 +95,580 @@ function getProgressWidth(value: number) {
   return `${safe}%`;
 }
 
+function toChartNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+const SERIES_LABEL: Record<string, string> = { sucesso: "Sucesso", erro: "Erro" };
+
+// Botão segmentado (período e abas).
+function segmentClass(active: boolean) {
+  return cn(
+    "h-10 px-4 text-sm font-medium transition first:rounded-l-lg last:rounded-r-lg",
+    active ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+  );
+}
+
 export function DashboardPage() {
   const [period, setPeriod] = useState<DashboardPeriod>("1d");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [toast, setToast] = useState<ToastState>(null);
 
   const overviewQuery = useQuery({
     queryKey: ["dashboard-overview", period],
     queryFn: () => getDashboardOverview({ period }),
-    refetchInterval: 30000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const runnersQuery = useQuery({
     queryKey: ["dashboard-runners", period],
     queryFn: () => getDashboardRunners({ period }),
-    refetchInterval: 30000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const botsQuery = useQuery({
     queryKey: ["dashboard-bots", period],
     queryFn: () => getDashboardBots({ period }),
-    refetchInterval: 30000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
-  const isLoading =
-    overviewQuery.isLoading || runnersQuery.isLoading || botsQuery.isLoading;
-
-  const isFetching =
-    overviewQuery.isFetching || runnersQuery.isFetching || botsQuery.isFetching;
-
-  const hasError =
-    overviewQuery.isError || runnersQuery.isError || botsQuery.isError;
+  const isLoading = overviewQuery.isLoading || runnersQuery.isLoading || botsQuery.isLoading;
+  const isFetching = overviewQuery.isFetching || runnersQuery.isFetching || botsQuery.isFetching;
+  const hasError = overviewQuery.isError || runnersQuery.isError || botsQuery.isError;
+  const error = overviewQuery.error ?? runnersQuery.error ?? botsQuery.error;
 
   const overview = overviewQuery.data;
-  const runners = runnersQuery.data?.items ?? [];
-  const bots = botsQuery.data?.items ?? [];
+  const runners = useMemo(() => runnersQuery.data?.items ?? [], [runnersQuery.data]);
+  const bots = useMemo(() => botsQuery.data?.items ?? [], [botsQuery.data]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = setTimeout(() => setToast(null), 8000);
-    return () => clearTimeout(timeout);
-  }, [toast]);
+  function refetchAll() {
+    overviewQuery.refetch();
+    runnersQuery.refetch();
+    botsQuery.refetch();
+  }
 
   const topCards = useMemo(() => {
     if (!overview) return [];
 
     return [
-      {
-        label: "Tasks no período",
-        value: formatNumber(overview.summary.total_tasks),
-        subtitle: `${formatStatusRange(period)}`,
-        icon: Activity,
-      },
+      { label: "Tasks no período", value: formatNumber(overview.summary.total_tasks, 0), subtitle: PERIOD_LABEL[period], icon: Activity },
       {
         label: "Sucesso",
-        value: formatNumber(overview.summary.success_tasks),
+        value: formatNumber(overview.summary.success_tasks, 0),
         subtitle: `${formatPercent(overview.summary.success_rate_percent)} de assertividade`,
         icon: CheckCircle2,
+        iconClass: "text-emerald-600",
       },
       {
         label: "Erros",
-        value: formatNumber(overview.summary.error_tasks),
+        value: formatNumber(overview.summary.error_tasks, 0),
         subtitle: "Erro + timeout + parada forçada",
         icon: XCircle,
+        iconClass: "text-red-600",
       },
-      {
-        label: "Na fila",
-        value: formatNumber(overview.summary.queued_tasks),
-        subtitle: "Tasks aguardando execução",
-        icon: Clock3,
-      },
+      { label: "Na fila", value: formatNumber(overview.summary.queued_tasks, 0), subtitle: "Aguardando execução", icon: Clock3, iconClass: "text-amber-600" },
       {
         label: "Executando",
-        value: formatNumber(overview.summary.running_tasks),
-        subtitle: "Tasks em processamento agora",
+        value: formatNumber(overview.summary.running_tasks, 0),
+        subtitle: "Em processamento agora",
         icon: PlayCircle,
+        iconClass: "text-blue-600",
       },
       {
         label: "Runners",
-        value: formatNumber(overview.summary.total_runners),
+        value: formatNumber(overview.summary.total_runners, 0),
         subtitle: `${overview.summary.online_runners} online, ${overview.summary.busy_runners} ocupadas`,
         icon: Server,
       },
-      {
-        label: "Bots",
-        value: formatNumber(overview.summary.total_bots),
-        subtitle: "Bots disponíveis para operação",
-        icon: Bot,
-      },
-      {
-        label: "Fila média",
-        value: formatSecondsToFriendly(overview.summary.avg_queue_seconds),
-        subtitle: "Tempo médio até iniciar",
-        icon: Cpu,
-      },
+      { label: "Bots", value: formatNumber(overview.summary.total_bots, 0), subtitle: "Disponíveis para operação", icon: Bot },
+      { label: "Fila média", value: formatDuration(overview.summary.avg_queue_seconds), subtitle: "Tempo médio até iniciar", icon: Cpu },
     ];
   }, [overview, period]);
 
-  async function handleRefresh() {
-    try {
-      await Promise.all([
-        overviewQuery.refetch(),
-        runnersQuery.refetch(),
-        botsQuery.refetch(),
-      ]);
-
-      setToast({
-        type: "success",
-        message: "Dashboard atualizado com sucesso.",
-      });
-    } catch {
-      setToast({
-        type: "error",
-        message: "Não foi possível atualizar o dashboard.",
-      });
-    }
-  }
+  const updatedAt = Math.max(overviewQuery.dataUpdatedAt, runnersQuery.dataUpdatedAt, botsQuery.dataUpdatedAt);
 
   return (
     <div className="space-y-5">
-      {toast ? (
-        <div
-          className={`fixed right-6 top-20 z-[80] flex items-start gap-3 border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-          ) : (
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-          )}
-
-          <div className="pr-4 text-sm font-medium">{toast.message}</div>
-
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="text-current/70 transition hover:text-current"
-          >
-            <XCircle className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
-
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">
-                Dashboard operacional
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Visão consolidada por período, com indicadores por máquina, por
-                bot e pelas execuções mais recentes.
-              </p>
-              {overview ? (
-                <p className="mt-2 text-xs text-slate-400">
-                  Período analisado: {formatDateTime(overview.date_from)} até{" "}
-                  {formatDateTime(overview.date_to)}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="flex items-center gap-2">
+      <section className={card}>
+        <PageHeader
+          title="Dashboard operacional"
+          description={
+            overview ? (
+              <>
+                {PERIOD_LABEL[period]}: {formatDateTime(overview.date_from)} até {formatDateTime(overview.date_to)}
+              </>
+            ) : (
+              "Visão consolidada por período, por máquina, por bot e pelas execuções mais recentes."
+            )
+          }
+          actions={
+            <>
+              <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="Período">
                 {PERIOD_OPTIONS.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setPeriod(option.value)}
-                    className={`h-10 border px-4 text-sm font-medium transition ${
-                      period === option.value
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
+                    className={segmentClass(period === option.value)}
+                    aria-pressed={period === option.value}
                   >
                     {option.label}
                   </button>
                 ))}
               </div>
+              <RefreshIndicator updatedAt={updatedAt} isFetching={isFetching} onRefresh={refetchAll} intervalMs={REFRESH_MS} />
+            </>
+          }
+        />
 
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-                Atualizar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-6">
+        <div className="px-5 py-5">
           {isLoading ? (
             <DashboardLoadingState />
           ) : hasError ? (
-            <div className="border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
-              Não foi possível carregar os dados do dashboard.
-            </div>
-          ) : (
+            <QueryError error={error} what="os dados do dashboard" onRetry={refetchAll} retrying={isFetching} />
+          ) : overview ? (
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {topCards.map((card) => {
-                  const Icon = card.icon;
-
-                  return (
-                    <div
-                      key={card.label}
-                      className="border border-slate-200 bg-white p-5"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-slate-600">
-                            {card.label}
-                          </p>
-                          <p className="mt-2 text-3xl font-semibold text-slate-950">
-                            {card.value}
-                          </p>
-                          <p className="mt-2 text-xs text-slate-500">
-                            {card.subtitle}
-                          </p>
-                        </div>
-
-                        <div className="flex h-11 w-11 items-center justify-center border border-slate-200 bg-slate-50 text-slate-700">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {topCards.map((item) => (
+                  <MetricCard key={item.label} {...item} />
+                ))}
               </div>
 
-              <div className="border border-slate-200 bg-white">
+              <div className={card}>
                 <div className="border-b border-slate-200 px-4 py-3">
-                  <div className="flex flex-wrap gap-2">
-                    <TabButton
-                      active={activeTab === "overview"}
-                      onClick={() => setActiveTab("overview")}
-                    >
+                  <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="tablist">
+                    <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
                       Visão geral
                     </TabButton>
-                    <TabButton
-                      active={activeTab === "runners"}
-                      onClick={() => setActiveTab("runners")}
-                    >
+                    <TabButton active={activeTab === "runners"} onClick={() => setActiveTab("runners")}>
                       Por máquina
                     </TabButton>
-                    <TabButton
-                      active={activeTab === "bots"}
-                      onClick={() => setActiveTab("bots")}
-                    >
+                    <TabButton active={activeTab === "bots"} onClick={() => setActiveTab("bots")}>
                       Por bot
                     </TabButton>
-                    <TabButton
-                      active={activeTab === "recent"}
-                      onClick={() => setActiveTab("recent")}
-                    >
+                    <TabButton active={activeTab === "recent"} onClick={() => setActiveTab("recent")}>
                       Execuções recentes
                     </TabButton>
                   </div>
                 </div>
 
-                <div className="px-5 py-5">
-                  {activeTab === "overview" ? (
-                    <OverviewTab overview={overview!} />
-                  ) : null}
-
-                  {activeTab === "runners" ? (
-                    <RunnersTab items={runners} />
-                  ) : null}
-
-                  {activeTab === "bots" ? (
-                    <BotsTab items={bots} />
-                  ) : null}
-
-                  {activeTab === "recent" ? (
-                    <RecentExecutionsTab items={overview?.recent_tasks ?? []} />
-                  ) : null}
+                <div className="p-5">
+                  {activeTab === "overview" ? <OverviewTab overview={overview} bots={bots} /> : null}
+                  {activeTab === "runners" ? <RunnersTab items={runners} /> : null}
+                  {activeTab === "bots" ? <BotsTab items={bots} /> : null}
+                  {activeTab === "recent" ? <RecentExecutionsTab items={overview.recent_tasks ?? []} /> : null}
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </section>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  subtitle,
+  icon: Icon,
+  iconClass,
+}: {
+  label: string;
+  value: string;
+  subtitle: string;
+  icon: ComponentType<{ className?: string }>;
+  iconClass?: string;
+}) {
+  return (
+    <div className={cn(card, "p-5")}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-950">{value}</p>
+          <p className="mt-2 text-xs text-slate-500">{subtitle}</p>
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+          <Icon className={cn("h-5 w-5", iconClass ?? "text-slate-600")} />
+        </div>
+      </div>
     </div>
   );
 }
 
 function DashboardLoadingState() {
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3 border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Carregando dashboard...
-      </div>
-
+    <div className="space-y-5" role="status" aria-label="Carregando">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 8 }).map((_, index) => (
-          <div
-            key={index}
-            className="border border-slate-200 bg-white p-5"
-          >
-            <div className="h-4 w-28 animate-pulse bg-slate-200" />
-            <div className="mt-4 h-8 w-24 animate-pulse bg-slate-200" />
-            <div className="mt-4 h-3 w-36 animate-pulse bg-slate-200" />
+          <div key={index} className={cn(card, "space-y-3 p-5")}>
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-3 w-36" />
           </div>
         ))}
       </div>
 
-      <div className="border border-slate-200 bg-white p-5">
-        <div className="h-5 w-40 animate-pulse bg-slate-200" />
-        <div className="mt-5 grid gap-3">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="h-14 animate-pulse bg-slate-100" />
-          ))}
-        </div>
+      <div className={card}>
+        <TableSkeleton rows={5} columns={5} />
       </div>
     </div>
   );
 }
 
-function OverviewTab({ overview }: { overview: DashboardOverviewResponse }) {
-  const chartData = overview.tasks_per_hour ?? [];
-
-  const maxTasks = Math.max(...chartData.map((item) => item.total_tasks), 1);
-  const maxExecutionSeconds = Math.max(
-    ...chartData.map((item) => item.execution_seconds),
-    1
+function OverviewTab({ overview, bots }: { overview: DashboardOverviewResponse; bots: DashboardBotMetrics[] }) {
+  // Sucesso x erro por bot: o resumo por hora (tasks_per_hour) só traz o total, sem a divisão.
+  const chartData = useMemo(
+    () =>
+      [...bots]
+        .filter((bot) => bot.total_tasks > 0)
+        .sort((a, b) => b.total_tasks - a.total_tasks)
+        .slice(0, MAX_CHART_BOTS)
+        .map((bot) => ({
+          name: bot.bot_name,
+          sucesso: bot.success_tasks,
+          erro: bot.error_tasks,
+          total: bot.total_tasks,
+        })),
+    [bots]
   );
+
+  const hourlyPeak = useMemo(() => {
+    const hours = overview.tasks_per_hour ?? [];
+    if (hours.length === 0) return null;
+    return hours.reduce((best, item) => (item.total_tasks > best.total_tasks ? item : best), hours[0]);
+  }, [overview.tasks_per_hour]);
 
   return (
     <div className="space-y-6">
-      <section className="border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Execuções por hora
-            </h2>
-
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 bg-slate-900" />
-                <span>Quantidade de execuções</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 bg-blue-500" />
-                <span>Tempo total de execução</span>
-              </div>
-            </div>
+      <section className={card}>
+        <div className={cardHeader}>
+          <div>
+            <h2 className={cardTitle}>Sucesso e erro por bot</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Os {Math.min(MAX_CHART_BOTS, chartData.length)} bots com mais execuções no período.
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-sm" style={{ background: SUCCESS_COLOR }} />
+              Sucesso
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-sm" style={{ background: ERROR_COLOR }} />
+              Erro
+            </span>
           </div>
         </div>
 
-        <div className="px-4 py-5">
+        <div className="p-5">
           {chartData.length === 0 ? (
-            <EmptyState message="Nenhuma execução encontrada no período." />
+            <EmptyState compact icon={BarChart3} title="Nenhuma execução no período" description="Troque o período para ver mais dados." />
           ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[900px]">
-                <div className="flex h-[320px] items-end gap-4 border-b border-l border-slate-200 px-4 pb-4 pt-2">
-                  {chartData.map((item) => {
-                    const tasksHeight = Math.max(
-                      6,
-                      (item.total_tasks / maxTasks) * 240
-                    );
-
-                    const executionHeight = Math.max(
-                      6,
-                      (item.execution_seconds / maxExecutionSeconds) * 240
-                    );
-
-                    return (
-                      <div
-                        key={item.hour_label}
-                        className="flex min-w-[42px] flex-1 flex-col items-center justify-end gap-2"
-                        title={`${item.hour_label} • ${item.total_tasks} execuções • ${formatSecondsToFriendly(
-                          item.execution_seconds
-                        )}`}
-                      >
-                        <div className="flex h-[260px] items-end gap-1">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] text-slate-500">
-                              {item.total_tasks}
-                            </span>
-                            <div
-                              className="w-4 bg-slate-900 transition-all"
-                              style={{ height: `${tasksHeight}px` }}
-                            />
-                          </div>
-
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] text-slate-500">
-                              {Math.round(item.execution_seconds / 60)}m
-                            </span>
-                            <div
-                              className="w-4 bg-blue-500 transition-all"
-                              style={{ height: `${executionHeight}px` }}
-                            />
-                          </div>
-                        </div>
-
-                        <span className="text-xs font-medium text-slate-600">
-                          {item.hour_label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={chartData.length > 6 ? -20 : 0} textAnchor={chartData.length > 6 ? "end" : "middle"} height={chartData.length > 6 ? 60 : 30} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: unknown, name: unknown) => [formatNumber(toChartNumber(value), 0), SERIES_LABEL[String(name)] ?? String(name)]}
+                    labelFormatter={(label, payload) => {
+                      const item = payload?.[0]?.payload as { total?: number } | undefined;
+                      return item ? `${label} · ${formatNumber(item.total, 0)} execuções` : String(label);
+                    }}
+                  />
+                  <Legend formatter={(value) => SERIES_LABEL[String(value)] ?? String(value)} />
+                  <Bar dataKey="sucesso" name="sucesso" stackId="tasks" fill={SUCCESS_COLOR} />
+                  <Bar dataKey="erro" name="erro" stackId="tasks" fill={ERROR_COLOR} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MiniKpiCard label="Taxa de sucesso" value={formatPercent(overview.summary.success_rate_percent)} subtitle="No período" />
+        <MiniKpiCard label="Fila média" value={formatDuration(overview.summary.avg_queue_seconds)} subtitle="Tempo até iniciar" />
+        <MiniKpiCard label="Execução média" value={formatDuration(overview.summary.avg_execution_seconds)} subtitle="Tempo médio de execução" />
         <MiniKpiCard
-          label="Taxa de sucesso"
-          value={formatPercent(overview.summary.success_rate_percent)}
-          subtitle="Baseado no período"
-        />
-        <MiniKpiCard
-          label="Fila média"
-          value={formatSecondsToFriendly(overview.summary.avg_queue_seconds)}
-          subtitle="Tempo até iniciar"
-        />
-        <MiniKpiCard
-          label="Execução média"
-          value={formatSecondsToFriendly(overview.summary.avg_execution_seconds)}
-          subtitle="Tempo médio de execução"
-        />
-        <MiniKpiCard
-          label="Runners ocupadas"
-          value={formatNumber(overview.summary.busy_runners)}
-          subtitle="Máquinas executando"
+          label="Hora de pico"
+          value={hourlyPeak ? hourlyPeak.hour_label : EMPTY}
+          subtitle={hourlyPeak ? `${formatNumber(hourlyPeak.total_tasks, 0)} execuções` : "Sem execuções no período"}
         />
       </section>
     </div>
   );
 }
 
-function RunnersTab({ items }: { items: DashboardRunnerMetrics[] }) {
+function TaskCounts({ item }: { item: { total_tasks: number; success_tasks: number; error_tasks: number; running_tasks: number; queued_tasks: number } }) {
   return (
-    <div className="space-y-5">
-      <div className="overflow-x-auto border border-slate-200">
-        <table className="min-w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Máquina
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Status
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Utilização
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Tasks
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Fila média
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Execução média
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Melhor horário
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Última execução
-              </th>
-            </tr>
-          </thead>
+    <div className="space-y-0.5 text-xs">
+      <div className="font-medium text-slate-900">Total: {formatNumber(item.total_tasks, 0)}</div>
+      <div className="text-emerald-700">Sucesso: {formatNumber(item.success_tasks, 0)}</div>
+      <div className="text-red-700">Erro: {formatNumber(item.error_tasks, 0)}</div>
+      <div className="text-blue-700">Executando: {formatNumber(item.running_tasks, 0)}</div>
+      <div className="text-amber-700">Fila: {formatNumber(item.queued_tasks, 0)}</div>
+    </div>
+  );
+}
 
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="px-4 py-10 text-center text-sm text-slate-500"
-                >
-                  Nenhuma máquina encontrada para o período informado.
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item.runner_id} className="align-top">
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-2">
-                      <div className="font-medium text-slate-900">
-                        {item.runner_name}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {item.runner_label || "---"}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Heartbeat: {formatDateTime(item.last_heartbeat)}
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {item.linked_bots.length === 0 ? (
-                          <span className="text-xs text-slate-400">Sem bots vinculados</span>
-                        ) : (
-                          item.linked_bots.slice(0, 3).map((bot) => (
-                            <span
-                              key={bot.bot_id}
-                              className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700"
-                            >
-                              {bot.bot_name}
-                            </span>
-                          ))
-                        )}
-                        {item.linked_bots.length > 3 ? (
-                          <span className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                            +{item.linked_bots.length - 3}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                        item.status
-                      )}`}
-                    >
-                      {formatStatus(item.status)}
-                    </span>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-2">
-                      <div className="font-medium text-slate-900">
-                        {formatPercent(item.utilization_percent)}
-                      </div>
-                      <div className="h-2 w-40 overflow-hidden bg-slate-100">
-                        <div
-                          className="h-full bg-slate-900"
-                          style={{
-                            width: getProgressWidth(item.utilization_percent),
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-1">
-                      <div>Total: {formatNumber(item.total_tasks)}</div>
-                      <div className="text-emerald-700">
-                        Sucesso: {formatNumber(item.success_tasks)}
-                      </div>
-                      <div className="text-red-700">
-                        Erro: {formatNumber(item.error_tasks)}
-                      </div>
-                      <div className="text-blue-700">
-                        Executando: {formatNumber(item.running_tasks)}
-                      </div>
-                      <div className="text-amber-700">
-                        Fila: {formatNumber(item.queued_tasks)}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.avg_queue_seconds)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.avg_execution_seconds)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    {item.hottest_hour_label ? (
-                      <div className="space-y-1">
-                        <div className="font-medium text-slate-900">
-                          {item.hottest_hour_label}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {item.hottest_hour_tasks} tasks
-                        </div>
-                      </div>
-                    ) : (
-                      "---"
-                    )}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    {item.last_execution ? (
-                      <div className="space-y-2">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                            item.last_execution.status
-                          )}`}
-                        >
-                          {formatStatus(item.last_execution.status)}
-                        </span>
-                        <div className="font-medium text-slate-900">
-                          {item.last_execution.automation_name || "---"}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Início: {formatDateTime(item.last_execution.started_at)}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Duração:{" "}
-                          {formatSecondsToFriendly(
-                            item.last_execution.execution_duration_seconds
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      "---"
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+function ProgressBar({ value, width = "w-32" }: { value: number; width?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="font-medium text-slate-900">{formatPercent(value)}</div>
+      <div className={cn("h-2 overflow-hidden rounded-full bg-slate-100", width)}>
+        <div className="h-full rounded-full bg-blue-600" style={{ width: getProgressWidth(value) }} />
       </div>
+    </div>
+  );
+}
+
+function RunnersTab({ items }: { items: DashboardRunnerMetrics[] }) {
+  const navigate = useNavigate();
+
+  if (items.length === 0) {
+    return <EmptyState icon={Server} title="Nenhuma máquina no período" description="Nenhuma máquina teve atividade no período escolhido." />;
+  }
+
+  return (
+    <div className={cn(table.wrap, "rounded-lg border border-slate-200")}>
+      <table className={table.table}>
+        <thead className={table.thead}>
+          <tr>
+            <th className={table.th}>Máquina</th>
+            <th className={table.th}>Status</th>
+            <th className={table.th}>Utilização</th>
+            <th className={table.th}>Tasks</th>
+            <th className={table.th}>Fila média</th>
+            <th className={table.th}>Execução média</th>
+            <th className={table.th}>Melhor horário</th>
+            <th className={table.th}>Última execução</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.runner_id} className={cn(table.trClickable, "align-top")} onClick={() => navigate(`/runners/${item.runner_id}`)}>
+              <td className={table.td}>
+                <div className="space-y-1.5">
+                  <div className="font-medium text-slate-900">{item.runner_name}</div>
+                  {item.runner_label ? <div className="text-xs text-slate-500">{item.runner_label}</div> : null}
+                  <div className="text-xs text-slate-500">Heartbeat: {formatDateTime(item.last_heartbeat)}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {item.linked_bots.length === 0 ? (
+                      <span className="text-xs text-slate-400">Sem bots vinculados</span>
+                    ) : (
+                      item.linked_bots.slice(0, 3).map((bot) => (
+                        <span key={bot.bot_id} className={chip}>
+                          {bot.bot_name}
+                        </span>
+                      ))
+                    )}
+                    {item.linked_bots.length > 3 ? <span className={chip}>+{item.linked_bots.length - 3}</span> : null}
+                  </div>
+                </div>
+              </td>
+
+              <td className={table.td}>
+                <span className={cn(badge, tone[getRunnerStatusTone(item.status)])}>{formatRunnerStatus(item.status)}</span>
+              </td>
+
+              <td className={table.td}>
+                <ProgressBar value={item.utilization_percent} />
+              </td>
+
+              <td className={table.td}>
+                <TaskCounts item={item} />
+              </td>
+
+              <td className={table.tdStrong}>{formatDuration(item.avg_queue_seconds)}</td>
+              <td className={table.tdStrong}>{formatDuration(item.avg_execution_seconds)}</td>
+
+              <td className={table.td}>
+                {item.hottest_hour_label ? (
+                  <div>
+                    <div className="font-medium text-slate-900">{item.hottest_hour_label}</div>
+                    <div className="text-xs text-slate-500">{item.hottest_hour_tasks} tasks</div>
+                  </div>
+                ) : (
+                  EMPTY
+                )}
+              </td>
+
+              <td className={table.td}>
+                {item.last_execution ? (
+                  <div className="space-y-1.5">
+                    {isTaskStatus(item.last_execution.status) ? <StatusBadge status={item.last_execution.status} /> : null}
+                    <div className="font-medium text-slate-900">{item.last_execution.automation_name || EMPTY}</div>
+                    <div className="text-xs text-slate-500">Início: {formatDateTime(item.last_execution.started_at)}</div>
+                    <div className="text-xs text-slate-500">Duração: {formatDuration(item.last_execution.execution_duration_seconds)}</div>
+                  </div>
+                ) : (
+                  EMPTY
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 function BotsTab({ items }: { items: DashboardBotMetrics[] }) {
+  const navigate = useNavigate();
+
+  if (items.length === 0) {
+    return <EmptyState icon={Bot} title="Nenhum bot no período" description="Nenhum bot teve execuções no período escolhido." />;
+  }
+
   return (
-    <div className="space-y-5">
-      <div className="overflow-x-auto border border-slate-200">
-        <table className="min-w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Bot
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Execuções
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Taxa sucesso
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Fila média
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Execução média
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Máquinas
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Última execução
-              </th>
-            </tr>
-          </thead>
+    <div className={cn(table.wrap, "rounded-lg border border-slate-200")}>
+      <table className={table.table}>
+        <thead className={table.thead}>
+          <tr>
+            <th className={table.th}>Bot</th>
+            <th className={table.th}>Execuções</th>
+            <th className={table.th}>Taxa de sucesso</th>
+            <th className={table.th}>Fila média</th>
+            <th className={table.th}>Execução média</th>
+            <th className={table.th}>Máquinas</th>
+            <th className={table.th}>Última execução</th>
+          </tr>
+        </thead>
 
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-10 text-center text-sm text-slate-500"
-                >
-                  Nenhum bot encontrado para o período informado.
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item.bot_id} className="align-top">
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-2">
-                      <div className="font-medium text-slate-900">
-                        {item.bot_name}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                          {item.execution_mode || "---"}
-                        </span>
-                        <span className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                          v{item.current_version || "---"}
-                        </span>
-                        <span
-                          className={`inline-flex items-center px-2 py-1 text-xs font-semibold ${
-                            item.active
-                              ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : "border border-slate-200 bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {item.active ? "Ativo" : "Inativo"}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.bot_id} className={cn(table.trClickable, "align-top")} onClick={() => navigate(`/bots/${item.bot_id}`)}>
+              <td className={table.td}>
+                <div className="space-y-1.5">
+                  <div className="font-medium text-slate-900">{item.bot_name}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className={chip}>{item.execution_mode || EMPTY}</span>
+                    <span className={chip}>v{item.current_version || EMPTY}</span>
+                    <span className={cn(badge, item.active ? tone.success : tone.neutral)}>{item.active ? "Ativo" : "Inativo"}</span>
+                  </div>
+                </div>
+              </td>
 
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-1">
-                      <div>Total: {formatNumber(item.total_tasks)}</div>
-                      <div className="text-emerald-700">
-                        Sucesso: {formatNumber(item.success_tasks)}
-                      </div>
-                      <div className="text-red-700">
-                        Erro: {formatNumber(item.error_tasks)}
-                      </div>
-                      <div className="text-blue-700">
-                        Executando: {formatNumber(item.running_tasks)}
-                      </div>
-                      <div className="text-amber-700">
-                        Fila: {formatNumber(item.queued_tasks)}
-                      </div>
-                    </div>
-                  </td>
+              <td className={table.td}>
+                <TaskCounts item={item} />
+              </td>
 
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-2">
-                      <div className="font-medium text-slate-900">
-                        {formatPercent(item.success_rate_percent)}
-                      </div>
-                      <div className="h-2 w-32 overflow-hidden bg-slate-100">
-                        <div
-                          className="h-full bg-slate-900"
-                          style={{
-                            width: getProgressWidth(item.success_rate_percent),
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </td>
+              <td className={table.td}>
+                <ProgressBar value={item.success_rate_percent} width="w-28" />
+              </td>
 
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.avg_queue_seconds)}
-                  </td>
+              <td className={table.tdStrong}>{formatDuration(item.avg_queue_seconds)}</td>
+              <td className={table.tdStrong}>{formatDuration(item.avg_execution_seconds)}</td>
 
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.avg_execution_seconds)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="flex flex-wrap gap-1">
-                      {item.runners.length === 0 ? (
-                        <span className="text-xs text-slate-400">
-                          Sem máquinas vinculadas
-                        </span>
-                      ) : (
-                        item.runners.map((runner) => (
-                          <span
-                            key={runner.runner_id}
-                            className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700"
-                          >
-                            {runner.runner_name}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-2">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                          item.last_execution_status
-                        )}`}
-                      >
-                        {formatStatus(item.last_execution_status)}
+              <td className={table.td}>
+                <div className="flex flex-wrap gap-1">
+                  {item.runners.length === 0 ? (
+                    <span className="text-xs text-slate-400">Sem máquinas vinculadas</span>
+                  ) : (
+                    item.runners.map((runner) => (
+                      <span key={runner.runner_id} className={chip}>
+                        {runner.runner_name}
                       </span>
-                      <div className="text-xs text-slate-500">
-                        {formatDateTime(item.last_execution_at)}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+                    ))
+                  )}
+                </div>
+              </td>
 
-function RecentExecutionsTab({
-  items,
-}: {
-  items: DashboardRecentTaskItem[];
-}) {
-  return (
-    <div className="space-y-5">
-      <div className="overflow-x-auto border border-slate-200">
-        <table className="min-w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Task
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Bot / Automação
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Máquina
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Status
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Fila
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Execução
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Criada em
-              </th>
-              <th className="border-b border-slate-200 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Mensagem final
-              </th>
+              <td className={table.td}>
+                <div className="space-y-1.5">
+                  {isTaskStatus(item.last_execution_status) ? <StatusBadge status={item.last_execution_status} /> : <span>{EMPTY}</span>}
+                  <div className="text-xs text-slate-500">{formatDateTime(item.last_execution_at)}</div>
+                </div>
+              </td>
             </tr>
-          </thead>
-
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="px-4 py-10 text-center text-sm text-slate-500"
-                >
-                  Nenhuma execução recente encontrada.
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item.task_id} className="align-top">
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="font-medium text-slate-900">#{item.task_id}</div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="space-y-1">
-                      <div className="font-medium text-slate-900">
-                        {item.bot_name || "---"}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {item.automation_name || "---"}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    {item.runner_name || "---"}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                        item.status
-                      )}`}
-                    >
-                      {formatStatus(item.status)}
-                    </span>
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.queue_seconds)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm font-medium text-slate-900">
-                    {formatSecondsToFriendly(item.execution_duration_seconds)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    {formatDateTime(item.created_at)}
-                  </td>
-
-                  <td className="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
-                    <div className="max-w-[320px] whitespace-pre-wrap break-words">
-                      {item.final_message || "---"}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function MiniKpiCard({
-  label,
-  value,
-  subtitle,
-}: {
-  label: string;
-  value: string;
-  subtitle: string;
-}) {
+function RecentExecutionsTab({ items }: { items: DashboardRecentTaskItem[] }) {
+  const navigate = useNavigate();
+
+  if (items.length === 0) {
+    return <EmptyState icon={Activity} title="Nenhuma execução recente" description="As últimas tasks aparecem aqui assim que rodarem." />;
+  }
+
   return (
-    <div className="border border-slate-200 bg-white p-4">
-      <p className="text-sm font-medium text-slate-600">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
-      <p className="mt-2 text-xs text-slate-500">{subtitle}</p>
+    <div className={cn(table.wrap, "rounded-lg border border-slate-200")}>
+      <table className={table.table}>
+        <thead className={table.thead}>
+          <tr>
+            <th className={table.th}>Task</th>
+            <th className={table.th}>Bot / automação</th>
+            <th className={table.th}>Máquina</th>
+            <th className={table.th}>Status</th>
+            <th className={table.th}>Fila</th>
+            <th className={table.th}>Execução</th>
+            <th className={table.th}>Criada em</th>
+            <th className={table.th}>Mensagem final</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.task_id} className={cn(table.trClickable, "align-top")} onClick={() => navigate(`/tasks/${item.task_id}`)}>
+              <td className={table.tdStrong}>#{item.task_id}</td>
+
+              <td className={table.td}>
+                <div className="font-medium text-slate-900">{item.bot_name || EMPTY}</div>
+                <div className="text-xs text-slate-500">{item.automation_name || EMPTY}</div>
+              </td>
+
+              <td className={table.td}>{item.runner_name || EMPTY}</td>
+
+              <td className={table.td}>
+                <StatusBadge status={item.status} />
+              </td>
+
+              <td className={table.tdStrong}>{formatDuration(item.queue_seconds)}</td>
+              <td className={table.tdStrong}>{formatDuration(item.execution_duration_seconds)}</td>
+              <td className={table.tdMuted}>{formatDateTime(item.created_at)}</td>
+
+              <td className={table.tdMuted}>
+                <span className="block max-w-[320px] truncate" title={item.final_message ?? undefined}>
+                  {item.final_message || EMPTY}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function MiniKpiCard({ label, value, subtitle }: { label: string; value: string; subtitle: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-10 border px-4 text-sm font-medium transition ${
-        active
-          ? "border-slate-950 bg-slate-950 text-white"
-          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-      }`}
-    >
+    <div className={cn(card, "p-4")}>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-950">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" role="tab" aria-selected={active} onClick={onClick} className={segmentClass(active)}>
       {children}
     </button>
   );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-      {message}
-    </div>
-  );
-}
-
-function formatStatusRange(period: DashboardPeriod) {
-  const map: Record<DashboardPeriod, string> = {
-    "1d": "Últimas 24 horas",
-    "7d": "Últimos 7 dias",
-    "15d": "Últimos 15 dias",
-    "30d": "Últimos 30 dias",
-  };
-
-  return map[period];
 }

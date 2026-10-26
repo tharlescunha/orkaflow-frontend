@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+
+import { btn, hint, input } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { newHeaderRow, type HeaderRow } from "./header-utils";
 
 type Props = {
@@ -7,8 +10,7 @@ type Props = {
   onChange: (rows: HeaderRow[]) => void;
 };
 
-const inputClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
+const inputClass = input;
 
 export function HeadersEditor({ rows, onChange }: Props) {
   const [visible, setVisible] = useState<Set<number>>(new Set());
@@ -29,7 +31,7 @@ export function HeadersEditor({ rows, onChange }: Props) {
   return (
     <div className="space-y-2">
       {rows.length === 0 && (
-        <p className="text-xs text-slate-500">
+        <p className={hint}>
           Nenhum cabeçalho. Ex.: Authorization, Content-Type.
         </p>
       )}
@@ -55,7 +57,7 @@ export function HeadersEditor({ rows, onChange }: Props) {
             type="button"
             onClick={() => toggle(row.id)}
             title={visible.has(row.id) ? "Ocultar valor" : "Mostrar valor"}
-            className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+            className={cn(btn.icon, "h-10 w-10")}
           >
             {visible.has(row.id) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -63,7 +65,7 @@ export function HeadersEditor({ rows, onChange }: Props) {
             type="button"
             onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
             title="Remover cabeçalho"
-            className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-red-600 hover:bg-red-50"
+            className={cn(btn.icon, "h-10 w-10 text-red-600 hover:bg-red-50 hover:text-red-700")}
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -73,7 +75,7 @@ export function HeadersEditor({ rows, onChange }: Props) {
       <button
         type="button"
         onClick={() => onChange([...rows, newHeaderRow()])}
-        className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        className={cn(btn.secondary, "h-9")}
       >
         <Plus className="h-4 w-4" />
         Adicionar cabeçalho

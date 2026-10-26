@@ -1,66 +1,41 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  RefreshCcw,
-  Server,
-  Clock3,
-  Activity,
-  Bot,
-  ListTodo,
-  Filter,
-  X,
-} from "lucide-react";
+import { Activity, Bot, Clock3, Filter, ListTodo, Pencil, Server } from "lucide-react";
 
-import {
-  getRunnerOverview,
-  type RunnerOverviewTaskItem,
-} from "@/services/api/runners";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { EmptyState } from "@/components/common/empty-state";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { StatusBadge } from "@/components/common/status-badge";
+import { getRunnerOverview, type RunnerOverviewTaskItem } from "@/services/api/runners";
+import type { TaskStatus } from "@/services/api/tasks";
+import { EMPTY, formatDateTime, formatDuration, formatPercent } from "@/lib/format";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, input, label, select, table, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
+const REFRESH_MS = 10_000;
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
+const TASK_STATUSES: TaskStatus[] = [
+  "waiting",
+  "scheduled",
+  "ready",
+  "running",
+  "stop_requested",
+  "forced_stop",
+  "canceled",
+  "finished",
+  "error",
+  "timeout",
+];
 
-function formatDuration(seconds?: number | null) {
-  if (seconds === null || seconds === undefined) return "---";
-
-  if (seconds < 60) return `${seconds}s`;
-
-  const totalMinutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (totalMinutes < 60) {
-    return remainingSeconds > 0
-      ? `${totalMinutes}m ${remainingSeconds}s`
-      : `${totalMinutes}m`;
-  }
-
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours < 24) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-
-  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-}
-
-function formatPercent(value?: number | null) {
-  if (value === null || value === undefined) return "---";
-  return `${value.toFixed(2)}%`;
+function isTaskStatus(status?: string | null): status is TaskStatus {
+  return Boolean(status) && TASK_STATUSES.includes(status as TaskStatus);
 }
 
 function formatMemory(value?: number | null) {
-  if (value === null || value === undefined) return "---";
+  if (value === null || value === undefined) return EMPTY;
   const gb = value / 1024;
   return `${gb.toFixed(2)} GB`;
 }
@@ -78,56 +53,23 @@ function formatRunnerStatus(status?: string | null) {
     case "blocked":
       return "Bloqueado";
     default:
-      return status || "---";
+      return status || EMPTY;
   }
 }
 
-function formatTaskStatus(status?: string | null) {
+function getRunnerStatusTone(status?: string | null): keyof typeof tone {
   switch ((status || "").toLowerCase()) {
-    case "waiting":
-      return "Aguardando";
-    case "scheduled":
-      return "Agendada";
-    case "ready":
-      return "Pronta";
-    case "running":
-      return "Executando";
-    case "stop_requested":
-      return "Parada solicitada";
-    case "finished":
-      return "Finalizada";
-    case "error":
-      return "Erro";
-    case "timeout":
-      return "Timeout";
-    case "canceled":
-      return "Cancelada";
-    case "forced_stop":
-      return "Parada forçada";
+    case "online":
+      return "success";
+    case "busy":
+      return "info";
+    case "maintenance":
+      return "warning";
+    case "blocked":
+    case "offline":
+      return "danger";
     default:
-      return status || "---";
-  }
-}
-
-function getTaskStatusBadgeClass(status?: string | null) {
-  switch ((status || "").toLowerCase()) {
-    case "running":
-      return "border-blue-200 bg-blue-50 text-blue-700";
-    case "finished":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "error":
-    case "timeout":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "waiting":
-    case "scheduled":
-    case "ready":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "canceled":
-    case "forced_stop":
-    case "stop_requested":
-      return "border-slate-200 bg-slate-100 text-slate-700";
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-700";
+      return "neutral";
   }
 }
 
@@ -149,6 +91,7 @@ export function RunnerConfigDetailPage() {
   const navigate = useNavigate();
   const params = useParams<{ runnerId: string }>();
   const runnerId = Number(params.runnerId);
+  const isValidRunnerId = Number.isFinite(runnerId) && runnerId > 0;
 
   const [filters, setFilters] = useState<FiltersState>(INITIAL_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<FiltersState>(INITIAL_FILTERS);
@@ -158,21 +101,19 @@ export function RunnerConfigDetailPage() {
       date_from: appliedFilters.date_from || undefined,
       date_to: appliedFilters.date_to || undefined,
       task_status: appliedFilters.task_status || undefined,
-      automation_id: appliedFilters.automation_id
-        ? Number(appliedFilters.automation_id)
-        : undefined,
+      automation_id: appliedFilters.automation_id ? Number(appliedFilters.automation_id) : undefined,
     };
   }, [appliedFilters]);
 
   const overviewQuery = useQuery({
     queryKey: ["runner-overview-detail", runnerId, queryParams],
     queryFn: () => getRunnerOverview(runnerId, queryParams),
-    enabled: Number.isFinite(runnerId) && runnerId > 0,
-    refetchInterval: 10000,
+    enabled: isValidRunnerId,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const overview = overviewQuery.data;
-
   const runner = overview?.runner;
   const summary = overview?.summary;
   const utilization = overview?.utilization;
@@ -182,114 +123,170 @@ export function RunnerConfigDetailPage() {
   const runningTasks = overview?.running_tasks ?? [];
   const recentTasks = overview?.recent_tasks ?? [];
 
-  function handleRefresh() {
-    overviewQuery.refetch();
-  }
-
-  function handleApplyFilters() {
-    setAppliedFilters(filters);
-  }
+  const hasAppliedFilters = Object.values(appliedFilters).some(Boolean);
 
   function handleClearFilters() {
     setFilters(INITIAL_FILTERS);
     setAppliedFilters(INITIAL_FILTERS);
   }
 
-  if (!Number.isFinite(runnerId) || runnerId <= 0) {
+  if (!isValidRunnerId) {
     return (
-      <div className="space-y-5">
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="px-6 py-10 text-sm text-red-600">
-            ID de runner inválido.
-          </div>
-        </section>
-      </div>
+      <section className={card}>
+        <PageHeader title="Runner" backTo="/runner-configs" backLabel="Voltar para runners" />
+        <div className={cardBody}>
+          <EmptyState icon={Server} title="Runner inválido" description="O endereço não aponta para um runner existente." />
+        </div>
+      </section>
     );
   }
 
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate("/runner-configs")}
-                className="mb-4 inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para runners
+      <section className={card}>
+        <PageHeader
+          title={runner?.name ?? `Runner #${runnerId}`}
+          description="Visão operacional do runner: utilização, fila e histórico de execução."
+          backTo="/runner-configs"
+          backLabel="Voltar para runners"
+          meta={
+            runner ? (
+              <>
+                <span className={cn(badge, tone[getRunnerStatusTone(runner.status)])}>{formatRunnerStatus(runner.status)}</span>
+                <span className={cn(badge, runner.enabled ? tone.success : tone.neutral)}>{runner.enabled ? "Ativo" : "Inativo"}</span>
+              </>
+            ) : null
+          }
+          actions={
+            <>
+              <RefreshIndicator
+                updatedAt={overviewQuery.dataUpdatedAt}
+                isFetching={overviewQuery.isFetching}
+                onRefresh={() => overviewQuery.refetch()}
+                intervalMs={REFRESH_MS}
+              />
+              <button type="button" className={btn.primary} onClick={() => navigate(`/runner-configs/${runnerId}/edit`)}>
+                <Pencil className="h-4 w-4" />
+                Editar configuração
               </button>
+            </>
+          }
+        />
 
-              <h1 className="text-2xl font-semibold text-slate-950">
-                Detalhes do Runner #{runnerId}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Visão operacional completa do runner, utilização e histórico de execução.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-6">
+        <div className={cardBody}>
           {overviewQuery.isLoading ? (
-            <p className="text-sm text-slate-500">Carregando runner...</p>
+            <DetailSkeleton fields={8} />
           ) : overviewQuery.isError ? (
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              Não foi possível carregar os dados do runner.
-            </div>
+            <QueryError
+              error={overviewQuery.error}
+              what="os dados do runner"
+              onRetry={() => overviewQuery.refetch()}
+              retrying={overviewQuery.isFetching}
+            />
           ) : overview ? (
             <div className="space-y-6">
-              <section className="border border-slate-200 bg-slate-50/60">
-                <div className="border-b border-slate-200 px-5 py-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    <Filter className="h-4 w-4" />
-                    Filtros
-                  </div>
-                </div>
+              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard title="Tasks em execução" value={summary?.running_tasks_count ?? 0} icon={Activity} />
+                <MetricCard title="Tasks aguardando" value={summary?.waiting_tasks_count ?? 0} icon={ListTodo} />
+                <MetricCard title="Bots vinculados" value={summary?.linked_bots_count ?? 0} icon={Bot} />
+                <MetricCard title="Utilização" value={formatPercent(utilization?.utilization_percent)} icon={Clock3} />
+              </section>
 
-                <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-5">
-                  <Field label="Data inicial">
+              <section className="grid gap-6 xl:grid-cols-2">
+                <Panel title="Última execução">
+                  <InfoGrid>
+                    <InfoItem label="Task">
+                      {lastExecution?.task_id != null ? (
+                        <button
+                          type="button"
+                          className="font-medium text-blue-600 hover:underline"
+                          onClick={() => navigate(`/tasks/${lastExecution.task_id}`)}
+                        >
+                          #{lastExecution.task_id}
+                        </button>
+                      ) : (
+                        EMPTY
+                      )}
+                    </InfoItem>
+                    <InfoItem label="Automação">{lastExecution?.automation_name || EMPTY}</InfoItem>
+                    <InfoItem label="Status">
+                      {isTaskStatus(lastExecution?.status) ? <StatusBadge status={lastExecution.status} /> : EMPTY}
+                    </InfoItem>
+                    <InfoItem label="Duração">{formatDuration(lastExecution?.execution_duration_seconds)}</InfoItem>
+                    <InfoItem label="Início">{formatDateTime(lastExecution?.started_at)}</InfoItem>
+                    <InfoItem label="Fim">{formatDateTime(lastExecution?.finished_at)}</InfoItem>
+                  </InfoGrid>
+                </Panel>
+
+                <Panel title="Fila">
+                  <InfoGrid>
+                    <InfoItem label="Tasks aguardando">{String(queue?.waiting_tasks_count ?? 0)}</InfoItem>
+                    <InfoItem label="Task mais antiga">
+                      {queue?.oldest_waiting_task_id != null ? `#${queue.oldest_waiting_task_id}` : EMPTY}
+                    </InfoItem>
+                    <InfoItem label="Automação mais antiga">{queue?.oldest_waiting_automation_name || EMPTY}</InfoItem>
+                    <InfoItem label="Aguardando desde">{formatDateTime(queue?.oldest_waiting_since)}</InfoItem>
+                    <InfoItem label="Tempo aguardando">{formatDuration(queue?.oldest_waiting_seconds)}</InfoItem>
+                  </InfoGrid>
+                </Panel>
+              </section>
+
+              <Panel title="Tasks em execução">
+                <TasksTable tasks={runningTasks} emptyLabel="Nenhuma task em execução." />
+              </Panel>
+
+              <Panel
+                title="Histórico de tasks"
+                actions={
+                  hasAppliedFilters ? (
+                    <button type="button" className={cn(btn.ghost, btn.sm)} onClick={handleClearFilters}>
+                      Limpar filtros
+                    </button>
+                  ) : null
+                }
+              >
+                <form
+                  className="mb-4 grid gap-4 rounded-lg border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-2 xl:grid-cols-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setAppliedFilters(filters);
+                  }}
+                >
+                  <div>
+                    <label htmlFor="filter-date-from" className={label}>
+                      Data inicial
+                    </label>
                     <input
+                      id="filter-date-from"
                       type="datetime-local"
                       value={filters.date_from}
-                      onChange={(e) =>
-                        setFilters((prev) => ({ ...prev, date_from: e.target.value }))
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
+                      onChange={(e) => setFilters((prev) => ({ ...prev, date_from: e.target.value }))}
+                      className={input}
                     />
-                  </Field>
+                  </div>
 
-                  <Field label="Data final">
+                  <div>
+                    <label htmlFor="filter-date-to" className={label}>
+                      Data final
+                    </label>
                     <input
+                      id="filter-date-to"
                       type="datetime-local"
                       value={filters.date_to}
-                      onChange={(e) =>
-                        setFilters((prev) => ({ ...prev, date_to: e.target.value }))
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
+                      onChange={(e) => setFilters((prev) => ({ ...prev, date_to: e.target.value }))}
+                      className={input}
                     />
-                  </Field>
+                  </div>
 
-                  <Field label="Status">
+                  <div>
+                    <label htmlFor="filter-status" className={label}>
+                      Status
+                    </label>
                     <select
+                      id="filter-status"
                       value={filters.task_status}
-                      onChange={(e) =>
-                        setFilters((prev) => ({ ...prev, task_status: e.target.value }))
-                      }
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
+                      onChange={(e) => setFilters((prev) => ({ ...prev, task_status: e.target.value }))}
+                      className={select}
                     >
                       <option value="">Todos</option>
                       <option value="waiting">Aguardando</option>
@@ -303,293 +300,105 @@ export function RunnerConfigDetailPage() {
                       <option value="canceled">Cancelada</option>
                       <option value="forced_stop">Parada forçada</option>
                     </select>
-                  </Field>
+                  </div>
 
-                  <Field label="ID da automação">
+                  <div>
+                    <label htmlFor="filter-automation" className={label}>
+                      ID da automação
+                    </label>
                     <input
+                      id="filter-automation"
                       type="number"
                       min={1}
                       value={filters.automation_id}
-                      onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          automation_id: e.target.value,
-                        }))
-                      }
-                      placeholder="Ex: 12"
-                      className="h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-950"
+                      onChange={(e) => setFilters((prev) => ({ ...prev, automation_id: e.target.value }))}
+                      placeholder="Ex.: 12"
+                      className={input}
                     />
-                  </Field>
+                  </div>
 
-                  <div className="flex items-end gap-3">
-                    <button
-                      type="button"
-                      onClick={handleApplyFilters}
-                      className="inline-flex h-10 items-center justify-center gap-2 border border-slate-900 bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-800"
-                    >
+                  <div className="flex items-end">
+                    <button type="submit" className={btn.secondary}>
                       <Filter className="h-4 w-4" />
                       Aplicar
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={handleClearFilters}
-                      className="inline-flex h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <X className="h-4 w-4" />
-                      Limpar
-                    </button>
                   </div>
-                </div>
-              </section>
+                </form>
 
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                  title="Tasks em execução"
-                  value={summary?.running_tasks_count}
-                  icon={Activity}
-                />
-                <MetricCard
-                  title="Tasks aguardando"
-                  value={summary?.waiting_tasks_count}
-                  icon={ListTodo}
-                />
-                <MetricCard
-                  title="Bots vinculados"
-                  value={summary?.linked_bots_count}
-                  icon={Bot}
-                />
-                <MetricCard
-                  title="Utilização"
-                  value={formatPercent(utilization?.utilization_percent)}
-                  icon={Clock3}
-                />
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Resumo do runner
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-                  <InfoItem label="Nome" value={runner?.name} />
-                  <InfoItem label="Label" value={runner?.label || "---"} />
-                  <InfoItem label="Status" value={formatRunnerStatus(runner?.status)} />
-                  <InfoItem label="Ativo" value={runner?.enabled ? "Sim" : "Não"} />
-                  <InfoItem label="UUID" value={runner?.uuid} />
-                  <InfoItem label="Host name" value={runner?.host_name || "---"} />
-                  <InfoItem label="IP" value={runner?.ip || "---"} />
-                  <InfoItem label="Criado em" value={formatDateTime(runner?.created_at)} />
-                  <InfoItem
-                    label="Último heartbeat"
-                    value={formatDateTime(runner?.last_heartbeat)}
-                  />
-                  <InfoItem label="Sistema operacional" value={runner?.os_name || "---"} />
-                  <InfoItem label="Versão do SO" value={runner?.os_version || "---"} />
-                  <InfoItem label="Arquitetura CPU" value={runner?.cpu_arch || "---"} />
-                  <InfoItem label="Memória total" value={formatMemory(runner?.memory_total)} />
-                  <InfoItem
-                    label="Acesso remoto"
-                    value={runner?.access_remote ? "Sim" : "Não"}
-                  />
-                </div>
-              </section>
-
-              <section className="grid gap-6 xl:grid-cols-3">
-                <div className="border border-slate-200 bg-white xl:col-span-1">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Utilização
-                    </h2>
-                  </div>
-
-                  <div className="space-y-4 px-5 py-5">
-                    <InfoItem
-                      label="Tempo desde cadastro"
-                      value={formatDuration(utilization?.registered_seconds)}
-                    />
-                    <InfoItem
-                      label="Tempo executando"
-                      value={formatDuration(utilization?.execution_seconds)}
-                    />
-                    <InfoItem
-                      label="Percentual de utilização"
-                      value={formatPercent(utilization?.utilization_percent)}
-                    />
-                  </div>
-                </div>
-
-                <div className="border border-slate-200 bg-white xl:col-span-1">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Última execução
-                    </h2>
-                  </div>
-
-                  <div className="space-y-4 px-5 py-5">
-                    <InfoItem label="Task ID" value={lastExecution?.task_id ?? "---"} />
-                    <InfoItem
-                      label="Automação"
-                      value={lastExecution?.automation_name || "---"}
-                    />
-                    <InfoItem
-                      label="Status"
-                      value={
-                        <StatusBadge status={lastExecution?.status}>
-                          {formatTaskStatus(lastExecution?.status)}
-                        </StatusBadge>
-                      }
-                    />
-                    <InfoItem
-                      label="Início"
-                      value={formatDateTime(lastExecution?.started_at)}
-                    />
-                    <InfoItem
-                      label="Fim"
-                      value={formatDateTime(lastExecution?.finished_at)}
-                    />
-                    <InfoItem
-                      label="Duração"
-                      value={formatDuration(lastExecution?.execution_duration_seconds)}
-                    />
-                  </div>
-                </div>
-
-                <div className="border border-slate-200 bg-white xl:col-span-1">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Fila
-                    </h2>
-                  </div>
-
-                  <div className="space-y-4 px-5 py-5">
-                    <InfoItem
-                      label="Tasks aguardando"
-                      value={queue?.waiting_tasks_count ?? "---"}
-                    />
-                    <InfoItem
-                      label="Task mais antiga"
-                      value={queue?.oldest_waiting_task_id ?? "---"}
-                    />
-                    <InfoItem
-                      label="Automação mais antiga"
-                      value={queue?.oldest_waiting_automation_name || "---"}
-                    />
-                    <InfoItem
-                      label="Aguardando desde"
-                      value={formatDateTime(queue?.oldest_waiting_since)}
-                    />
-                    <InfoItem
-                      label="Tempo aguardando"
-                      value={formatDuration(queue?.oldest_waiting_seconds)}
-                    />
-                  </div>
-                </div>
-              </section>
+                <TasksTable tasks={recentTasks} emptyLabel="Nenhuma task encontrada." />
+              </Panel>
 
               <section className="grid gap-6 xl:grid-cols-2">
-                <div className="border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Contadores
-                    </h2>
-                  </div>
-
-                  <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                    <InfoItem label="Running" value={summary?.running_tasks_count ?? 0} />
-                    <InfoItem label="Waiting" value={summary?.waiting_tasks_count ?? 0} />
-                    <InfoItem label="Scheduled" value={summary?.scheduled_tasks_count ?? 0} />
-                    <InfoItem label="Ready" value={summary?.ready_tasks_count ?? 0} />
-                    <InfoItem
-                      label="Stop requested"
-                      value={summary?.stop_requested_tasks_count ?? 0}
-                    />
-                    <InfoItem label="Finished" value={summary?.finished_tasks_count ?? 0} />
-                    <InfoItem label="Error" value={summary?.error_tasks_count ?? 0} />
-                    <InfoItem label="Timeout" value={summary?.timeout_tasks_count ?? 0} />
-                    <InfoItem label="Canceled" value={summary?.canceled_tasks_count ?? 0} />
-                    <InfoItem
-                      label="Forced stop"
-                      value={summary?.forced_stop_tasks_count ?? 0}
-                    />
-                    <InfoItem
-                      label="Executadas total"
-                      value={summary?.executed_total_count ?? 0}
-                    />
-                    <InfoItem
-                      label="Sucesso total"
-                      value={summary?.success_total_count ?? 0}
-                    />
-                  </div>
-                </div>
-
-                <div className="border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Bots vinculados
-                    </h2>
-                  </div>
-
-                  <div className="px-5 py-5">
-                    {linkedBots.length === 0 ? (
-                      <p className="text-sm text-slate-500">
-                        Nenhum bot vinculado para este runner.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {linkedBots.map((bot) => (
-                          <div
-                            key={bot.bot_id}
-                            className="flex items-start justify-between gap-4 border border-slate-200 bg-slate-50 px-4 py-3"
+                <Panel title="Bots vinculados">
+                  {linkedBots.length === 0 ? (
+                    <EmptyState compact icon={Bot} title="Nenhum bot vinculado" />
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {linkedBots.map((bot) => (
+                        <li key={bot.bot_id} className="flex items-center justify-between py-2">
+                          <button
+                            type="button"
+                            className="text-sm font-medium text-slate-900 hover:text-blue-700 hover:underline"
+                            onClick={() => navigate(`/bots/${bot.bot_id}`)}
                           >
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-900 break-words">
-                                {bot.bot_name || `Bot #${bot.bot_id}`}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                ID do bot: {bot.bot_id}
-                              </p>
-                            </div>
-                            <Bot className="h-4 w-4 shrink-0 text-slate-500" />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                            {bot.bot_name || `Bot #${bot.bot_id}`}
+                          </button>
+                          <span className="text-xs text-slate-500">ID {bot.bot_id}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+
+                <Panel title="Utilização">
+                  <InfoGrid>
+                    <InfoItem label="Tempo desde o cadastro">{formatDuration(utilization?.registered_seconds)}</InfoItem>
+                    <InfoItem label="Tempo executando">{formatDuration(utilization?.execution_seconds)}</InfoItem>
+                    <InfoItem label="Percentual de utilização">{formatPercent(utilization?.utilization_percent)}</InfoItem>
+                  </InfoGrid>
+                </Panel>
               </section>
 
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-slate-700" />
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Tasks em execução
-                    </h2>
-                  </div>
-                </div>
+              <Panel title="Contadores">
+                <InfoGrid columns={4}>
+                  <InfoItem label="Executando">{String(summary?.running_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Aguardando">{String(summary?.waiting_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Agendadas">{String(summary?.scheduled_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Prontas">{String(summary?.ready_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Parada solicitada">{String(summary?.stop_requested_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Finalizadas">{String(summary?.finished_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Com erro">{String(summary?.error_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Timeout">{String(summary?.timeout_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Canceladas">{String(summary?.canceled_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Parada forçada">{String(summary?.forced_stop_tasks_count ?? 0)}</InfoItem>
+                  <InfoItem label="Executadas (total)">{String(summary?.executed_total_count ?? 0)}</InfoItem>
+                  <InfoItem label="Sucesso (total)">{String(summary?.success_total_count ?? 0)}</InfoItem>
+                </InfoGrid>
+              </Panel>
 
-                <div className="overflow-x-auto">
-                  <TasksTable tasks={runningTasks} emptyLabel="Nenhuma task em execução." />
+              <details className={card}>
+                <summary className="cursor-pointer select-none px-5 py-3 text-sm font-semibold uppercase tracking-wide text-slate-700 hover:bg-slate-50">
+                  Detalhes técnicos
+                </summary>
+                <div className="border-t border-slate-200 px-5 py-5">
+                  <InfoGrid columns={4}>
+                    <InfoItem label="ID">{String(runner?.id ?? runnerId)}</InfoItem>
+                    <InfoItem label="UUID">
+                      <span className="break-all font-mono text-xs">{runner?.uuid ?? EMPTY}</span>
+                    </InfoItem>
+                    <InfoItem label="Label">{runner?.label || EMPTY}</InfoItem>
+                    <InfoItem label="Host">{runner?.host_name || EMPTY}</InfoItem>
+                    <InfoItem label="IP">{runner?.ip || EMPTY}</InfoItem>
+                    <InfoItem label="Sistema operacional">{runner?.os_name || EMPTY}</InfoItem>
+                    <InfoItem label="Versão do SO">{runner?.os_version || EMPTY}</InfoItem>
+                    <InfoItem label="Arquitetura">{runner?.cpu_arch || EMPTY}</InfoItem>
+                    <InfoItem label="Memória total">{formatMemory(runner?.memory_total)}</InfoItem>
+                    <InfoItem label="Acesso remoto">{runner?.access_remote ? "Sim" : "Não"}</InfoItem>
+                    <InfoItem label="Último heartbeat">{formatDateTime(runner?.last_heartbeat)}</InfoItem>
+                    <InfoItem label="Criado em">{formatDateTime(runner?.created_at)}</InfoItem>
+                  </InfoGrid>
                 </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <Server className="h-4 w-4 text-slate-700" />
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                      Histórico de tasks do runner
-                    </h2>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <TasksTable tasks={recentTasks} emptyLabel="Nenhuma task encontrada." />
-                </div>
-              </section>
+              </details>
             </div>
           ) : null}
         </div>
@@ -598,160 +407,95 @@ export function RunnerConfigDetailPage() {
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Panel({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      {children}
-    </div>
+    <section className={card}>
+      <div className={cardHeader}>
+        <h2 className={cardTitle}>{title}</h2>
+        {actions}
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  icon: Icon,
-}: {
-  title: string;
-  value: React.ReactNode;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
+function MetricCard({ title, value, icon: Icon }: { title: string; value: ReactNode; icon: ComponentType<{ className?: string }> }) {
   return (
-    <div className="border border-slate-200 bg-white px-5 py-4 shadow-sm">
+    <div className={cn(card, "px-5 py-4")}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            {title}
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-950">{value}</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center border border-slate-200 bg-slate-50">
-          <Icon className="h-5 w-5 text-slate-700" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+          <Icon className="h-5 w-5 text-slate-600" />
         </div>
       </div>
     </div>
   );
 }
 
-function InfoItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function InfoGrid({ children, columns = 2 }: { children: ReactNode; columns?: 2 | 4 }) {
+  return (
+    <dl className={cn("grid grid-cols-1 gap-x-6 gap-y-4", columns === 4 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2")}>{children}</dl>
+  );
+}
+
+function InfoItem({ label: text, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <div className="mt-1 text-sm text-slate-800 break-words">{value}</div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{text}</dt>
+      <dd className="mt-1 break-words text-sm font-medium text-slate-900">{children}</dd>
     </div>
   );
 }
 
-function StatusBadge({
-  status,
-  children,
-}: {
-  status?: string | null;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center border px-2.5 py-1 text-xs font-medium ${getTaskStatusBadgeClass(
-        status
-      )}`}
-    >
-      {children}
-    </span>
-  );
-}
+function TasksTable({ tasks, emptyLabel }: { tasks: RunnerOverviewTaskItem[]; emptyLabel: string }) {
+  const navigate = useNavigate();
 
-function TasksTable({
-  tasks,
-  emptyLabel,
-}: {
-  tasks: RunnerOverviewTaskItem[];
-  emptyLabel: string;
-}) {
   if (tasks.length === 0) {
-    return <div className="px-5 py-6 text-sm text-slate-500">{emptyLabel}</div>;
+    return <EmptyState compact title={emptyLabel} />;
   }
 
   return (
-    <table className="min-w-full border-collapse">
-      <thead>
-        <tr className="border-b border-slate-200 bg-slate-50 text-left">
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Task
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Automação
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Status
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Criada em
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Início
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Fim
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Duração
-          </th>
-          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Mensagem final
-          </th>
-        </tr>
-      </thead>
-
-      <tbody>
-        {tasks.map((task) => (
-          <tr key={task.task_id} className="border-b border-slate-200 align-top">
-            <td className="px-4 py-3 text-sm text-slate-800">{task.task_id}</td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              <div className="min-w-[220px] break-words">
-                {task.automation_name || "---"}
-              </div>
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              <StatusBadge status={task.status}>
-                {formatTaskStatus(task.status)}
-              </StatusBadge>
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              {formatDateTime(task.created_at)}
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              {formatDateTime(task.started_at)}
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              {formatDateTime(task.finished_at)}
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              {formatDuration(task.execution_duration_seconds)}
-            </td>
-            <td className="px-4 py-3 text-sm text-slate-800">
-              <div className="max-w-[320px] whitespace-pre-wrap break-words">
-                {task.final_message || "---"}
-              </div>
-            </td>
+    <div className={table.wrap}>
+      <table className={table.table}>
+        <thead className={table.thead}>
+          <tr>
+            <th className={table.th}>Task</th>
+            <th className={table.th}>Automação</th>
+            <th className={table.th}>Status</th>
+            <th className={table.th}>Criada em</th>
+            <th className={table.th}>Início</th>
+            <th className={table.th}>Fim</th>
+            <th className={table.th}>Duração</th>
+            <th className={table.th}>Mensagem final</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+
+        <tbody>
+          {tasks.map((task) => (
+            <tr key={task.task_id} className={table.trClickable} onClick={() => navigate(`/tasks/${task.task_id}`)}>
+              <td className={table.tdStrong}>#{task.task_id}</td>
+              <td className={table.td}>
+                <span className={table.truncate} title={task.automation_name ?? undefined}>
+                  {task.automation_name || EMPTY}
+                </span>
+              </td>
+              <td className={table.td}>{isTaskStatus(task.status) ? <StatusBadge status={task.status} /> : task.status}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.created_at)}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.started_at)}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.finished_at)}</td>
+              <td className={table.td}>{formatDuration(task.execution_duration_seconds)}</td>
+              <td className={table.tdMuted}>
+                <span className="block max-w-[320px] truncate" title={task.final_message ?? undefined}>
+                  {task.final_message || EMPTY}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -1,4 +1,7 @@
 import { Plus } from "lucide-react";
+
+import { btn, hint } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { StepCard } from "./step-card";
 import { MAX_STEPS, newStep, type StepForm } from "./step-utils";
 
@@ -19,7 +22,7 @@ export function StepsEditor({ steps, onChange }: Props) {
         Use para autenticar antes de abrir o chamado: guarde o token em uma variável e use{" "}
         {"{{token}}"} nos cabeçalhos do envio principal.
       </p>
-      {steps.length === 0 && <p className="text-xs text-slate-500">Nenhuma etapa anterior ao envio.</p>}
+      {steps.length === 0 && <p className={hint}>Nenhuma etapa anterior ao envio.</p>}
       {steps.map((s, i) => (
         <StepCard
           key={s.id}
@@ -35,7 +38,7 @@ export function StepsEditor({ steps, onChange }: Props) {
         type="button"
         disabled={steps.length >= MAX_STEPS}
         onClick={() => onChange([...steps, newStep(steps.length === 0)])}
-        className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className={cn(btn.secondary, "h-9")}
       >
         <Plus className="h-4 w-4" />
         Adicionar etapa

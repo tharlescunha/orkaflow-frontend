@@ -1,5 +1,7 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { NotificationTestResult } from "@/services/api/notifications";
+import { badge, chip, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
 export function TestResult({ result }: { result: NotificationTestResult }) {
   const preview = result.request_preview;
@@ -7,9 +9,7 @@ export function TestResult({ result }: { result: NotificationTestResult }) {
   const failedStep = steps.some((s) => !s.ok);
   return (
     <div
-      className={`border px-4 py-4 text-sm ${
-        result.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"
-      }`}
+      className={cn("rounded-xl border px-4 py-4 text-sm", result.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}
     >
       {steps.length > 0 && (
         <div className="mb-4">
@@ -18,7 +18,7 @@ export function TestResult({ result }: { result: NotificationTestResult }) {
           </div>
           <ul className="space-y-1">
             {steps.map((s, i) => (
-              <li key={i} className="border border-slate-200 bg-white px-3 py-2">
+              <li key={i} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2">
                   {s.ok ? (
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -29,9 +29,7 @@ export function TestResult({ result }: { result: NotificationTestResult }) {
                     {i + 1}. {s.name || "Etapa sem nome"}
                   </span>
                   {s.status_code != null && (
-                    <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-                      HTTP {s.status_code}
-                    </span>
+                    <span className={chip}>HTTP {s.status_code}</span>
                   )}
                 </div>
                 {s.error && <div className="mt-1 break-all text-xs text-red-700">{s.error}</div>}
@@ -66,9 +64,7 @@ export function TestResult({ result }: { result: NotificationTestResult }) {
               : "O teste falhou"}
         </span>
         {result.status_code != null && !failedStep && (
-          <span className="border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700">
-            HTTP {result.status_code}
-          </span>
+          <span className={cn(badge, tone.neutral)}>HTTP {result.status_code}</span>
         )}
       </div>
 
@@ -100,7 +96,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
   return (
     <div className="mt-3">
       <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</div>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all border border-slate-200 bg-white p-3 font-mono text-xs text-slate-800">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-800">
         {children}
       </pre>
     </div>

@@ -1,20 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle2,
-  Eye,
-  Link2Off,
-  MoreVertical,
-  Monitor,
-  Pencil,
-  Power,
-  RefreshCcw,
-  Trash2,
-  X,
-  XCircle,
-} from "lucide-react";
+import { Eye, Link2Off, Monitor, Pencil, Power, Server, Trash2, X } from "lucide-react";
 
 import {
   activateRunner,
@@ -24,37 +12,45 @@ import {
   removeRunner,
   type RunnerRead,
 } from "@/services/api/runners";
-import { getRunnerHealth, getRunnerStatusText, parseApiDate } from "@/lib/health";
-import {
-  RunnerBadges,
-  RunnerHeartbeatText,
-} from "@/components/common/runner-badges";
+import { getRunnerHealth, getRunnerStatusText } from "@/lib/health";
+import { RunnerBadges, RunnerHeartbeatText } from "@/components/common/runner-badges";
+import { PageHeader } from "@/components/common/page-header";
+import { FilterBar, SearchInput } from "@/components/common/filter-bar";
+import { QueryError } from "@/components/common/query-error";
+import { EmptyState } from "@/components/common/empty-state";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { ActionsMenu } from "@/components/common/actions-menu";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { CardSkeleton } from "@/components/common/skeleton";
 import { toast } from "@/store/toast-store";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { formatDateTime } from "@/lib/format";
+import { normalizeSearch } from "@/lib/search";
+import { badge, btn, card, select, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
 type EnabledFilter = "true" | "false" | "all" | "removed";
 
 type ConfirmAction = { runner: RunnerRead; action: "toggle" | "remove" } | null;
 
-type MenuState = {
-  runner: RunnerRead;
-  anchorRect: DOMRect;
-} | null;
+const REFRESH_MS = 10_000;
 
-function getRunnerStatusDotClass(runner: RunnerRead) {
-  if (getRunnerHealth(runner).noSignal) return "bg-red-500";
+// Tom do badge de status do runner (online/offline/sem sinal...).
+function getRunnerStatusTone(runner: RunnerRead): keyof typeof tone {
+  if (getRunnerHealth(runner).noSignal) return "danger";
 
   switch ((runner.status || "").toLowerCase()) {
     case "online":
+      return "success";
     case "busy":
-      return "bg-emerald-500";
+      return "info";
     case "maintenance":
-      return "bg-amber-500";
+      return "warning";
     case "blocked":
     case "offline":
-      return "bg-red-500";
+      return "danger";
     default:
-      return "bg-slate-400";
+      return "neutral";
   }
 }
 
@@ -71,11 +67,9 @@ export function RunnersPage() {
   const queryClient = useQueryClient();
 
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("true");
-  const [openMenu, setOpenMenu] = useState<MenuState>(null);
+  const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState<ConfirmAction>(null);
-  const confirmRunner = confirm?.action === "toggle" ? confirm.runner : null;
   const [previewRunner, setPreviewRunner] = useState<RunnerRead | null>(null);
-  const [refreshCountdown, setRefreshCountdown] = useState(10);
 
   const queryParams = useMemo(() => {
     if (enabledFilter === "removed") {
@@ -85,131 +79,56 @@ export function RunnersPage() {
     return {
       skip: 0,
       limit: 100,
-      enabled:
-        enabledFilter === "all"
-          ? undefined
-          : enabledFilter === "true"
-          ? true
-          : false,
+      enabled: enabledFilter === "all" ? undefined : enabledFilter === "true",
     };
   }, [enabledFilter]);
 
   const runnersQuery = useQuery({
     queryKey: ["runners-page", queryParams],
     queryFn: () => listRunners(queryParams),
-    refetchInterval: 10000,
+    refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: false,
   });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["runners-page"] });
+    queryClient.invalidateQueries({ queryKey: ["runners"] });
+    queryClient.invalidateQueries({ queryKey: ["health"] });
+  }
 
   const activateMutation = useMutation({
     mutationFn: (runnerId: number) => activateRunner(runnerId),
     onSuccess: () => {
       toast.success("Runner ativado.");
-      queryClient.invalidateQueries({ queryKey: ["runners-page"] });
-      queryClient.invalidateQueries({ queryKey: ["runners"] });
-      queryClient.invalidateQueries({ queryKey: ["health"] });
+      invalidate();
       setConfirm(null);
-      setOpenMenu(null);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Não foi possível ativar o runner.")),
   });
 
   const disableMutation = useMutation({
     mutationFn: (runnerId: number) => disableRunner(runnerId),
     onSuccess: () => {
       toast.success("Runner desativado.");
-      queryClient.invalidateQueries({ queryKey: ["runners-page"] });
-      queryClient.invalidateQueries({ queryKey: ["runners"] });
+      invalidate();
       setConfirm(null);
-      setOpenMenu(null);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Não foi possível desativar o runner.")),
   });
 
   const removeMutation = useMutation({
     mutationFn: (runnerId: number) => removeRunner(runnerId),
     onSuccess: () => {
       toast.success('Runner removido. Ele continua em "Removidos (histórico)".');
-      queryClient.invalidateQueries({ queryKey: ["runners-page"] });
-      queryClient.invalidateQueries({ queryKey: ["runners"] });
-      queryClient.invalidateQueries({ queryKey: ["health"] });
+      invalidate();
       setConfirm(null);
-      setOpenMenu(null);
     },
     onError: (error) => {
-      // Fecha o modal para o aviso (ex.: task em execução) ficar visível.
+      // Fecha o diálogo para o aviso (ex.: task em execução) ficar visível.
       toast.error(getApiErrorMessage(error, "Não foi possível remover o runner."));
       setConfirm(null);
     },
   });
-
-  useEffect(() => {
-    setRefreshCountdown(10);
-
-    const timer = window.setInterval(() => {
-      setRefreshCountdown((prev) => {
-        if (prev <= 1) return 10;
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [enabledFilter]);
-
-  useEffect(() => {
-    setRefreshCountdown(10);
-  }, [runnersQuery.dataUpdatedAt]);
-
-  useEffect(() => {
-    if (!openMenu) return;
-
-    function handleClose() {
-      setOpenMenu(null);
-    }
-
-    window.addEventListener("resize", handleClose);
-    window.addEventListener("scroll", handleClose, true);
-
-    return () => {
-      window.removeEventListener("resize", handleClose);
-      window.removeEventListener("scroll", handleClose, true);
-    };
-  }, [openMenu]);
-
-  function handleRefresh() {
-    setRefreshCountdown(10);
-    runnersQuery.refetch();
-  }
-
-  function handleOpenRunner(runner: RunnerRead) {
-    navigate(`/runners/${runner.id}`);
-  }
-
-  function handleToggleMenu(
-    runner: RunnerRead,
-    event: React.MouseEvent<HTMLButtonElement>
-  ) {
-    event.stopPropagation();
-
-    const rect = event.currentTarget.getBoundingClientRect();
-
-    setOpenMenu((prev) => {
-      if (prev?.runner.id === runner.id) return null;
-
-      return {
-        runner,
-        anchorRect: rect,
-      };
-    });
-  }
-
-  function handleAskToggleRunner(runner: RunnerRead) {
-    setConfirm({ runner, action: "toggle" });
-    setOpenMenu(null);
-  }
-
-  function handleAskRemoveRunner(runner: RunnerRead) {
-    setConfirm({ runner, action: "remove" });
-    setOpenMenu(null);
-  }
 
   function handleConfirm() {
     if (!confirm) return;
@@ -219,90 +138,106 @@ export function RunnersPage() {
       return;
     }
 
-    const confirmRunner = confirm.runner;
-
-    if (confirmRunner.enabled) {
-      disableMutation.mutate(confirmRunner.id);
+    if (confirm.runner.enabled) {
+      disableMutation.mutate(confirm.runner.id);
       return;
     }
 
-    activateMutation.mutate(confirmRunner.id);
+    activateMutation.mutate(confirm.runner.id);
   }
 
-  const isSubmitting =
-    activateMutation.isPending || disableMutation.isPending || removeMutation.isPending;
-  const runners = runnersQuery.data ?? [];
+  const isSubmitting = activateMutation.isPending || disableMutation.isPending || removeMutation.isPending;
+
+  const runners = useMemo(() => {
+    const list = runnersQuery.data ?? [];
+    const q = normalizeSearch(search);
+    if (!q) return list;
+    return list.filter((runner) =>
+      normalizeSearch(`${runner.name ?? ""} ${runner.label ?? ""} ${runner.host_name ?? ""} ${runner.ip ?? ""}`).includes(q)
+    );
+  }, [runnersQuery.data, search]);
+
+  const hasActiveFilters = enabledFilter !== "true" || search.trim() !== "";
+  const confirmRunner = confirm?.action === "toggle" ? confirm.runner : null;
+
+  function clearFilters() {
+    setEnabledFilter("true");
+    setSearch("");
+  }
 
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">Runners</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Acompanhe os runners cadastrados e abra os detalhes de cada
-                máquina.
-              </p>
-            </div>
+      <section className={card}>
+        <PageHeader
+          title="Runners"
+          description="Acompanhe as máquinas cadastradas e abra os detalhes de cada uma."
+          actions={
+            <RefreshIndicator
+              updatedAt={runnersQuery.dataUpdatedAt}
+              isFetching={runnersQuery.isFetching}
+              onRefresh={() => runnersQuery.refetch()}
+              intervalMs={REFRESH_MS}
+            />
+          }
+        />
 
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <RefreshCcw className="h-4 w-4" />
-              Atualizar
-            </button>
-          </div>
-        </div>
+        <FilterBar hasActiveFilters={hasActiveFilters} onClear={clearFilters}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, host ou IP" />
+          <select
+            value={enabledFilter}
+            onChange={(e) => setEnabledFilter(e.target.value as EnabledFilter)}
+            className={cn(select, "w-56")}
+            aria-label="Filtrar por situação"
+          >
+            <option value="true">Somente ativos</option>
+            <option value="false">Somente inativos</option>
+            <option value="all">Todos</option>
+            <option value="removed">Removidos (histórico)</option>
+          </select>
+        </FilterBar>
 
-        <div className="border-b border-slate-200 px-6 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <select
-              value={enabledFilter}
-              onChange={(e) => setEnabledFilter(e.target.value as EnabledFilter)}
-              className="h-10 min-w-[220px] border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-950"
-            >
-              <option value="true">Somente ativos</option>
-              <option value="false">Somente inativos</option>
-              <option value="all">Todos</option>
-              <option value="removed">Removidos (histórico)</option>
-            </select>
-
-            <div className="text-sm text-slate-500">
-              Próxima atualização em{" "}
-              <span className="font-semibold text-slate-700">
-                {refreshCountdown}s
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6">
+        <div className="p-5">
           {runnersQuery.isLoading ? (
-            <div className="py-10 text-sm text-slate-500">
-              Carregando runners...
-            </div>
+            <CardSkeleton count={6} />
           ) : runnersQuery.isError ? (
-            <div className="py-10 text-sm text-red-600">
-              Não foi possível carregar os runners.
-            </div>
+            <QueryError
+              error={runnersQuery.error}
+              what="os runners"
+              onRetry={() => runnersQuery.refetch()}
+              retrying={runnersQuery.isFetching}
+            />
           ) : runners.length === 0 ? (
-            <div className="py-10 text-sm text-slate-500">
-              {enabledFilter === "removed"
-                ? "Nenhum runner removido."
-                : "Nenhum runner encontrado."}
-            </div>
+            <EmptyState
+              icon={Server}
+              title={enabledFilter === "removed" ? "Nenhum runner removido" : "Nenhum runner encontrado"}
+              description={
+                hasActiveFilters
+                  ? "Nenhum runner combina com os filtros."
+                  : "Configure uma máquina com o configurar_worker.bat para ela aparecer aqui."
+              }
+              action={
+                hasActiveFilters ? (
+                  <button type="button" className={btn.secondary} onClick={clearFilters}>
+                    Limpar filtros
+                  </button>
+                ) : (
+                  <button type="button" className={btn.primary} onClick={() => navigate("/worker-registration")}>
+                    Guia do bot
+                  </button>
+                )
+              }
+            />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
               {runners.map((runner) => (
                 <RunnerCard
                   key={runner.id}
                   runner={runner}
-                  onOpen={handleOpenRunner}
-                  onPreview={setPreviewRunner}
-                  onToggleMenu={handleToggleMenu}
+                  onOpen={() => navigate(`/runners/${runner.id}`)}
+                  onPreview={() => setPreviewRunner(runner)}
+                  onEdit={() => navigate(`/runner-configs/${runner.id}/edit`)}
+                  onToggle={() => setConfirm({ runner, action: "toggle" })}
+                  onRemove={() => setConfirm({ runner, action: "remove" })}
                 />
               ))}
             </div>
@@ -310,31 +245,12 @@ export function RunnersPage() {
         </div>
       </section>
 
-      <ActionsDropdown
-        open={!!openMenu}
-        anchorRect={openMenu?.anchorRect ?? null}
-        runner={openMenu?.runner ?? null}
-        onClose={() => setOpenMenu(null)}
-        onView={(runner) => {
-          setOpenMenu(null);
-          navigate(`/runners/${runner.id}`);
-        }}
-        onEdit={(runner) => {
-          setOpenMenu(null);
-          navigate(`/runner-configs/${runner.id}/edit`);
-        }}
-        onToggle={(runner) => handleAskToggleRunner(runner)}
-        onRemove={(runner) => handleAskRemoveRunner(runner)}
-      />
+      <ScreenshotPreviewModal runner={previewRunner} onClose={() => setPreviewRunner(null)} />
 
-      <ScreenshotPreviewModal
-        runner={previewRunner}
-        onClose={() => setPreviewRunner(null)}
-      />
-
-      <ConfirmModal
+      <ConfirmDialog
         open={confirm?.action === "remove"}
         title="Remover runner"
+        tone="danger"
         description={
           confirm
             ? `Runner: ${confirm.runner.name}\n\n` +
@@ -343,36 +259,29 @@ export function RunnersPage() {
               "Se a máquina for configurada de novo (configurar_worker.bat), ela volta."
             : ""
         }
+        confirmLabel="Remover"
+        isPending={isSubmitting}
         onCancel={() => setConfirm(null)}
         onConfirm={handleConfirm}
-        confirmLabel="Remover"
-        loading={isSubmitting}
-        danger
       />
 
-      <ConfirmModal
-        open={!!confirmRunner}
-        title={
-          confirmRunner?.enabled
-            ? "Confirmar desativação"
-            : "Confirmar ativação"
-        }
+      <ConfirmDialog
+        open={Boolean(confirmRunner)}
+        title={confirmRunner?.enabled ? "Desativar runner" : "Ativar runner"}
+        tone={confirmRunner?.enabled ? "warning" : "default"}
         description={
           confirmRunner
-            ? `Runner: ${confirmRunner.name}\n\nTem certeza que deseja ${
-                confirmRunner.enabled ? "desativar" : "ativar"
-              } este runner?`
+            ? `Runner: ${confirmRunner.name}\n\n${
+                confirmRunner.enabled
+                  ? "Ele para de receber tasks até ser ativado de novo."
+                  : "Ele volta a receber tasks das automações vinculadas."
+              }`
             : ""
         }
+        confirmLabel={confirmRunner?.enabled ? "Desativar" : "Ativar"}
+        isPending={isSubmitting}
         onCancel={() => setConfirm(null)}
         onConfirm={handleConfirm}
-        confirmLabel={
-          confirmRunner?.enabled
-            ? "Confirmar desativação"
-            : "Confirmar ativação"
-        }
-        loading={isSubmitting}
-        danger={!!confirmRunner?.enabled}
       />
     </div>
   );
@@ -382,59 +291,43 @@ function RunnerCard({
   runner,
   onOpen,
   onPreview,
-  onToggleMenu,
+  onEdit,
+  onToggle,
+  onRemove,
 }: {
   runner: RunnerRead;
-  onOpen: (runner: RunnerRead) => void;
-  onPreview: (runner: RunnerRead) => void;
-  onToggleMenu: (
-    runner: RunnerRead,
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => void;
+  onOpen: () => void;
+  onPreview: () => void;
+  onEdit: () => void;
+  onToggle: () => void;
+  onRemove: () => void;
 }) {
   const displayName = getRunnerDisplayName(runner);
   const showScreenshot = canShowScreenshot(runner);
-  const removedAt = parseApiDate(runner.deleted_at);
+  const removed = Boolean(runner.deleted_at);
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-      <button
-        type="button"
-        onClick={() => onOpen(runner)}
-        className="w-full text-left"
-      >
+    <div className={cn(card, "group relative overflow-hidden transition hover:shadow-md")}>
+      <button type="button" onClick={onOpen} className="w-full text-left">
         <div className="relative aspect-video overflow-hidden bg-slate-100">
           {showScreenshot ? (
-            <RunnerScreenshotImage
-              runner={runner}
-              displayName={displayName}
-              className="h-full w-full object-cover"
-            />
+            <RunnerScreenshotImage runner={runner} displayName={displayName} className="h-full w-full object-cover" />
           ) : (
             <ScreenshotEmptyState />
           )}
-
-          <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-slate-950/80 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-            <span
-              className={`h-2 w-2 rounded-full ${getRunnerStatusDotClass(runner)}`}
-            />
-            {getRunnerStatusText(runner)}
-          </div>
         </div>
 
         <div className="p-4">
-          <h3
-            className="truncate text-sm font-semibold text-slate-900"
-            title={displayName}
-          >
-            {displayName}
-          </h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="truncate text-sm font-semibold text-slate-900" title={displayName}>
+              {displayName}
+            </h3>
+            <span className={cn(badge, tone[getRunnerStatusTone(runner)], "shrink-0")}>{getRunnerStatusText(runner)}</span>
+          </div>
 
           <div className="mt-2 space-y-1.5">
-            {removedAt ? (
-              <p className="text-xs font-medium text-slate-500">
-                Removido em {removedAt.toLocaleString("pt-BR")}
-              </p>
+            {removed ? (
+              <p className="text-xs font-medium text-slate-500">Removido em {formatDateTime(runner.deleted_at)}</p>
             ) : (
               <>
                 <RunnerBadges runner={runner} />
@@ -448,28 +341,41 @@ function RunnerCard({
       </button>
 
       <div className="absolute right-2 top-2 z-20">
-        <button
-          type="button"
-          onClick={(event) => onToggleMenu(runner, event)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-slate-700 shadow transition hover:bg-white"
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
+        <ActionsMenu
+          className="h-8 w-8 bg-white/90"
+          items={[
+            { label: "Ver detalhes", icon: Eye, onSelect: onOpen },
+            ...(removed
+              ? []
+              : [
+                  { label: "Editar configuração", icon: Pencil, onSelect: onEdit },
+                  {
+                    label: runner.enabled ? "Desativar" : "Ativar",
+                    icon: Power,
+                    tone: runner.enabled ? ("default" as const) : ("success" as const),
+                    onSelect: onToggle,
+                  },
+                  { label: "Remover", icon: Trash2, tone: "danger" as const, separatorBefore: true, onSelect: onRemove },
+                ]),
+          ]}
+        />
       </div>
 
-      <div className="absolute bottom-2 right-2 z-20 flex gap-2 opacity-0 transition group-hover:opacity-100">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onPreview(runner);
-          }}
-          className="inline-flex items-center gap-1 rounded-lg bg-slate-950/90 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-sm transition hover:bg-slate-950"
-        >
-          <Eye className="h-3.5 w-3.5" />
-          Visualizar
-        </button>
-      </div>
+      {showScreenshot && (
+        <div className="absolute left-2 top-2 z-20 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPreview();
+            }}
+            className={cn(btn.secondary, btn.sm, "bg-white/90")}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Ampliar
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -570,13 +476,7 @@ function ScreenshotEmptyState() {
   );
 }
 
-function ScreenshotPreviewModal({
-  runner,
-  onClose,
-}: {
-  runner: RunnerRead | null;
-  onClose: () => void;
-}) {
+function ScreenshotPreviewModal({ runner, onClose }: { runner: RunnerRead | null; onClose: () => void }) {
   useEffect(() => {
     if (!runner) return;
 
@@ -601,32 +501,24 @@ function ScreenshotPreviewModal({
   const showScreenshot = canShowScreenshot(runner);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9000]">
+    <div className="fixed inset-0 z-[9000]" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-slate-950/60" onClick={onClose} />
 
       <div className="absolute inset-0 flex items-center justify-center p-6">
         <div
-          className="relative z-10 flex max-h-[92vh] w-full max-w-6xl flex-col border border-slate-200 bg-white shadow-2xl"
+          className="relative z-10 flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
             <div className="min-w-0">
-              <h2
-                className="truncate text-sm font-semibold text-slate-900"
-                title={displayName}
-              >
+              <h2 className="truncate text-sm font-semibold text-slate-900" title={displayName}>
                 {displayName}
               </h2>
               <p className="text-xs text-slate-500">Screenshot do runner</p>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-8 items-center gap-2 px-2 text-xs font-medium text-blue-600 transition hover:bg-slate-50 hover:text-blue-700"
-            >
+            <button type="button" onClick={onClose} className={btn.icon} aria-label="Fechar">
               <X className="h-4 w-4" />
-              Fechar
             </button>
           </div>
 
@@ -638,239 +530,11 @@ function ScreenshotPreviewModal({
                 className="mx-auto max-h-[76vh] w-full object-contain"
               />
             ) : (
-              <div className="flex min-h-[360px] w-full flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 text-slate-400">
+              <div className="flex min-h-[360px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-400">
                 <Link2Off className="h-20 w-20" strokeWidth={1.5} />
-                <span className="mt-4 text-sm font-medium">
-                  Imagem indisponível
-                </span>
+                <span className="mt-4 text-sm font-medium">Imagem indisponível</span>
               </div>
             )}
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-function ActionsDropdown({
-  open,
-  anchorRect,
-  runner,
-  onClose,
-  onView,
-  onEdit,
-  onToggle,
-  onRemove,
-}: {
-  open: boolean;
-  anchorRect: DOMRect | null;
-  runner: RunnerRead | null;
-  onClose: () => void;
-  onView: (runner: RunnerRead) => void;
-  onEdit: (runner: RunnerRead) => void;
-  onToggle: (runner: RunnerRead) => void;
-  onRemove: (runner: RunnerRead) => void;
-}) {
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 208 });
-
-  useLayoutEffect(() => {
-    if (!open || !anchorRect) return;
-
-    const dropdownWidth = 208;
-    const gap = 8;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let left = anchorRect.right - dropdownWidth;
-    let top = anchorRect.bottom + gap;
-
-    if (left < 8) left = 8;
-
-    if (left + dropdownWidth > viewportWidth - 8) {
-      left = viewportWidth - dropdownWidth - 8;
-    }
-
-    const estimatedHeight = 180;
-
-    if (top + estimatedHeight > viewportHeight - 8) {
-      top = anchorRect.top - estimatedHeight - gap;
-    }
-
-    if (top < 8) top = 8;
-
-    setPosition({
-      top,
-      left,
-      width: dropdownWidth,
-    });
-  }, [open, anchorRect]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-
-      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
-        onClose();
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, onClose]);
-
-  if (!open || !anchorRect || !runner) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[4000]">
-      <div
-        ref={dropdownRef}
-        className="absolute border border-slate-200 bg-white p-2 shadow-xl"
-        style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-          width: `${position.width}px`,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => onView(runner)}
-          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-        >
-          <Eye className="h-4 w-4" />
-          Informações
-        </button>
-
-        {!runner.deleted_at && (
-          <>
-            <button
-              type="button"
-              onClick={() => onEdit(runner)}
-              className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-            >
-              <Pencil className="h-4 w-4" />
-              Editar
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onToggle(runner)}
-              className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-slate-50 ${
-                runner.enabled ? "text-red-600" : "text-emerald-700"
-              }`}
-            >
-              <Power className="h-4 w-4" />
-              {runner.enabled ? "Desativar" : "Ativar"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onRemove(runner)}
-              className="flex w-full items-center gap-3 border-t border-slate-100 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              Remover
-            </button>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-function ConfirmModal({
-  open,
-  title,
-  description,
-  onCancel,
-  onConfirm,
-  confirmLabel,
-  loading,
-  danger = false,
-}: {
-  open: boolean;
-  title: string;
-  description: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-  confirmLabel: string;
-  loading?: boolean;
-  danger?: boolean;
-}) {
-  useEffect(() => {
-    if (!open) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open, onCancel]);
-
-  if (!open) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[9999]">
-      <div className="absolute inset-0 bg-slate-950/55" onClick={onCancel} />
-
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div
-          className="relative z-10 w-full max-w-md border border-slate-200 bg-white shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-          </div>
-
-          <div className="whitespace-pre-line px-6 py-5 text-sm text-slate-700">
-            {description}
-          </div>
-
-          <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={loading}
-              className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <XCircle className="h-4 w-4" />
-              Cancelar
-            </button>
-
-            <button
-              type="button"
-              onClick={onConfirm}
-              disabled={loading}
-              className={`inline-flex h-10 items-center gap-2 px-4 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                danger
-                  ? "border border-red-600 bg-red-600 hover:bg-red-700"
-                  : "border border-emerald-600 bg-emerald-600 hover:bg-emerald-700"
-              }`}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {loading ? "Processando..." : confirmLabel}
-            </button>
           </div>
         </div>
       </div>

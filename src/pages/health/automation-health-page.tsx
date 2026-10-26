@@ -1,31 +1,40 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   Bot,
   CheckCircle2,
+  CircleAlert,
   Clock3,
+  HeartPulse,
   Loader2,
   Monitor,
-  RefreshCcw,
-  Search,
-  X,
-  ZoomIn,
-  ZoomOut,
-  Activity,
-  CircleAlert,
+  Play,
   Timer,
+  X,
 } from "lucide-react";
 
-import { SearchableSelect } from "@/components/common/searchable-select";
-import type { SearchableOption } from "@/components/common/searchable-select";
+import { SearchableSelect, type SearchableOption } from "@/components/common/searchable-select";
+import { PageHeader } from "@/components/common/page-header";
+import { FilterBar, SearchInput } from "@/components/common/filter-bar";
+import { QueryError } from "@/components/common/query-error";
+import { EmptyState } from "@/components/common/empty-state";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { CardSkeleton } from "@/components/common/skeleton";
 import { normalizeSearch } from "@/lib/search";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { runNowPayload } from "@/lib/run-task";
+import { EMPTY, formatDateTime, formatDuration } from "@/lib/format";
+import { toast } from "@/store/toast-store";
+import { getAutomation } from "@/services/api/automations";
 import { listAllBots } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
-import {
-  listAutomationHealth,
-  type AutomationHealthItemRead,
-} from "@/services/api/automation-health";
+import { createTask } from "@/services/api/tasks";
+import { listAutomationHealth, type AutomationHealthItemRead, type AutomationHealthStatus } from "@/services/api/automation-health";
+import { badge, btn, card, focusRing, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
 type ActiveFilter = "active" | "inactive" | "all";
 
@@ -34,44 +43,26 @@ const ACTIVE_FILTER_OPTIONS: SearchableOption<ActiveFilter>[] = [
   { value: "inactive", label: "Somente inativas" },
   { value: "all", label: "Todas" },
 ];
-type CardScale = "sm" | "md" | "lg";
 
-const AUTO_REFRESH_SECONDS = 10;
+type CardSize = "compact" | "normal";
+
+const REFRESH_MS = 10_000;
+// Mesma chave de antes; "sm" = compacto, qualquer outro = normal (compatível com o valor antigo sm/md/lg).
 const CARD_SCALE_STORAGE_KEY = "automation-health-card-scale";
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
+function getStoredCardSize(): CardSize {
+  if (typeof window === "undefined") return "normal";
+  try {
+    return window.localStorage.getItem(CARD_SCALE_STORAGE_KEY) === "sm" ? "compact" : "normal";
+  } catch {
+    return "normal";
+  }
 }
 
 // Sem agendamento a automação só roda manualmente: não tem regra nem atraso.
 function formatRelativeRule(value?: string | null) {
   if (!value) return "Manual";
   return value;
-}
-
-function formatDuration(seconds?: number | null) {
-  if (seconds == null) return "---";
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  // Acima de 1 dia, mostra dias e horas ("105d 7h"), não milhares de horas.
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-  }
-
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
 function normalizeText(value?: string | null) {
@@ -96,19 +87,12 @@ function getInactiveReason(item: AutomationHealthItemRead): string | null {
 }
 
 function removeAutomationPrefix(value?: string | null) {
-  if (!value) return "---";
+  if (!value) return EMPTY;
   return value.replace(/^automacao_/i, "").trim();
 }
 
-function getStoredCardScale(): CardScale {
-  if (typeof window === "undefined") return "md";
-  const storedValue = window.localStorage.getItem(CARD_SCALE_STORAGE_KEY);
-  if (storedValue === "sm" || storedValue === "md" || storedValue === "lg") return storedValue;
-  return "md";
-}
-
 /**
- * Calcula chip de tempo para exibir no card.
+ * Chip de tempo do card.
  * - Se atrasado: "Xm atrasado"
  * - Se ok e há próximo run em menos de 24h: "próx. em Xm"
  */
@@ -142,89 +126,90 @@ function getTimeChipInfo(item: AutomationHealthItemRead): { label: string; isOve
   return null;
 }
 
-function getHealthVisual(status: string) {
-  switch (status) {
-    case "success":
-      return {
-        label: "OK",
-        icon: CheckCircle2,
-        cardClass: "border-emerald-200 bg-emerald-50/80 hover:border-emerald-300",
-        badgeClass: "border border-emerald-200 bg-emerald-100 text-emerald-700",
-        accentClass: "bg-emerald-500",
-        iconClass: "text-emerald-600",
-        timeChipClass: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-      };
+type HealthVisual = {
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  cardClass: string;
+  badgeClass: string;
+  accentClass: string;
+  iconClass: string;
+  filterActiveClass: string;
+  filterTextClass: string;
+};
 
-    case "running":
-      return {
-        label: "Rodando",
-        icon: Loader2,
-        cardClass: "border-blue-200 bg-blue-50/80 hover:border-blue-300",
-        badgeClass: "border border-blue-200 bg-blue-100 text-blue-700",
-        accentClass: "bg-blue-500",
-        iconClass: "text-blue-600",
-        timeChipClass: "bg-blue-100 text-blue-700 border border-blue-200",
-      };
+const HEALTH_VISUAL: Record<AutomationHealthStatus, HealthVisual> = {
+  success: {
+    label: "OK",
+    icon: CheckCircle2,
+    cardClass: "border-emerald-200 bg-emerald-50/60 hover:border-emerald-300",
+    badgeClass: tone.success,
+    accentClass: "bg-emerald-500",
+    iconClass: "text-emerald-600",
+    filterActiveClass: "border-emerald-600 bg-emerald-600 text-white",
+    filterTextClass: "text-emerald-700",
+  },
+  running: {
+    label: "Rodando",
+    icon: Loader2,
+    cardClass: "border-blue-200 bg-blue-50/60 hover:border-blue-300",
+    badgeClass: tone.info,
+    accentClass: "bg-blue-500",
+    iconClass: "text-blue-600",
+    filterActiveClass: "border-blue-600 bg-blue-600 text-white",
+    filterTextClass: "text-blue-700",
+  },
+  // warning = atrasado: não rodou quando devia — âmbar, diferente do vermelho de erro de execução
+  warning: {
+    label: "Atrasado",
+    icon: AlertTriangle,
+    cardClass: "border-amber-200 bg-amber-50/60 hover:border-amber-300",
+    badgeClass: tone.warning,
+    accentClass: "bg-amber-500",
+    iconClass: "text-amber-600",
+    filterActiveClass: "border-amber-600 bg-amber-600 text-white",
+    filterTextClass: "text-amber-700",
+  },
+  error: {
+    label: "Erro",
+    icon: CircleAlert,
+    cardClass: "border-red-200 bg-red-50/60 hover:border-red-300",
+    badgeClass: tone.danger,
+    accentClass: "bg-red-500",
+    iconClass: "text-red-600",
+    filterActiveClass: "border-red-600 bg-red-600 text-white",
+    filterTextClass: "text-red-700",
+  },
+};
 
-    case "error":
-      return {
-        label: "Erro",
-        icon: CircleAlert,
-        cardClass: "border-red-200 bg-red-50/80 hover:border-red-300",
-        badgeClass: "border border-red-200 bg-red-100 text-red-700",
-        accentClass: "bg-red-500",
-        iconClass: "text-red-600",
-        timeChipClass: "bg-red-100 text-red-700 border border-red-200",
-      };
+const STATUS_ORDER: AutomationHealthStatus[] = ["success", "running", "warning", "error"];
 
-    default:
-      // warning = atrasado: não rodou quando devia — âmbar, diferente do vermelho de erro de execução
-      return {
-        label: "Atrasado",
-        icon: AlertTriangle,
-        cardClass: "border-amber-200 bg-amber-50/80 hover:border-amber-300",
-        badgeClass: "border border-amber-200 bg-amber-100 text-amber-700",
-        accentClass: "bg-amber-500",
-        iconClass: "text-amber-600",
-        timeChipClass: "bg-amber-100 text-amber-800 border border-amber-300",
-      };
-  }
+function getHealthVisual(status: string): HealthVisual {
+  return HEALTH_VISUAL[status as AutomationHealthStatus] ?? HEALTH_VISUAL.warning;
 }
 
-function getScaleClasses(scale: CardScale) {
-  switch (scale) {
-    case "sm":
-      return {
-        grid: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5",
-        card: "min-h-[150px] p-3",
-        title: "text-[12px]",
-        text: "text-[10px]",
-        chip: "text-[10px]",
-        infoGrid: "grid-cols-2 gap-x-3 gap-y-2",
-      };
-    case "lg":
-      return {
-        grid: "grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
-        card: "min-h-[185px] p-4",
-        title: "text-[14px]",
-        text: "text-xs",
-        chip: "text-xs",
-        infoGrid: "grid-cols-2 gap-x-4 gap-y-3",
-      };
-    default:
-      return {
-        grid: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
-        card: "min-h-[165px] p-3.5",
-        title: "text-[13px]",
-        text: "text-[11px]",
-        chip: "text-[11px]",
-        infoGrid: "grid-cols-2 gap-x-3 gap-y-2.5",
-      };
+function getSizeClasses(size: CardSize) {
+  if (size === "compact") {
+    return {
+      grid: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5",
+      card: "min-h-[140px] p-3",
+      title: "text-xs",
+      text: "text-[10px]",
+      chip: "text-[10px]",
+      infoGrid: "grid-cols-2 gap-x-3 gap-y-2",
+    };
   }
+  return {
+    grid: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
+    card: "min-h-[170px] p-4",
+    title: "text-sm",
+    text: "text-xs",
+    chip: "text-xs",
+    infoGrid: "grid-cols-2 gap-x-4 gap-y-3",
+  };
 }
 
 function getMachineLabel(item: AutomationHealthItemRead) {
-  return item.machine_display_name || item.machine_label || item.machine_name || "---";
+  return item.machine_display_name || item.machine_label || item.machine_name || EMPTY;
 }
 
 function getAutomationTitle(item: AutomationHealthItemRead) {
@@ -232,7 +217,7 @@ function getAutomationTitle(item: AutomationHealthItemRead) {
 }
 
 function getTaskStatusLabel(status?: string | null) {
-  if (!status) return "---";
+  if (!status) return EMPTY;
   const labels: Record<string, string> = {
     waiting: "Aguardando",
     scheduled: "Agendado",
@@ -248,13 +233,17 @@ function getTaskStatusLabel(status?: string | null) {
   return labels[status] ?? status;
 }
 
+function canRunNow(item: AutomationHealthItemRead) {
+  return item.automation_active && item.health_status !== "running" && !item.has_running_task;
+}
+
 function InfoItem({
   icon: Icon,
   label,
   value,
   textClassName,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   value: string;
   textClassName: string;
@@ -265,26 +254,41 @@ function InfoItem({
         <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         <span className={`${textClassName} font-medium uppercase tracking-wide`}>{label}</span>
       </div>
-      <div className={`mt-0.5 truncate text-slate-700 ${textClassName}`}>{value}</div>
+      <div className={`mt-0.5 truncate text-slate-700 ${textClassName}`} title={value}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function DetailField({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm font-medium text-slate-900">{value}</dd>
     </div>
   );
 }
 
 export function AutomationHealthPage() {
+  const queryClient = useQueryClient();
   const [repositoryFilter, setRepositoryFilter] = useState("");
   const [botFilter, setBotFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<AutomationHealthStatus | null>(null);
   const [search, setSearch] = useState("");
-  const [cardScale, setCardScale] = useState<CardScale>(getStoredCardScale);
+  const [cardSize, setCardSize] = useState<CardSize>(getStoredCardSize);
   const [selectedItem, setSelectedItem] = useState<AutomationHealthItemRead | null>(null);
-  const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_SECONDS);
-  const [, setTick] = useState(0);
+  const [runNowItem, setRunNowItem] = useState<AutomationHealthItemRead | null>(null);
 
-  const queryParams = useMemo(() => ({
-    repository_id: repositoryFilter ? Number(repositoryFilter) : undefined,
-    bot_id: botFilter ? Number(botFilter) : undefined,
-    activeFilter,
-  }), [repositoryFilter, botFilter, activeFilter]);
+  const queryParams = useMemo(
+    () => ({
+      repository_id: repositoryFilter ? Number(repositoryFilter) : undefined,
+      bot_id: botFilter ? Number(botFilter) : undefined,
+      activeFilter,
+    }),
+    [repositoryFilter, botFilter, activeFilter]
+  );
 
   const automationHealthQuery = useQuery({
     queryKey: ["automation-health", queryParams],
@@ -300,7 +304,8 @@ export function AutomationHealthPage() {
       ]);
       return [...activeItems.items, ...inactiveItems.items];
     },
-    refetchInterval: AUTO_REFRESH_SECONDS * 1000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const repositoriesQuery = useQuery({
@@ -313,25 +318,27 @@ export function AutomationHealthPage() {
     queryFn: () => listAllBots(),
   });
 
-  useEffect(() => {
-    window.localStorage.setItem(CARD_SCALE_STORAGE_KEY, cardScale);
-  }, [cardScale]);
+  const runNowMutation = useMutation({
+    // O item do health não traz os parâmetros padrão: busca a automação para a task sair igual à da tela de Automações.
+    mutationFn: async (item: AutomationHealthItemRead) => createTask(runNowPayload(await getAutomation(item.automation_id))),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["automation-health"] });
+      setRunNowItem(null);
+      toast.success(`Task #${data.task.id} entrou na fila.`);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Não foi possível criar a task."));
+    },
+  });
 
   useEffect(() => {
-    setRefreshCountdown(AUTO_REFRESH_SECONDS);
-  }, [queryParams]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setRefreshCountdown((prev) => {
-        if (prev <= 1) return AUTO_REFRESH_SECONDS;
-        return prev - 1;
-      });
-      // re-render para atualizar chips de tempo a cada segundo
-      setTick((t) => t + 1);
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+    try {
+      window.localStorage.setItem(CARD_SCALE_STORAGE_KEY, cardSize === "compact" ? "sm" : "md");
+    } catch {
+      // sem localStorage (modo privado): só não persiste
+    }
+  }, [cardSize]);
 
   const repositoryOptions = useMemo<SearchableOption<number>[]>(
     () => (repositoriesQuery.data ?? []).map((r) => ({ value: r.id, label: r.name })),
@@ -346,7 +353,8 @@ export function AutomationHealthPage() {
     [botsQuery.data, repositoryFilter]
   );
 
-  const filteredItems = useMemo(() => {
+  // Filtros de busca/ativo (antes do filtro por status, para os contadores refletirem a lista toda).
+  const baseItems = useMemo(() => {
     const normalizedSearch = normalizeText(search);
     return (automationHealthQuery.data ?? []).filter((item) => {
       const inactive = getInactiveReason(item) !== null;
@@ -369,16 +377,8 @@ export function AutomationHealthPage() {
     });
   }, [automationHealthQuery.data, search, activeFilter]);
 
-  // Ordena: erro → atrasado → rodando → ok
-  const sortedItems = useMemo(() => {
-    const order: Record<string, number> = { error: 0, warning: 1, running: 2, success: 3 };
-    return [...filteredItems].sort(
-      (a, b) => (order[a.health_status] ?? 9) - (order[b.health_status] ?? 9)
-    );
-  }, [filteredItems]);
-
   const summary = useMemo(() => {
-    return filteredItems.reduce(
+    return baseItems.reduce(
       (acc, item) => {
         acc.total += 1;
         if (item.health_status === "success") acc.success += 1;
@@ -389,233 +389,221 @@ export function AutomationHealthPage() {
       },
       { total: 0, success: 0, running: 0, warning: 0, error: 0 }
     );
-  }, [filteredItems]);
+  }, [baseItems]);
 
-  const scaleClasses = getScaleClasses(cardScale);
+  // Ordena: erro → atrasado → rodando → ok
+  const sortedItems = useMemo(() => {
+    const order: Record<string, number> = { error: 0, warning: 1, running: 2, success: 3 };
+    const filtered = statusFilter ? baseItems.filter((item) => item.health_status === statusFilter) : baseItems;
+    return [...filtered].sort((a, b) => (order[a.health_status] ?? 9) - (order[b.health_status] ?? 9));
+  }, [baseItems, statusFilter]);
 
-  function handleRefresh() {
-    setRefreshCountdown(AUTO_REFRESH_SECONDS);
-    automationHealthQuery.refetch();
+  const sizeClasses = getSizeClasses(cardSize);
+  const hasActiveFilters = Boolean(search.trim() || repositoryFilter || botFilter || activeFilter !== "active" || statusFilter);
+
+  function clearFilters() {
+    setSearch("");
+    setRepositoryFilter("");
+    setBotFilter("");
+    setActiveFilter("active");
+    setStatusFilter(null);
   }
 
-  function handleDecreaseZoom() {
-    setCardScale((prev) => {
-      if (prev === "lg") return "md";
-      if (prev === "md") return "sm";
-      return "sm";
-    });
-  }
-
-  function handleIncreaseZoom() {
-    setCardScale((prev) => {
-      if (prev === "sm") return "md";
-      if (prev === "md") return "lg";
-      return "lg";
-    });
+  function toggleStatusFilter(status: AutomationHealthStatus) {
+    setStatusFilter((prev) => (prev === status ? null : status));
   }
 
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-950">Automation Health</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Verde = ok e dentro do prazo · Âmbar = atrasado, não rodou no tempo esperado · Vermelho = última execução deu erro
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-sm text-slate-700">
-                <Clock3 className="h-4 w-4 text-slate-500" />
-                Refresh in <span className="font-semibold">{refreshCountdown}s</span>
+      <section className={card}>
+        <PageHeader
+          title="Saúde das automações"
+          description="Verde = ok e dentro do prazo · Âmbar = atrasado, não rodou no tempo esperado · Vermelho = última execução deu erro."
+          actions={
+            <>
+              <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="Tamanho dos cards">
+                {(["compact", "normal"] as CardSize[]).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setCardSize(size)}
+                    aria-pressed={cardSize === size}
+                    className={cn(
+                      "h-10 px-3 text-sm font-medium transition first:rounded-l-lg last:rounded-r-lg",
+                      cardSize === size ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    {size === "compact" ? "Compacto" : "Normal"}
+                  </button>
+                ))}
               </div>
-
-              <div className="inline-flex items-center border border-slate-300 bg-white">
-                <button
-                  type="button"
-                  onClick={handleDecreaseZoom}
-                  className="inline-flex h-10 w-10 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-                  title="Diminuir cards"
-                >
-                  <ZoomOut className="h-4 w-4" />
-                </button>
-                <div className="flex h-10 min-w-[44px] items-center justify-center border-x border-slate-300 px-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  {cardScale}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleIncreaseZoom}
-                  className="inline-flex h-10 w-10 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-                  title="Aumentar cards"
-                >
-                  <ZoomIn className="h-4 w-4" />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Atualizar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-b border-slate-200 px-6 py-4">
-          <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-5">
-            <label className="flex h-10 items-center gap-2 border border-slate-300 bg-white px-3">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar automação, bot, máquina..."
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+              <RefreshIndicator
+                updatedAt={automationHealthQuery.dataUpdatedAt}
+                isFetching={automationHealthQuery.isFetching}
+                onRefresh={() => automationHealthQuery.refetch()}
+                intervalMs={REFRESH_MS}
               />
-            </label>
+            </>
+          }
+        />
 
-            <SearchableSelect
-              className="min-w-0"
-              value={repositoryFilter ? Number(repositoryFilter) : ""}
-              onChange={(value) => { setRepositoryFilter(value === "" ? "" : String(value)); setBotFilter(""); }}
-              options={repositoryOptions}
-              emptyLabel="Todos os repositórios"
-              searchPlaceholder="Buscar repositório..."
-              loading={repositoriesQuery.isLoading}
-            />
+        <FilterBar hasActiveFilters={hasActiveFilters} onClear={clearFilters}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Buscar automação, bot, máquina..." />
 
-            <SearchableSelect
-              className="min-w-0"
-              value={botFilter ? Number(botFilter) : ""}
-              onChange={(value) => setBotFilter(value === "" ? "" : String(value))}
-              options={botOptions}
-              emptyLabel="Todos os bots"
-              searchPlaceholder="Buscar bot..."
-              loading={botsQuery.isLoading}
-            />
+          <SearchableSelect
+            className="w-full sm:w-56"
+            value={repositoryFilter ? Number(repositoryFilter) : ""}
+            onChange={(value) => {
+              setRepositoryFilter(value === "" ? "" : String(value));
+              setBotFilter("");
+            }}
+            options={repositoryOptions}
+            emptyLabel="Todos os repositórios"
+            searchPlaceholder="Buscar repositório..."
+            loading={repositoriesQuery.isLoading}
+          />
 
-            <SearchableSelect
-              className="min-w-0"
-              value={activeFilter}
-              onChange={(value) => setActiveFilter(value || "active")}
-              options={ACTIVE_FILTER_OPTIONS}
-              searchPlaceholder="Buscar..."
-            />
+          <SearchableSelect
+            className="w-full sm:w-56"
+            value={botFilter ? Number(botFilter) : ""}
+            onChange={(value) => setBotFilter(value === "" ? "" : String(value))}
+            options={botOptions}
+            emptyLabel="Todos os bots"
+            searchPlaceholder="Buscar bot..."
+            loading={botsQuery.isLoading}
+          />
 
-            <div className="grid grid-cols-4 overflow-hidden border border-slate-200 bg-slate-50">
-              <div className="flex h-10 items-center justify-center gap-1.5 border-r border-slate-200 px-2 text-xs font-semibold text-emerald-700" title="OK">
-                <CheckCircle2 className="h-4 w-4" />
-                {summary.success}
-              </div>
-              <div className="flex h-10 items-center justify-center gap-1.5 border-r border-slate-200 px-2 text-xs font-semibold text-blue-700" title="Rodando">
-                <Loader2 className="h-4 w-4" />
-                {summary.running}
-              </div>
-              <div className="flex h-10 items-center justify-center gap-1.5 border-r border-slate-200 px-2 text-xs font-semibold text-amber-700" title="Atrasado">
-                <AlertTriangle className="h-4 w-4" />
-                {summary.warning}
-              </div>
-              <div className="flex h-10 items-center justify-center gap-1.5 px-2 text-xs font-semibold text-red-700" title="Erro de execução">
-                <CircleAlert className="h-4 w-4" />
-                {summary.error}
-              </div>
-            </div>
+          <SearchableSelect
+            className="w-full sm:w-44"
+            value={activeFilter}
+            onChange={(value) => setActiveFilter(value || "active")}
+            options={ACTIVE_FILTER_OPTIONS}
+            searchPlaceholder="Buscar..."
+          />
+
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
+            {STATUS_ORDER.map((status) => {
+              const visual = HEALTH_VISUAL[status];
+              const Icon = visual.icon;
+              const active = statusFilter === status;
+              const count = summary[status];
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => toggleStatusFilter(status)}
+                  aria-pressed={active}
+                  title={active ? `Mostrando só "${visual.label}" (clique para limpar)` : `Mostrar só "${visual.label}"`}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
+                    focusRing,
+                    active ? visual.filterActiveClass : `border-slate-300 bg-white hover:bg-slate-50 ${visual.filterTextClass}`
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {visual.label}
+                  <span className="tabular-nums">{count}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </FilterBar>
 
-        <div className="px-6 py-4">
+        <div className="p-5">
           {automationHealthQuery.isLoading ? (
-            <div className="py-10 text-sm text-slate-500">Carregando saúde das automações...</div>
+            <CardSkeleton count={8} />
           ) : automationHealthQuery.isError ? (
-            <div className="py-10 text-sm text-red-600">Não foi possível carregar a saúde das automações.</div>
+            <QueryError
+              error={automationHealthQuery.error}
+              what="a saúde das automações"
+              onRetry={() => automationHealthQuery.refetch()}
+              retrying={automationHealthQuery.isFetching}
+            />
           ) : sortedItems.length === 0 ? (
-            <div className="py-10 text-sm text-slate-500">Nenhuma automação encontrada.</div>
+            <EmptyState
+              icon={HeartPulse}
+              title="Nenhuma automação encontrada"
+              description={hasActiveFilters ? "Nenhuma automação combina com os filtros." : "Cadastre uma automação para acompanhar a saúde dela aqui."}
+              action={
+                hasActiveFilters ? (
+                  <button type="button" className={btn.secondary} onClick={clearFilters}>
+                    Limpar filtros
+                  </button>
+                ) : undefined
+              }
+            />
           ) : (
-            <div className={`grid gap-4 ${scaleClasses.grid}`}>
+            <div className={`grid gap-4 ${sizeClasses.grid}`}>
               {sortedItems.map((item) => {
                 const visual = getHealthVisual(item.health_status);
                 const StatusIcon = visual.icon;
                 const timeChip = getTimeChipInfo(item);
                 const inactiveReason = getInactiveReason(item);
+                const showRunNow = canRunNow(item);
 
                 return (
-                  <button
+                  <div
                     key={item.automation_id}
-                    type="button"
-                    onClick={() => setSelectedItem(item)}
-                    className={`group relative flex w-full flex-col overflow-hidden border text-left shadow-sm transition ${visual.cardClass} ${scaleClasses.card}`}
+                    className={cn("group relative flex flex-col overflow-hidden rounded-xl border shadow-sm transition", visual.cardClass)}
                   >
                     <div className={`absolute left-0 top-0 h-full w-1 ${visual.accentClass}`} />
 
-                    <div className="flex items-start justify-between gap-3 pl-2">
-                      <div className="min-w-0">
-                        <p
-                          className={`line-clamp-2 break-words font-semibold text-slate-950 ${scaleClasses.title}`}
-                          title={getAutomationTitle(item)}
-                        >
-                          {getAutomationTitle(item)}
-                        </p>
-                        <p className={`mt-0.5 line-clamp-1 text-slate-500 ${scaleClasses.text}`}>
-                          {item.bot_name || "---"}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItem(item)}
+                      className={cn("flex w-full flex-1 flex-col rounded-xl text-left", focusRing, sizeClasses.card)}
+                    >
+                      <div className="flex items-start justify-between gap-3 pl-2">
+                        <div className="min-w-0">
+                          <p className={`line-clamp-2 break-words font-semibold text-slate-950 ${sizeClasses.title}`} title={getAutomationTitle(item)}>
+                            {getAutomationTitle(item)}
+                          </p>
+                          <p className={`mt-0.5 line-clamp-1 text-slate-500 ${sizeClasses.text}`}>{item.bot_name || EMPTY}</p>
+                        </div>
+
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          <span className={cn(badge, visual.badgeClass, sizeClasses.chip)}>
+                            <StatusIcon className={cn("h-3.5 w-3.5", visual.iconClass, item.health_status === "running" && "animate-spin")} />
+                            {visual.label}
+                          </span>
+
+                          {inactiveReason ? <span className={cn(badge, tone.neutral, sizeClasses.chip)}>{inactiveReason}</span> : null}
+
+                          {timeChip && (
+                            <span className={cn(badge, timeChip.isOverdue ? tone.warning : visual.badgeClass, sizeClasses.chip)}>
+                              <Timer className="h-3 w-3 shrink-0" />
+                              {timeChip.label}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 font-medium ${visual.badgeClass} ${scaleClasses.chip}`}>
-                          <StatusIcon
-                            className={`h-3.5 w-3.5 ${visual.iconClass} ${
-                              item.health_status === "running" ? "animate-spin" : ""
-                            }`}
-                          />
-                          {visual.label}
-                        </span>
+                      <div className={`mt-3 grid pl-2 ${sizeClasses.infoGrid}`}>
+                        <InfoItem icon={Activity} label="Regra" value={formatRelativeRule(item.schedule?.rule_label)} textClassName={sizeClasses.text} />
+                        <InfoItem icon={Monitor} label="Máquina" value={getMachineLabel(item)} textClassName={sizeClasses.text} />
+                        <InfoItem icon={Clock3} label="Última execução" value={formatDateTime(item.last_execution_at)} textClassName={sizeClasses.text} />
+                        <InfoItem icon={Bot} label="Repositório" value={item.repository_name || EMPTY} textClassName={sizeClasses.text} />
+                      </div>
+                    </button>
 
-                        {inactiveReason ? (
-                          <span className={`inline-flex items-center border border-slate-300 bg-slate-100 px-2 py-0.5 font-medium text-slate-600 ${scaleClasses.chip}`}>
-                            {inactiveReason}
-                          </span>
-                        ) : null}
-
-                        {timeChip && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 font-medium ${visual.timeChipClass} ${scaleClasses.chip}`}>
-                            <Timer className="h-3 w-3 shrink-0" />
-                            {timeChip.label}
-                          </span>
+                    {showRunNow && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setRunNowItem(item);
+                        }}
+                        title="Executar agora"
+                        aria-label={`Executar agora: ${getAutomationTitle(item)}`}
+                        className={cn(
+                          "absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-500 opacity-0 shadow-sm transition hover:bg-blue-600 hover:text-white group-hover:opacity-100 focus-visible:opacity-100",
+                          focusRing
                         )}
-                      </div>
-                    </div>
-
-                    <div className={`mt-3 grid pl-2 ${scaleClasses.infoGrid}`}>
-                      <InfoItem
-                        icon={Activity}
-                        label="Rule"
-                        value={formatRelativeRule(item.schedule?.rule_label)}
-                        textClassName={scaleClasses.text}
-                      />
-                      <InfoItem
-                        icon={Monitor}
-                        label="Machine"
-                        value={getMachineLabel(item)}
-                        textClassName={scaleClasses.text}
-                      />
-                      <InfoItem
-                        icon={Clock3}
-                        label="Último run"
-                        value={formatDateTime(item.last_execution_at)}
-                        textClassName={scaleClasses.text}
-                      />
-                      <InfoItem
-                        icon={Bot}
-                        label="Repository"
-                        value={item.repository_name || "---"}
-                        textClassName={scaleClasses.text}
-                      />
-                    </div>
-                  </button>
+                      >
+                        <Play className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -623,214 +611,156 @@ export function AutomationHealthPage() {
         </div>
       </section>
 
-      {selectedItem ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-semibold text-slate-950">
-                    {getAutomationTitle(selectedItem)}
-                  </h2>
-                  {(() => {
-                    const v = getHealthVisual(selectedItem.health_status);
-                    const Icon = v.icon;
-                    return (
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium ${v.badgeClass}`}>
-                        <Icon className={`h-3.5 w-3.5 ${v.iconClass}`} />
-                        {v.label}
-                      </span>
-                    );
-                  })()}
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  Detalhes da automação, bot, schedule e última task monitorada.
-                </p>
-              </div>
+      <ConfirmDialog
+        open={Boolean(runNowItem)}
+        title="Executar agora"
+        description={
+          runNowItem
+            ? `Automação: ${getAutomationTitle(runNowItem)}\n\nUma task manual entra na fila com os parâmetros padrão da automação.`
+            : ""
+        }
+        confirmLabel="Executar"
+        isPending={runNowMutation.isPending}
+        onCancel={() => setRunNowItem(null)}
+        onConfirm={() => runNowItem && runNowMutation.mutate(runNowItem)}
+      />
 
-              <button
-                type="button"
-                onClick={() => setSelectedItem(null)}
-                className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      {selectedItem ? <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} /> : null}
+    </div>
+  );
+}
+
+function DetailModal({ item, onClose }: { item: AutomationHealthItemRead; onClose: () => void }) {
+  const visual = getHealthVisual(item.health_status);
+  const Icon = visual.icon;
+
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className={cn(card, "relative max-h-[90vh] w-full max-w-5xl overflow-hidden shadow-2xl")}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-xl font-semibold text-slate-950">{getAutomationTitle(item)}</h2>
+              <span className={cn(badge, visual.badgeClass)}>
+                <Icon className={cn("h-3.5 w-3.5", visual.iconClass)} />
+                {visual.label}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">Detalhes da automação, bot, agendamento e última task monitorada.</p>
+          </div>
+
+          <button type="button" onClick={onClose} className={btn.icon} aria-label="Fechar">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(90vh-81px)] overflow-y-auto px-6 py-6">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className={cn(card, "p-4")}>
+              <h3 className="text-sm font-semibold text-slate-950">Automação</h3>
+              <dl className="mt-4 space-y-3">
+                <DetailField label="Nome" value={removeAutomationPrefix(item.automation_name)} />
+                <DetailField label="Label" value={removeAutomationPrefix(item.automation_label)} />
+                <DetailField label="Repositório" value={item.repository_name || EMPTY} />
+                <DetailField label="Status" value={item.health_label} />
+                <DetailField label="Ativa" value={item.automation_active ? "Sim" : "Não"} />
+              </dl>
             </div>
 
-            <div className="max-h-[calc(90vh-81px)] overflow-y-auto px-6 py-6">
-              <div className="grid gap-4 lg:grid-cols-3">
-                <div className="border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-950">Automação</h3>
-                  <dl className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <dt className="text-slate-500">Nome</dt>
-                      <dd className="font-medium text-slate-900">{removeAutomationPrefix(selectedItem.automation_name)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Label</dt>
-                      <dd className="font-medium text-slate-900">{removeAutomationPrefix(selectedItem.automation_label)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Repositório</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.repository_name || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Status</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.health_label}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Ativa</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.automation_active ? "Sim" : "Não"}</dd>
-                    </div>
-                  </dl>
-                </div>
+            <div className={cn(card, "p-4")}>
+              <h3 className="text-sm font-semibold text-slate-950">Bot</h3>
+              <dl className="mt-4 space-y-3">
+                <DetailField label="Nome do bot" value={item.bot_name || EMPTY} />
+                <DetailField label="Bot ativo" value={item.bot_active == null ? EMPTY : item.bot_active ? "Sim" : "Não"} />
+                <DetailField label="Máquina" value={getMachineLabel(item)} />
+                <DetailField label="Monitorado em" value={formatDateTime(item.monitored_at)} />
+              </dl>
+            </div>
 
-                <div className="border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-950">Bot</h3>
-                  <dl className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <dt className="text-slate-500">Nome do bot</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.bot_name || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Bot ativo</dt>
-                      <dd className="font-medium text-slate-900">
-                        {selectedItem.bot_active == null ? "---" : selectedItem.bot_active ? "Sim" : "Não"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Máquina</dt>
-                      <dd className="font-medium text-slate-900">{getMachineLabel(selectedItem)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Monitorado em</dt>
-                      <dd className="font-medium text-slate-900">{formatDateTime(selectedItem.monitored_at)}</dd>
-                    </div>
-                  </dl>
-                </div>
+            <div className={cn(card, "p-4")}>
+              <h3 className="text-sm font-semibold text-slate-950">Regra de saúde</h3>
+              <dl className="mt-4 space-y-3">
+                <DetailField label="Agendamento" value={item.schedule?.name || EMPTY} />
+                <DetailField label="Regra" value={item.schedule?.rule_label || "Manual (sem agendamento)"} />
+                <DetailField label="Intervalo esperado" value={formatDuration(item.schedule?.expected_interval_seconds)} />
+                <DetailField
+                  label="Atrasado?"
+                  value={
+                    <span className={item.is_overdue ? "font-semibold text-amber-600" : "font-semibold text-emerald-600"}>
+                      {item.is_overdue ? "Sim — não rodou no tempo esperado" : "Não"}
+                    </span>
+                  }
+                />
+                <DetailField label="Próxima execução" value={formatDateTime(item.schedule?.next_run_at)} />
+              </dl>
+            </div>
+          </div>
 
-                <div className="border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-950">Regra de saúde</h3>
-                  <dl className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <dt className="text-slate-500">Schedule</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.name || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Regra</dt>
-                      <dd className="font-medium text-slate-900">
-                        {selectedItem.schedule?.rule_label || "Manual (sem agendamento)"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Intervalo esperado</dt>
-                      <dd className="font-medium text-slate-900">
-                        {formatDuration(selectedItem.schedule?.expected_interval_seconds)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Atrasado?</dt>
-                      <dd className={`font-semibold ${selectedItem.is_overdue ? "text-amber-600" : "text-emerald-600"}`}>
-                        {selectedItem.is_overdue ? "Sim — não rodou no tempo esperado" : "Não"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Próximo run</dt>
-                      <dd className="font-medium text-slate-900">
-                        {formatDateTime(selectedItem.schedule?.next_run_at)}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className={cn(card, "p-4")}>
+              <h3 className="text-sm font-semibold text-slate-950">Detalhes do agendamento</h3>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <DetailField label="Tipo" value={item.schedule?.schedule_type || EMPTY} />
+                <DetailField label="Tipo de calendário" value={item.schedule?.calendar_type || EMPTY} />
+                <DetailField label="Cron" value={item.schedule?.cron_expression || EMPTY} />
+                <DetailField label="Fuso horário" value={item.schedule?.timezone || EMPTY} />
+                <DetailField label="Intervalo" value={`${item.schedule?.interval_value ?? EMPTY} ${item.schedule?.interval_unit || ""}`.trim()} />
+                <DetailField label="Última execução" value={formatDateTime(item.schedule?.last_run_at)} />
+              </dl>
+            </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                <div className="border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-950">Detalhes do schedule</h3>
-                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-slate-500">Tipo</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.schedule_type || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Tipo calendário</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.calendar_type || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Cron</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.cron_expression || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Timezone</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.schedule?.timezone || "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Intervalo</dt>
-                      <dd className="font-medium text-slate-900">
-                        {selectedItem.schedule?.interval_value ?? "---"}{" "}
-                        {selectedItem.schedule?.interval_unit || ""}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Último run</dt>
-                      <dd className="font-medium text-slate-900">{formatDateTime(selectedItem.schedule?.last_run_at)}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-950">Última task</h3>
-                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-slate-500">Task ID</dt>
-                      <dd className="font-medium text-slate-900">{selectedItem.last_task?.id ?? "---"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Status da task</dt>
-                      <dd className={`font-semibold ${
-                        selectedItem.last_task?.status === "error" ? "text-red-600" :
-                        selectedItem.last_task?.status === "finished" ? "text-emerald-600" :
-                        "text-slate-900"
-                      }`}>
-                        {getTaskStatusLabel(selectedItem.last_task?.status)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Runner</dt>
-                      <dd className="font-medium text-slate-900">
-                        {selectedItem.last_task?.runner_display_name ||
-                          selectedItem.last_task?.runner_label ||
-                          selectedItem.last_task?.runner_name ||
-                          "---"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Duração</dt>
-                      <dd className="font-medium text-slate-900">
-                        {formatDuration(selectedItem.last_task?.execution_duration_seconds)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Iniciado em</dt>
-                      <dd className="font-medium text-slate-900">{formatDateTime(selectedItem.last_task?.started_at)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-slate-500">Finalizado em</dt>
-                      <dd className="font-medium text-slate-900">{formatDateTime(selectedItem.last_task?.finished_at)}</dd>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <dt className="text-slate-500">Mensagem final</dt>
-                      <dd className="mt-1 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 p-3 font-medium text-slate-900">
-                        {selectedItem.last_task?.final_message || "---"}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
+            <div className={cn(card, "p-4")}>
+              <h3 className="text-sm font-semibold text-slate-950">Última task</h3>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <DetailField label="Task" value={item.last_task?.id != null ? `#${item.last_task.id}` : EMPTY} />
+                <DetailField
+                  label="Status da task"
+                  value={
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        item.last_task?.status === "error" ? "text-red-600" : item.last_task?.status === "finished" ? "text-emerald-600" : "text-slate-900"
+                      )}
+                    >
+                      {getTaskStatusLabel(item.last_task?.status)}
+                    </span>
+                  }
+                />
+                <DetailField
+                  label="Runner"
+                  value={item.last_task?.runner_display_name || item.last_task?.runner_label || item.last_task?.runner_name || EMPTY}
+                />
+                <DetailField label="Duração" value={formatDuration(item.last_task?.execution_duration_seconds)} />
+                <DetailField label="Iniciado em" value={formatDateTime(item.last_task?.started_at)} />
+                <DetailField label="Finalizado em" value={formatDateTime(item.last_task?.finished_at)} />
+                <DetailField
+                  className="sm:col-span-2"
+                  label="Mensagem final"
+                  value={
+                    <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 p-3 font-sans text-sm font-medium text-slate-900">
+                      {item.last_task?.final_message || EMPTY}
+                    </pre>
+                  }
+                />
+              </dl>
             </div>
           </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

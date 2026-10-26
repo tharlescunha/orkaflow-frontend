@@ -1,65 +1,47 @@
-import { useMemo, useState } from "react";
+import { useMemo, type ReactNode } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Bot, Cpu, Pencil, Server, Timer } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+
 import { getRunnerHealth } from "@/lib/health";
 import { RunnerBadges, RunnerHeartbeatText } from "@/components/common/runner-badges";
-import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  Bot,
-  Cpu,
-  RefreshCcw,
-  Server,
-  Timer,
-} from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { EmptyState } from "@/components/common/empty-state";
+import { RefreshIndicator } from "@/components/common/refresh-indicator";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { StatusBadge } from "@/components/common/status-badge";
+import { getRunner, getRunnerOverview, type RunnerOverviewTaskItem, type RunnerRead } from "@/services/api/runners";
+import type { TaskStatus } from "@/services/api/tasks";
+import { EMPTY, formatDateTime, formatDuration, formatTimeSmart } from "@/lib/format";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, table, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
-import {
-  getRunner,
-  getRunnerOverview,
-  type RunnerOverviewTaskItem,
-  type RunnerRead,
-} from "@/services/api/runners";
+const REFRESH_MS = 10_000;
+const SUCCESS_COLOR = "#059669"; // emerald-600
+const ERROR_COLOR = "#dc2626"; // red-600
+const NEUTRAL_COLOR = "#94a3b8"; // slate-400
+const BRAND_COLOR = "#2563eb"; // blue-600
 
-type ChartPeriod = "recent";
+const TASK_STATUSES: TaskStatus[] = [
+  "waiting",
+  "scheduled",
+  "ready",
+  "running",
+  "stop_requested",
+  "forced_stop",
+  "canceled",
+  "finished",
+  "error",
+  "timeout",
+];
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "---";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
+function isTaskStatus(status?: string | null): status is TaskStatus {
+  return Boolean(status) && TASK_STATUSES.includes(status as TaskStatus);
 }
 
-function formatShortTime(value?: string | null) {
-  if (!value) return "---";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatShortDate(value?: string | null) {
-  if (!value) return "---";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatStatus(status?: string) {
+function formatRunnerStatus(status?: string) {
   switch ((status || "").toLowerCase()) {
     case "online":
       return "Online";
@@ -71,26 +53,25 @@ function formatStatus(status?: string) {
       return "Manutenção";
     case "blocked":
       return "Bloqueado";
-    case "finished":
-      return "Sucesso";
-    case "error":
-      return "Erro";
-    case "running":
-      return "Executando";
-    case "waiting":
-      return "Em espera";
-    case "scheduled":
-      return "Agendada";
-    case "ready":
-      return "Pronta";
-    case "timeout":
-      return "Timeout";
-    case "canceled":
-      return "Cancelada";
-    case "forced_stop":
-      return "Parada forçada";
     default:
-      return status || "---";
+      return status || EMPTY;
+  }
+}
+
+function getRunnerStatusTone(runner: RunnerRead): keyof typeof tone {
+  if (getRunnerHealth(runner).noSignal) return "danger";
+  switch ((runner.status || "").toLowerCase()) {
+    case "online":
+      return "success";
+    case "busy":
+      return "info";
+    case "maintenance":
+      return "warning";
+    case "blocked":
+    case "offline":
+      return "danger";
+    default:
+      return "neutral";
   }
 }
 
@@ -103,24 +84,8 @@ function toChartNumber(value: unknown) {
   return 0;
 }
 
-function getStatusClass(status?: string) {
-  switch ((status || "").toLowerCase()) {
-    case "online":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "busy":
-      return "border-blue-200 bg-blue-50 text-blue-700";
-    case "maintenance":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "blocked":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "offline":
-    default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
-  }
-}
-
 function formatBytes(value?: number | null) {
-  if (value == null) return "---";
+  if (value == null) return EMPTY;
   if (value === 0) return "0 B";
 
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -133,29 +98,6 @@ function formatBytes(value?: number | null) {
   }
 
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function formatSeconds(value?: number | null) {
-  if (value == null) return "---";
-
-  const hours = Math.floor(value / 3600);
-  const minutes = Math.floor((value % 3600) / 60);
-  const seconds = value % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-
-  return `${seconds}s`;
-}
-
-function getRunnerName(runner?: RunnerRead | null) {
-  if (!runner) return "---";
-  return runner.name;
 }
 
 function getExecutionSeconds(task: RunnerOverviewTaskItem) {
@@ -199,11 +141,12 @@ function isErrorStatus(status?: string) {
   return ["error", "timeout", "forced_stop"].includes(normalized);
 }
 
+const SERIES_LABEL: Record<string, string> = { sucesso: "Sucesso", erro: "Erro", total: "Total" };
+
 export function RunnerDetailPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const runnerId = Number(params.runnerId);
-
-  const [chartPeriod] = useState<ChartPeriod>("recent");
 
   const isValidRunnerId = Number.isFinite(runnerId) && runnerId > 0;
 
@@ -211,66 +154,39 @@ export function RunnerDetailPage() {
     queryKey: ["runner", runnerId],
     queryFn: () => getRunner(runnerId),
     enabled: isValidRunnerId,
-    refetchInterval: 10000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const overviewQuery = useQuery({
     queryKey: ["runner-overview", runnerId],
     queryFn: () => getRunnerOverview(runnerId),
     enabled: isValidRunnerId,
-    refetchInterval: 10000,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const isLoading = runnerQuery.isLoading || overviewQuery.isLoading;
-  const isError = runnerQuery.isError || overviewQuery.isError;
+  const isFetching = runnerQuery.isFetching || overviewQuery.isFetching;
 
   const runner = runnerQuery.data;
   const overview = overviewQuery.data;
 
-  const summaryCards = useMemo(() => {
-    if (!overview) return [];
+  function refetchAll() {
+    runnerQuery.refetch();
+    overviewQuery.refetch();
+  }
 
-    return [
-      {
-        title: "Bots vinculados",
-        value: String(overview.summary.linked_bots_count ?? 0),
-        icon: Bot,
-      },
-      {
-        title: "Tasks em execução",
-        value: String(overview.summary.running_tasks_count ?? 0),
-        icon: Timer,
-      },
-      {
-        title: "Tasks em espera",
-        value: String(overview.summary.waiting_tasks_count ?? 0),
-        icon: Server,
-      },
-      {
-        title: "Utilização",
-        value: `${overview.utilization.utilization_percent ?? 0}%`,
-        icon: Cpu,
-      },
-    ];
-  }, [overview]);
-
-  const recentTasks = overview?.recent_tasks ?? [];
+  const recentTasks = useMemo(() => overview?.recent_tasks ?? [], [overview]);
 
   const tasksByTimeData = useMemo(() => {
-    return [...recentTasks]
-      .slice()
-      .reverse()
-      .map((task) => ({
-        label: `${formatShortTime(task.created_at)}`,
-        fullLabel: `${formatShortDate(task.created_at)} ${formatShortTime(
-          task.created_at
-        )}`,
-        total: 1,
-        sucesso: isSuccessStatus(task.status) ? 1 : 0,
-        erro: isErrorStatus(task.status) ? 1 : 0,
-        status: formatStatus(task.status),
-        taskId: task.task_id,
-      }));
+    return [...recentTasks].reverse().map((task) => ({
+      label: formatTimeSmart(task.created_at),
+      fullLabel: formatDateTime(task.created_at),
+      sucesso: isSuccessStatus(task.status) ? 1 : 0,
+      erro: isErrorStatus(task.status) ? 1 : 0,
+      taskId: task.task_id,
+    }));
   }, [recentTasks]);
 
   const averageTimesData = useMemo(() => {
@@ -284,11 +200,8 @@ export function RunnerDetailPage() {
     const queueTimes = recentTasks.map(getQueueSeconds);
     const executionTimes = recentTasks.map(getExecutionSeconds);
 
-    const avgQueue =
-      queueTimes.reduce((acc, value) => acc + value, 0) / queueTimes.length;
-    const avgExecution =
-      executionTimes.reduce((acc, value) => acc + value, 0) /
-      executionTimes.length;
+    const avgQueue = queueTimes.reduce((acc, value) => acc + value, 0) / queueTimes.length;
+    const avgExecution = executionTimes.reduce((acc, value) => acc + value, 0) / executionTimes.length;
 
     return [
       { name: "Fila", segundos: Math.round(avgQueue) },
@@ -310,180 +223,138 @@ export function RunnerDetailPage() {
 
   if (!isValidRunnerId) {
     return (
-      <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        Runner inválido.
-      </div>
+      <section className={card}>
+        <PageHeader title="Runner" backTo="/runners" backLabel="Voltar para runners" />
+        <div className={cardBody}>
+          <EmptyState icon={Server} title="Runner inválido" description="O endereço não aponta para um runner existente." />
+        </div>
+      </section>
     );
   }
 
+  const error = runnerQuery.error ?? overviewQuery.error;
+  const isError = runnerQuery.isError || overviewQuery.isError;
+
   return (
     <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <Link
-                to="/runners"
-                className="mb-3 inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-slate-700"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar para runners
-              </Link>
+      <section className={card}>
+        <PageHeader
+          title={runner?.name ?? "Runner"}
+          description="Status, o que está rodando e o histórico recente desta máquina."
+          backTo="/runners"
+          backLabel="Voltar para runners"
+          meta={
+            runner ? (
+              <span className={cn(badge, tone[getRunnerStatusTone(runner)])}>
+                {getRunnerHealth(runner).noSignal ? "SEM SINAL" : formatRunnerStatus(runner.status)}
+              </span>
+            ) : null
+          }
+          actions={
+            <>
+              <RefreshIndicator
+                updatedAt={Math.max(runnerQuery.dataUpdatedAt, overviewQuery.dataUpdatedAt)}
+                isFetching={isFetching}
+                onRefresh={refetchAll}
+                intervalMs={REFRESH_MS}
+              />
+              <button type="button" className={btn.primary} onClick={() => navigate(`/runner-configs/${runnerId}/edit`)}>
+                <Pencil className="h-4 w-4" />
+                Editar configuração
+              </button>
+            </>
+          }
+        />
 
-              <h1 className="text-2xl font-semibold text-slate-950">
-                {getRunnerName(runner)}
-              </h1>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Informações completas, configuração e visão operacional do runner.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                runnerQuery.refetch();
-                overviewQuery.refetch();
-              }}
-              className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <RefreshCcw className="h-4 w-4" />
-              Atualizar
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6">
+        <div className={cardBody}>
           {isLoading ? (
-            <div className="py-10 text-sm text-slate-500">
-              Carregando dados do runner...
-            </div>
+            <DetailSkeleton fields={8} />
           ) : isError || !runner || !overview ? (
-            <div className="py-10 text-sm text-red-600">
-              Não foi possível carregar os dados do runner.
-            </div>
+            <QueryError error={error} what="os dados do runner" onRetry={refetchAll} retrying={isFetching} />
           ) : (
             <div className="space-y-6">
-              <div className="flex flex-wrap gap-2">
-                <span
-                  className={`inline-flex min-w-[110px] items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${getStatusClass(
-                    getRunnerHealth(runner).noSignal ? "offline" : runner.status
-                  )}`}
-                >
-                  {getRunnerHealth(runner).noSignal
-                    ? "SEM SINAL"
-                    : formatStatus(runner.status)}
-                </span>
-
+              {/* Primeiro bloco: o que a pessoa veio ver. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <RunnerBadges runner={runner} />
-
-                <span className="inline-flex items-center text-xs">
+                <span className="text-xs">
                   <RunnerHeartbeatText runner={runner} />
                 </span>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {summaryCards.map((item) => {
-                  const Icon = item.icon;
-
-                  return (
-                    <div
-                      key={item.title}
-                      className="border border-slate-200 bg-slate-50 px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">
-                          {item.title}
-                        </span>
-                        <Icon className="h-4 w-4 text-slate-400" />
-                      </div>
-
-                      <div className="mt-3 text-2xl font-semibold text-slate-950">
-                        {item.value}
-                      </div>
-                    </div>
-                  );
-                })}
+                <MetricCard icon={Timer} label="Tasks em execução" value={String(overview.summary.running_tasks_count ?? 0)} />
+                <MetricCard icon={Server} label="Tasks em espera" value={String(overview.summary.waiting_tasks_count ?? 0)} />
+                <MetricCard icon={Bot} label="Bots vinculados" value={String(overview.summary.linked_bots_count ?? 0)} />
+                <MetricCard icon={Cpu} label="Utilização" value={`${overview.utilization.utilization_percent ?? 0}%`} />
               </div>
 
-              <Panel title="Indicadores rápidos das últimas tasks">
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Os gráficos abaixo usam apenas as últimas tasks retornadas pelo
-                  overview atual.
-                </div>
+              <Panel title="Rodando agora">
+                <TaskList tasks={overview.running_tasks} emptyText="Nenhuma task em execução neste runner." />
+              </Panel>
 
-                <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-3">
-                  <ChartCard
-                    title="Tasks por horário"
-                    subtitle="Baseado nas últimas tasks retornadas"
-                    actions={
-                      <select
-                        value={chartPeriod}
-                        disabled
-                        className="h-9 min-w-[140px] border border-slate-300 bg-white px-3 text-sm text-slate-500 outline-none"
+              <Panel title="Última execução">
+                <InfoGrid>
+                  <InfoItem label="Task">
+                    {overview.last_execution.task_id != null ? (
+                      <button
+                        type="button"
+                        className="font-medium text-blue-600 hover:underline"
+                        onClick={() => navigate(`/tasks/${overview.last_execution.task_id}`)}
                       >
-                        <option value="recent">Últimas tasks</option>
-                      </select>
-                    }
-                  >
-                    <div className="h-[320px]">
+                        #{overview.last_execution.task_id}
+                      </button>
+                    ) : (
+                      EMPTY
+                    )}
+                  </InfoItem>
+                  <InfoItem label="Automação">{overview.last_execution.automation_name || EMPTY}</InfoItem>
+                  <InfoItem label="Status">
+                    {isTaskStatus(overview.last_execution.status) ? <StatusBadge status={overview.last_execution.status} /> : EMPTY}
+                  </InfoItem>
+                  <InfoItem label="Duração">{formatDuration(overview.last_execution.execution_duration_seconds)}</InfoItem>
+                  <InfoItem label="Início">{formatDateTime(overview.last_execution.started_at)}</InfoItem>
+                  <InfoItem label="Fim">{formatDateTime(overview.last_execution.finished_at)}</InfoItem>
+                  <InfoItem label="Mensagem final" className="md:col-span-2">
+                    {overview.last_execution.final_message || EMPTY}
+                  </InfoItem>
+                </InfoGrid>
+              </Panel>
+
+              <Panel title="Indicadores das últimas tasks" subtitle="Calculados só com as tasks retornadas abaixo em “Últimas tasks”.">
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                  <ChartCard title="Tasks por horário" subtitle="Sucesso e erro por task">
+                    <div className="h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={tasksByTimeData}>
-                          <CartesianGrid vertical={false} />
-                          <XAxis dataKey="label" />
-                          <YAxis allowDecimals={false} />
+                          <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                           <Tooltip
-                            formatter={(value: unknown, name: unknown) => [
-                              toChartNumber(value),
-                              name === "sucesso"
-                                ? "Sucesso"
-                                : name === "erro"
-                                ? "Erro"
-                                : "Total",
-                            ]}
+                            formatter={(value: unknown, name: unknown) => [toChartNumber(value), SERIES_LABEL[String(name)] ?? String(name)]}
                             labelFormatter={(label, payload) => {
-                              const item = payload?.[0]?.payload;
-                              return item?.fullLabel || label;
+                              const item = payload?.[0]?.payload as { fullLabel?: string; taskId?: number } | undefined;
+                              return item ? `Task #${item.taskId} · ${item.fullLabel}` : String(label);
                             }}
                           />
-                          <Legend
-                            formatter={(value) =>
-                              value === "sucesso"
-                                ? "Sucesso"
-                                : value === "erro"
-                                ? "Erro"
-                                : "Total"
-                            }
-                          />
-                          <Bar dataKey="sucesso" name="sucesso" />
-                          <Bar dataKey="erro" name="erro" />
+                          <Legend formatter={(value) => SERIES_LABEL[String(value)] ?? String(value)} />
+                          <Bar dataKey="sucesso" name="sucesso" stackId="tasks" fill={SUCCESS_COLOR} radius={[2, 2, 0, 0]} />
+                          <Bar dataKey="erro" name="erro" stackId="tasks" fill={ERROR_COLOR} radius={[2, 2, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
                   </ChartCard>
 
-                  <ChartCard
-                    title="Média de tempo"
-                    subtitle="Fila e execução"
-                  >
-                    <div className="h-[320px]">
+                  <ChartCard title="Tempo médio" subtitle="Na fila e em execução">
+                    <div className="h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={averageTimesData}>
-                          <CartesianGrid vertical={false} />
-                          <XAxis dataKey="name" />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip
-                            formatter={(value: unknown) => [
-                              formatSeconds(toChartNumber(value)),
-                              "Tempo médio",
-                            ]}
-                          />
-                          <Bar dataKey="segundos" name="Tempo médio">
+                          <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(value: unknown) => [formatDuration(toChartNumber(value)), "Tempo médio"]} />
+                          <Bar dataKey="segundos" name="Tempo médio" radius={[2, 2, 0, 0]}>
                             {averageTimesData.map((entry) => (
-                              <Cell
-                                key={entry.name}
-                                fill={entry.name === "Fila" ? "#94a3b8" : "#2563eb"}
-                              />
+                              <Cell key={entry.name} fill={entry.name === "Fila" ? NEUTRAL_COLOR : BRAND_COLOR} />
                             ))}
                           </Bar>
                         </BarChart>
@@ -491,33 +362,19 @@ export function RunnerDetailPage() {
                     </div>
                   </ChartCard>
 
-                  <ChartCard
-                    title="Status das últimas tasks"
-                    subtitle="Sucesso x erro"
-                  >
-                    <div className="h-[320px]">
+                  <ChartCard title="Resultado das últimas tasks" subtitle="Sucesso, erro e outros">
+                    <div className="h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={statusSummaryData}>
-                          <CartesianGrid vertical={false} />
-                          <XAxis dataKey="name" />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip
-                            formatter={(value: unknown) => [
-                              toChartNumber(value),
-                              "Quantidade",
-                            ]}
-                          />
-                          <Bar dataKey="total" name="Quantidade">
+                          <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(value: unknown) => [toChartNumber(value), "Quantidade"]} />
+                          <Bar dataKey="total" name="Quantidade" radius={[2, 2, 0, 0]}>
                             {statusSummaryData.map((entry) => (
                               <Cell
                                 key={entry.name}
-                                fill={
-                                  entry.name === "Sucesso"
-                                    ? "#16a34a"
-                                    : entry.name === "Erro"
-                                    ? "#dc2626"
-                                    : "#94a3b8"
-                                }
+                                fill={entry.name === "Sucesso" ? SUCCESS_COLOR : entry.name === "Erro" ? ERROR_COLOR : NEUTRAL_COLOR}
                               />
                             ))}
                           </Bar>
@@ -529,174 +386,88 @@ export function RunnerDetailPage() {
               </Panel>
 
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <Panel title="Dados gerais">
-                  <DataGrid
-                    items={[
-                      ["Nome", runner.name],
-                      ["Label", runner.label || "---"],
-                      ["UUID", runner.uuid],
-                      ["Host", runner.host_name || "---"],
-                      ["IP", runner.ip || "---"],
-                      ["Último heartbeat", formatDateTime(runner.last_heartbeat)],
-                      ["Criado em", formatDateTime(runner.created_at)],
-                      ["Atualizado em", formatDateTime(runner.updated_at)],
-                    ]}
-                  />
+                <Panel title="Fila e execução">
+                  <InfoGrid>
+                    <InfoItem label="Tasks executadas">{String(overview.summary.executed_total_count ?? 0)}</InfoItem>
+                    <InfoItem label="Com sucesso">{String(overview.summary.success_total_count ?? 0)}</InfoItem>
+                    <InfoItem label="Com erro">{String(overview.summary.error_total_count ?? 0)}</InfoItem>
+                    <InfoItem label="Tempo executando">{formatDuration(overview.utilization.execution_seconds)}</InfoItem>
+                    <InfoItem label="Mais antiga na fila">
+                      {overview.queue.oldest_waiting_task_id != null ? `#${overview.queue.oldest_waiting_task_id}` : EMPTY}
+                    </InfoItem>
+                    <InfoItem label="Esperando há">{formatDuration(overview.queue.oldest_waiting_seconds)}</InfoItem>
+                  </InfoGrid>
                 </Panel>
 
+                <Panel title="Bots vinculados">
+                  {overview.linked_bots.length === 0 ? (
+                    <EmptyState compact icon={Bot} title="Nenhum bot vinculado" />
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {overview.linked_bots.map((bot) => (
+                        <li key={bot.bot_id} className="flex items-center justify-between py-2">
+                          <button
+                            type="button"
+                            className="text-sm font-medium text-slate-900 hover:text-blue-700 hover:underline"
+                            onClick={() => navigate(`/bots/${bot.bot_id}`)}
+                          >
+                            {bot.bot_name || `Bot ${bot.bot_id}`}
+                          </button>
+                          <span className="text-xs text-slate-500">ID {bot.bot_id}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+              </div>
+
+              <Panel title="Últimas tasks">
+                <TaskList tasks={overview.recent_tasks} emptyText="Nenhuma task recente neste runner." />
+              </Panel>
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Panel title="Ambiente da máquina">
-                  <DataGrid
-                    items={[
-                      ["Sistema operacional", runner.os_name || "---"],
-                      ["Versão do SO", runner.os_version || "---"],
-                      ["Arquitetura CPU", runner.cpu_arch || "---"],
-                      ["Memória total", formatBytes(runner.memory_total)],
-                      ["Acesso remoto", runner.access_remote ? "Sim" : "Não"],
-                    ]}
-                  />
+                  <InfoGrid>
+                    <InfoItem label="Host">{runner.host_name || EMPTY}</InfoItem>
+                    <InfoItem label="IP">{runner.ip || EMPTY}</InfoItem>
+                    <InfoItem label="Sistema operacional">{runner.os_name || EMPTY}</InfoItem>
+                    <InfoItem label="Versão do SO">{runner.os_version || EMPTY}</InfoItem>
+                    <InfoItem label="Arquitetura">{runner.cpu_arch || EMPTY}</InfoItem>
+                    <InfoItem label="Memória total">{formatBytes(runner.memory_total)}</InfoItem>
+                    <InfoItem label="Acesso remoto">{runner.access_remote ? "Sim" : "Não"}</InfoItem>
+                  </InfoGrid>
                 </Panel>
 
                 <Panel title="Configuração do runner">
-                  <DataGrid
-                    items={[
-                      [
-                        "Máximo de concorrência",
-                        String(runner.config?.max_concurrency ?? "---"),
-                      ],
-                      [
-                        "Polling interval",
-                        runner.config?.polling_interval != null
-                          ? `${runner.config.polling_interval}s`
-                          : "---",
-                      ],
-                      [
-                        "Auto update bots",
-                        runner.config?.auto_update_bots ? "Sim" : "Não",
-                      ],
-                      [
-                        "Instalar todos no registro",
-                        runner.config?.install_all_bots_on_register
-                          ? "Sim"
-                          : "Não",
-                      ],
-                      [
-                        "Modo manutenção",
-                        runner.config?.maintenance_mode ? "Sim" : "Não",
-                      ],
-                    ]}
-                  />
-                </Panel>
-
-                <Panel title="Fila e execução">
-                  <DataGrid
-                    items={[
-                      [
-                        "Tasks executadas",
-                        String(overview.summary.executed_total_count ?? 0),
-                      ],
-                      [
-                        "Tasks com sucesso",
-                        String(overview.summary.success_total_count ?? 0),
-                      ],
-                      [
-                        "Tasks com erro",
-                        String(overview.summary.error_total_count ?? 0),
-                      ],
-                      [
-                        "Tempo executando",
-                        formatSeconds(overview.utilization.execution_seconds),
-                      ],
-                      [
-                        "Mais antiga na fila",
-                        overview.queue.oldest_waiting_task_id != null
-                          ? `#${overview.queue.oldest_waiting_task_id}`
-                          : "---",
-                      ],
-                      [
-                        "Tempo da mais antiga na fila",
-                        formatSeconds(overview.queue.oldest_waiting_seconds),
-                      ],
-                    ]}
-                  />
+                  <InfoGrid>
+                    <InfoItem label="Concorrência máxima">{String(runner.config?.max_concurrency ?? EMPTY)}</InfoItem>
+                    <InfoItem label="Intervalo de polling">
+                      {runner.config?.polling_interval != null ? `${runner.config.polling_interval}s` : EMPTY}
+                    </InfoItem>
+                    <InfoItem label="Atualizar bots sozinho">{runner.config?.auto_update_bots ? "Sim" : "Não"}</InfoItem>
+                    <InfoItem label="Instalar todos ao registrar">{runner.config?.install_all_bots_on_register ? "Sim" : "Não"}</InfoItem>
+                    <InfoItem label="Modo manutenção">{runner.config?.maintenance_mode ? "Sim" : "Não"}</InfoItem>
+                  </InfoGrid>
                 </Panel>
               </div>
 
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <Panel title="Bots vinculados">
-                  {overview.linked_bots.length === 0 ? (
-                    <EmptyText texto="Nenhum bot vinculado." />
-                  ) : (
-                    <div className="space-y-2">
-                      {overview.linked_bots.map((bot) => (
-                        <div
-                          key={bot.bot_id}
-                          className="flex items-center justify-between border border-slate-200 px-3 py-2"
-                        >
-                          <span className="text-sm text-slate-900">
-                            {bot.bot_name || `Bot ${bot.bot_id}`}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            ID {bot.bot_id}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Panel>
-
-                <Panel title="Última execução">
-                  <DataGrid
-                    items={[
-                      [
-                        "Task",
-                        overview.last_execution.task_id != null
-                          ? `#${overview.last_execution.task_id}`
-                          : "---",
-                      ],
-                      [
-                        "Automação",
-                        overview.last_execution.automation_name || "---",
-                      ],
-                      [
-                        "Status",
-                        formatStatus(overview.last_execution.status || undefined),
-                      ],
-                      [
-                        "Início",
-                        formatDateTime(overview.last_execution.started_at),
-                      ],
-                      [
-                        "Fim",
-                        formatDateTime(overview.last_execution.finished_at),
-                      ],
-                      [
-                        "Duração",
-                        formatSeconds(
-                          overview.last_execution.execution_duration_seconds
-                        ),
-                      ],
-                      [
-                        "Mensagem final",
-                        overview.last_execution.final_message || "---",
-                      ],
-                    ]}
-                  />
-                </Panel>
-              </div>
-
-              <Panel title="Tasks em execução">
-                <TaskList
-                  tasks={overview.running_tasks}
-                  emptyText="Nenhuma task em execução."
-                />
-              </Panel>
-
-              <Panel title="Últimas tasks">
-                <TaskList
-                  tasks={overview.recent_tasks}
-                  emptyText="Nenhuma task encontrada."
-                />
-              </Panel>
+              <details className={cn(card, "group")}>
+                <summary className="cursor-pointer select-none px-5 py-3 text-sm font-semibold uppercase tracking-wide text-slate-700 hover:bg-slate-50">
+                  Detalhes técnicos
+                </summary>
+                <div className="border-t border-slate-200 px-5 py-5">
+                  <InfoGrid columns={3}>
+                    <InfoItem label="ID">{String(runner.id)}</InfoItem>
+                    <InfoItem label="UUID">
+                      <span className="break-all font-mono text-xs">{runner.uuid}</span>
+                    </InfoItem>
+                    <InfoItem label="Label">{runner.label || EMPTY}</InfoItem>
+                    <InfoItem label="Último heartbeat">{formatDateTime(runner.last_heartbeat)}</InfoItem>
+                    <InfoItem label="Criado em">{formatDateTime(runner.created_at)}</InfoItem>
+                    <InfoItem label="Atualizado em">{formatDateTime(runner.updated_at)}</InfoItem>
+                  </InfoGrid>
+                </div>
+              </details>
             </div>
           )}
         </div>
@@ -705,146 +476,97 @@ export function RunnerDetailPage() {
   );
 }
 
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function MetricCard({ icon: Icon, label, value }: { icon: typeof Timer; label: string; value: string }) {
   return (
-    <section className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
+    <div className={cn(card, "px-4 py-4")}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <Icon className="h-4 w-4 text-slate-400" />
       </div>
-      <div className="p-4">{children}</div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+  return (
+    <section className={card}>
+      <div className={cardHeader}>
+        <div>
+          <h2 className={cardTitle}>{title}</h2>
+          {subtitle ? <p className="mt-0.5 text-xs normal-case tracking-normal text-slate-500">{subtitle}</p> : null}
+        </div>
+      </div>
+      <div className="p-5">{children}</div>
     </section>
   );
 }
 
-function ChartCard({
-  title,
-  subtitle,
-  children,
-  actions,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
+function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className="border border-slate-200 bg-white">
+    <div className="rounded-xl border border-slate-200">
       <div className="border-b border-slate-200 px-4 py-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
-            {subtitle ? (
-              <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
-            ) : null}
-          </div>
-          {actions}
-        </div>
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+        {subtitle ? <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p> : null}
       </div>
       <div className="p-4">{children}</div>
     </div>
   );
 }
 
-function DataGrid({
-  items,
-}: {
-  items: [string, string][];
-}) {
+function InfoGrid({ children, columns = 2 }: { children: ReactNode; columns?: 2 | 3 }) {
+  return <dl className={cn("grid grid-cols-1 gap-x-6 gap-y-4", columns === 3 ? "md:grid-cols-3" : "md:grid-cols-2")}>{children}</dl>;
+}
+
+function InfoItem({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className="space-y-2">
-      {items.map(([label, value]) => (
-        <div
-          key={label}
-          className="grid grid-cols-1 gap-1 border border-slate-200 px-3 py-2 md:grid-cols-[220px_1fr]"
-        >
-          <div className="text-sm text-slate-500">{label}</div>
-          <div className="break-all text-sm font-medium text-slate-900">
-            {value}
-          </div>
-        </div>
-      ))}
+    <div className={className}>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium text-slate-900">{children}</dd>
     </div>
   );
 }
 
-function TaskList({
-  tasks,
-  emptyText,
-}: {
-  tasks: RunnerOverviewTaskItem[];
-  emptyText: string;
-}) {
+function TaskList({ tasks, emptyText }: { tasks: RunnerOverviewTaskItem[]; emptyText: string }) {
+  const navigate = useNavigate();
+
   if (tasks.length === 0) {
-    return <EmptyText texto={emptyText} />;
+    return <EmptyState compact title={emptyText} />;
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full border-collapse">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left">
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Task
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Automação
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Status
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Criada em
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Início
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Fim
-            </th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Duração
-            </th>
+    <div className={table.wrap}>
+      <table className={table.table}>
+        <thead className={table.thead}>
+          <tr>
+            <th className={table.th}>Task</th>
+            <th className={table.th}>Automação</th>
+            <th className={table.th}>Status</th>
+            <th className={table.th}>Criada em</th>
+            <th className={table.th}>Início</th>
+            <th className={table.th}>Fim</th>
+            <th className={table.th}>Duração</th>
           </tr>
         </thead>
 
         <tbody>
           {tasks.map((task) => (
-            <tr key={task.task_id} className="border-b border-slate-200">
-              <td className="px-4 py-3 text-sm text-slate-900">
-                #{task.task_id}
+            <tr key={task.task_id} className={table.trClickable} onClick={() => navigate(`/tasks/${task.task_id}`)}>
+              <td className={table.tdStrong}>#{task.task_id}</td>
+              <td className={table.td}>
+                <span className={table.truncate} title={task.automation_name ?? undefined}>
+                  {task.automation_name || EMPTY}
+                </span>
               </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {task.automation_name || "---"}
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {formatStatus(task.status)}
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {formatDateTime(task.created_at)}
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {formatDateTime(task.started_at)}
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {formatDateTime(task.finished_at)}
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-700">
-                {formatSeconds(task.execution_duration_seconds)}
-              </td>
+              <td className={table.td}>{isTaskStatus(task.status) ? <StatusBadge status={task.status} /> : task.status}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.created_at)}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.started_at)}</td>
+              <td className={table.tdMuted}>{formatDateTime(task.finished_at)}</td>
+              <td className={table.td}>{formatDuration(task.execution_duration_seconds)}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-}
-
-function EmptyText({ texto }: { texto: string }) {
-  return <div className="py-4 text-sm text-slate-500">{texto}</div>;
 }

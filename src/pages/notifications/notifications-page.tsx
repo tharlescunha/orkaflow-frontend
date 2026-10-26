@@ -1,8 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Send } from "lucide-react";
-import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
+
+import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
+import { DetailSkeleton } from "@/components/common/skeleton";
+import { withApiDetail } from "@/lib/api-error";
 import { toast } from "@/store/toast-store";
+import { badge, btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label, select, textarea, tone } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import {
   getNotificationChannel,
   listNotificationVariables,
@@ -14,21 +20,10 @@ import {
   type UpdateNotificationChannelPayload,
 } from "@/services/api/notifications";
 import { HeadersEditor } from "./headers-editor";
-import {
-  headersToRows,
-  rowsToHeaders,
-  validateHeaderRows,
-  type HeaderRow,
-} from "./header-utils";
+import { headersToRows, rowsToHeaders, validateHeaderRows, type HeaderRow } from "./header-utils";
 import { VariableChips } from "./variable-chips";
 import { StepsEditor } from "./steps-editor";
-import {
-  stepsFromApi,
-  stepsToApi,
-  stepVariableNames,
-  validateSteps,
-  type StepForm,
-} from "./step-utils";
+import { stepsFromApi, stepsToApi, stepVariableNames, validateSteps, type StepForm } from "./step-utils";
 import { TestResult } from "./test-result";
 import { NotificationLogsCard } from "./notification-logs-card";
 
@@ -46,9 +41,6 @@ type FormState = {
   timeout_seconds: string;
   panel_base_url: string;
 };
-
-const inputClass =
-  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
 
 function toForm(c: NotificationChannel): FormState {
   return {
@@ -89,24 +81,63 @@ function validate(f: FormState): string | null {
   const stepsError = validateSteps(f.pre_steps);
   if (stepsError) return stepsError;
   const threshold = Number(f.failure_threshold);
-  if (!Number.isInteger(threshold) || threshold < 1)
-    return "Falhas seguidas para notificar deve ser um inteiro maior ou igual a 1.";
+  if (!Number.isInteger(threshold) || threshold < 1) return "Falhas seguidas para notificar deve ser um inteiro maior ou igual a 1.";
   const timeout = Number(f.timeout_seconds);
   if (!Number.isInteger(timeout) || timeout < 1) return "O timeout deve ser um inteiro maior ou igual a 1.";
   return null;
 }
 
 export function NotificationsPage() {
-  const queryClient = useQueryClient();
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const [form, setForm] = useState<FormState | null>(null);
-  const [saved, setSaved] = useState("");
-  const [testResult, setTestResult] = useState<NotificationTestResult | null>(null);
-
   const channelQuery = useQuery({
     queryKey: ["notification-channel"],
     queryFn: getNotificationChannel,
   });
+
+  return (
+    <div className="space-y-5">
+      <section className={card}>
+        <PageHeader
+          title="Notificações"
+          description="Quando um agendamento falha várias vezes seguidas, o sistema envia uma requisição HTTP configurável (ex.: abrir chamado no desk) e pode pausar o agendamento."
+          meta={
+            channelQuery.data ? (
+              <span className={cn(badge, channelQuery.data.enabled ? tone.success : tone.neutral)}>
+                {channelQuery.data.enabled ? "Ativadas" : "Desativadas"}
+              </span>
+            ) : null
+          }
+        />
+
+        {channelQuery.isLoading ? (
+          <div className={cardBody}>
+            <DetailSkeleton fields={6} />
+          </div>
+        ) : channelQuery.isError || !channelQuery.data ? (
+          <div className={cardBody}>
+            <QueryError
+              error={channelQuery.error}
+              what="a configuração de notificações"
+              onRetry={() => channelQuery.refetch()}
+              retrying={channelQuery.isFetching}
+            />
+          </div>
+        ) : (
+          // O formulário só nasce com os dados em mãos: nada de re-hidratar por efeito depois.
+          <NotificationsForm key={channelQuery.data.id} channel={channelQuery.data} />
+        )}
+      </section>
+
+      <NotificationLogsCard />
+    </div>
+  );
+}
+
+function NotificationsForm({ channel }: { channel: NotificationChannel }) {
+  const queryClient = useQueryClient();
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [form, setForm] = useState<FormState>(() => toForm(channel));
+  const [saved, setSaved] = useState(() => snapshot(toForm(channel)));
+  const [testResult, setTestResult] = useState<NotificationTestResult | null>(null);
 
   const variablesQuery = useQuery({
     queryKey: ["notification-variables"],
@@ -114,24 +145,17 @@ export function NotificationsPage() {
     staleTime: 5 * 60_000,
   });
 
-  function applyChannel(c: NotificationChannel) {
-    const next = toForm(c);
-    setForm(next);
-    setSaved(snapshot(next));
-  }
-
-  // Carga inicial do formulário (ajuste de estado durante a renderização).
-  if (channelQuery.data && form === null) applyChannel(channelQuery.data);
-
-  const dirty = form !== null && snapshot(form) !== saved;
-  const stepVariables = useMemo(() => (form ? stepVariableNames(form.pre_steps) : []), [form]);
-  const validationError = useMemo(() => (form ? validate(form) : null), [form]);
+  const dirty = snapshot(form) !== saved;
+  const stepVariables = useMemo(() => stepVariableNames(form.pre_steps), [form.pre_steps]);
+  const validationError = useMemo(() => validate(form), [form]);
 
   const saveMutation = useMutation({
     mutationFn: (payload: UpdateNotificationChannelPayload) => updateNotificationChannel(payload),
-    onSuccess: (channel) => {
-      queryClient.setQueryData(["notification-channel"], channel);
-      applyChannel(channel);
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["notification-channel"], updated);
+      const next = toForm(updated);
+      setForm(next);
+      setSaved(snapshot(next));
       toast.success("Configuração de notificações salva.");
     },
     onError: (error) => toast.error(withApiDetail("Não foi possível salvar.", error)),
@@ -149,12 +173,11 @@ export function NotificationsPage() {
   });
 
   function set<K extends keyof FormState>(field: K, value: FormState[K]) {
-    setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+    setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function insertVariable(token: string) {
     const el = bodyRef.current;
-    if (!form) return;
     const current = form.body_template;
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? current.length;
@@ -169,12 +192,7 @@ export function NotificationsPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form) return;
-    const error = validate(form);
-    if (error) {
-      toast.error(error);
-      return;
-    }
+    if (validationError) return;
     saveMutation.mutate({
       enabled: form.enabled,
       name: form.name.trim(),
@@ -191,242 +209,239 @@ export function NotificationsPage() {
     });
   }
 
-  return (
-    <div className="space-y-5">
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <h1 className="text-2xl font-semibold text-slate-950">Notificações</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Quando um agendamento falha várias vezes seguidas, o sistema envia uma requisição HTTP
-            configurável (ex.: abrir chamado no desk) e pode pausar o agendamento.
-          </p>
-        </div>
+  function handleKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      if (dirty && !validationError) e.currentTarget.requestSubmit();
+    }
+  }
 
-        {channelQuery.isLoading ? (
-          <div className="px-6 py-10 text-sm text-slate-500">Carregando configuração...</div>
-        ) : channelQuery.isError || !form ? (
-          <div className="px-6 py-10 text-sm text-red-600">
-            {getApiErrorMessage(channelQuery.error, "Não foi possível carregar a configuração.")}
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => channelQuery.refetch()}
-                className="h-9 border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Tentar novamente
-              </button>
+  return (
+    <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+      <div className="space-y-6 px-5 py-5">
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Configuração</h2>
+          </div>
+
+          <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
+            <CheckboxField
+              className="md:col-span-2"
+              checked={form.enabled}
+              onChange={(value) => set("enabled", value)}
+              label="Ativar notificações"
+              description="Sem isso nada é enviado, mesmo com a configuração preenchida."
+            />
+
+            <div>
+              <label htmlFor="notif-name" className={label}>
+                Nome
+              </label>
+              <input id="notif-name" className={input} value={form.name} onChange={(e) => set("name", e.target.value)} />
+            </div>
+
+            <div>
+              <label htmlFor="notif-method" className={label}>
+                Método
+              </label>
+              <select id="notif-method" className={select} value={form.method} onChange={(e) => set("method", e.target.value as HttpMethod)}>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label htmlFor="notif-url" className={label}>
+                URL de destino
+              </label>
+              <input
+                id="notif-url"
+                className={input}
+                value={form.url}
+                onChange={(e) => set("url", e.target.value)}
+                placeholder="https://desk.exemplo.com/api/chamados"
+                inputMode="url"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <span className={label}>Cabeçalhos</span>
+              <HeadersEditor rows={form.headers} onChange={(rows) => set("headers", rows)} />
             </div>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-6 px-6 py-6">
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Configuração
-                  </h2>
-                </div>
+        </section>
 
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <label className="md:col-span-2 inline-flex items-center gap-3 text-sm font-medium text-slate-800">
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={form.enabled}
-                      onChange={(e) => set("enabled", e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300"
-                    />
-                    Ativar notificações
-                  </label>
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Etapas antes do envio (ex.: login)</h2>
+          </div>
+          <div className="px-5 py-5">
+            <StepsEditor steps={form.pre_steps} onChange={(steps) => set("pre_steps", steps)} />
+          </div>
+        </section>
 
-                  <Field label="Nome">
-                    <input className={inputClass} value={form.name} onChange={(e) => set("name", e.target.value)} />
-                  </Field>
+        <section className={card}>
+          <div className={cardHeader}>
+            <h2 className={cardTitle}>Corpo e regras</h2>
+          </div>
 
-                  <Field label="Método">
-                    <select
-                      className={inputClass}
-                      value={form.method}
-                      onChange={(e) => set("method", e.target.value as HttpMethod)}
-                    >
-                      <option value="POST">POST</option>
-                      <option value="PUT">PUT</option>
-                      <option value="PATCH">PATCH</option>
-                    </select>
-                  </Field>
-
-                  <div className="md:col-span-2">
-                    <Field label="URL de destino">
-                      <input
-                        className={inputClass}
-                        value={form.url}
-                        onChange={(e) => set("url", e.target.value)}
-                        placeholder="https://desk.exemplo.com/api/chamados"
-                        inputMode="url"
-                      />
-                    </Field>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <span className="mb-2 block text-sm font-medium text-slate-700">Cabeçalhos</span>
-                    <HeadersEditor rows={form.headers} onChange={(rows) => set("headers", rows)} />
-                  </div>
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Etapas antes do envio (ex.: login)
-                  </h2>
-                </div>
-                <div className="px-5 py-5">
-                  <StepsEditor steps={form.pre_steps} onChange={(steps) => set("pre_steps", steps)} />
-                </div>
-              </section>
-
-              <section className="border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                    Corpo e regras
-                  </h2>
-                </div>
-
-                <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
-                  <div className="md:col-span-2">
-                    <Field label="Corpo da requisição">
-                      <textarea
-                        ref={bodyRef}
-                        value={form.body_template}
-                        onChange={(e) => set("body_template", e.target.value)}
-                        spellCheck={false}
-                        className="min-h-[260px] w-full border border-slate-300 bg-white px-3 py-3 font-mono text-sm text-slate-900 outline-none transition focus:border-slate-900"
-                        placeholder={'{\n  "titulo": "Falha em {{automacao}}",\n  "descricao": "{{erro}}"\n}'}
-                      />
-                    </Field>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Use {"{{erro}}"} e {"{{automacao}}"} no corpo. Em JSON, os valores são escapados
-                      automaticamente: escreva "descricao": "{"{{erro}}"}".
-                    </p>
-                    <div className="mt-3">
-                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Variáveis disponíveis (clique para inserir)
-                      </span>
-                      <VariableChips
-                        variables={variablesQuery.data ?? []}
-                        stepVariables={stepVariables}
-                        loading={variablesQuery.isLoading}
-                        error={variablesQuery.isError}
-                        onInsert={insertVariable}
-                      />
-                    </div>
-                  </div>
-
-                  <Field label="Falhas seguidas para notificar">
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={form.failure_threshold}
-                      onChange={(e) => set("failure_threshold", e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Timeout (segundos)">
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={form.timeout_seconds}
-                      onChange={(e) => set("timeout_seconds", e.target.value)}
-                    />
-                  </Field>
-
-                  <div className="md:col-span-2">
-                    <Field label="URL base do painel (opcional, usada em {{link_task}})">
-                      <input
-                        className={inputClass}
-                        value={form.panel_base_url}
-                        onChange={(e) => set("panel_base_url", e.target.value)}
-                        placeholder="https://orkaflow.exemplo.com"
-                        inputMode="url"
-                      />
-                    </Field>
-                  </div>
-
-                  <div className="md:col-span-2 grid gap-3">
-                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={form.pause_schedule}
-                        onChange={(e) => set("pause_schedule", e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      Pausar o agendamento depois de notificar
-                    </label>
-                    <label className="inline-flex items-center gap-3 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={form.deactivate_automation}
-                        onChange={(e) => set("deactivate_automation", e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      Desativar também a automação
-                    </label>
-                  </div>
-                </div>
-              </section>
-
-              {testResult && <TestResult result={testResult} />}
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-slate-500">
-                {dirty
-                  ? "Há alterações não salvas. O teste usa a configuração SALVA; salve antes de testar."
-                  : "O teste usa a configuração salva, com dados de exemplo, e não pausa nada."}
+          <div className="grid gap-5 px-5 py-5 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label htmlFor="notif-body" className={label}>
+                Corpo da requisição
+              </label>
+              <textarea
+                id="notif-body"
+                ref={bodyRef}
+                value={form.body_template}
+                onChange={(e) => set("body_template", e.target.value)}
+                spellCheck={false}
+                className={cn(textarea, "min-h-[260px] font-mono")}
+                placeholder={'{\n  "titulo": "Falha em {{automacao}}",\n  "descricao": "{{erro}}"\n}'}
+              />
+              <p className={hint}>
+                Use {"{{erro}}"} e {"{{automacao}}"} no corpo. Em JSON, os valores são escapados automaticamente: escreva "descricao": "{"{{erro}}"}".
               </p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => testMutation.mutate()}
-                  disabled={dirty || testMutation.isPending}
-                  title={dirty ? "Salve as alterações para testar" : undefined}
-                  className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Send className="h-4 w-4" />
-                  {testMutation.isPending ? "Enviando..." : "Enviar teste"}
-                </button>
-                <button
-                  type="submit"
-                  disabled={saveMutation.isPending || !dirty || Boolean(validationError)}
-                  title={validationError ?? undefined}
-                  className="inline-flex h-10 items-center gap-2 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-                >
-                  <Save className="h-4 w-4" />
-                  {saveMutation.isPending ? "Salvando..." : "Salvar"}
-                </button>
+              <div className="mt-3">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">Variáveis disponíveis (clique para inserir)</span>
+                <VariableChips
+                  variables={variablesQuery.data ?? []}
+                  stepVariables={stepVariables}
+                  loading={variablesQuery.isLoading}
+                  error={variablesQuery.isError}
+                  onInsert={insertVariable}
+                />
               </div>
             </div>
-            {validationError && dirty && (
-              <p className="px-6 pb-4 text-xs text-red-600">{validationError}</p>
-            )}
-          </form>
-        )}
-      </section>
 
-      <NotificationLogsCard />
-    </div>
+            <div>
+              <label htmlFor="notif-threshold" className={label}>
+                Falhas seguidas para notificar
+              </label>
+              <input
+                id="notif-threshold"
+                className={input}
+                type="number"
+                min={1}
+                step={1}
+                value={form.failure_threshold}
+                onChange={(e) => set("failure_threshold", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="notif-timeout" className={label}>
+                Timeout (segundos)
+              </label>
+              <input
+                id="notif-timeout"
+                className={input}
+                type="number"
+                min={1}
+                step={1}
+                value={form.timeout_seconds}
+                onChange={(e) => set("timeout_seconds", e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label htmlFor="notif-panel" className={label}>
+                URL base do painel (opcional, usada em {"{{link_task}}"})
+              </label>
+              <input
+                id="notif-panel"
+                className={input}
+                value={form.panel_base_url}
+                onChange={(e) => set("panel_base_url", e.target.value)}
+                placeholder="https://orkaflow.exemplo.com"
+                inputMode="url"
+              />
+            </div>
+
+            <div className="grid gap-3 md:col-span-2">
+              <CheckboxField
+                checked={form.pause_schedule}
+                onChange={(value) => set("pause_schedule", value)}
+                label="Pausar o agendamento depois de notificar"
+              />
+              <CheckboxField
+                checked={form.deactivate_automation}
+                onChange={(value) => set("deactivate_automation", value)}
+                label="Desativar também a automação"
+              />
+            </div>
+          </div>
+        </section>
+
+        {testResult && <TestResult result={testResult} />}
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-xs text-slate-500">
+          <p>
+            {dirty
+              ? "Há alterações não salvas. O teste usa a configuração salva; salve antes de testar."
+              : "O teste usa a configuração salva, com dados de exemplo, e não pausa nada."}
+          </p>
+          {validationError && dirty && <p className={fieldError}>{validationError}</p>}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => testMutation.mutate()}
+            disabled={dirty || testMutation.isPending}
+            title={dirty ? "Salve as alterações para testar" : undefined}
+            className={btn.secondary}
+          >
+            <Send className="h-4 w-4" />
+            {testMutation.isPending ? "Enviando..." : "Enviar teste"}
+          </button>
+          <button
+            type="submit"
+            disabled={saveMutation.isPending || !dirty || Boolean(validationError)}
+            title={validationError ?? "Ctrl+S"}
+            className={btn.primary}
+          >
+            <Save className="h-4 w-4" />
+            {saveMutation.isPending ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </form>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function CheckboxField({
+  checked,
+  onChange,
+  label: text,
+  description,
+  className,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  description?: string;
+  className?: string;
+}) {
   return (
-    <label className="block text-slate-900">
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
-      {children}
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50",
+        className
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+      />
+      <span>
+        <span className="block font-medium text-slate-900">{text}</span>
+        {description ? <span className="block text-xs text-slate-500">{description}</span> : null}
+      </span>
     </label>
   );
 }
