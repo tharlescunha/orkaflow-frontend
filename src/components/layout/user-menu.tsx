@@ -1,10 +1,14 @@
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/auth-store";
+import { logoutRequest } from "@/services/api/auth";
+import { focusRing } from "@/lib/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -18,6 +22,8 @@ export function UserMenu() {
   }
 
   function handleLogout() {
+    // Avisa o servidor (sem esperar) e limpa a sessão local.
+    logoutRequest().catch(() => undefined);
     logout();
     navigate("/login");
   }
@@ -33,39 +39,39 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
+        <button
+          type="button"
+          className={`flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 transition hover:bg-slate-50 ${focusRing}`}
+          aria-label="Menu do usuário"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
             {initials}
           </div>
 
           <div className="hidden text-left sm:block">
-            <p className="text-sm font-semibold text-slate-900">
-              {user?.name || "Usuário"}
-            </p>
-            <p className="text-xs text-slate-500">
-              {user?.email || "usuario@orkaflow.local"}
-            </p>
+            <p className="text-sm font-semibold leading-tight text-slate-900">{user?.name || "Usuário"}</p>
+            <p className="text-xs text-slate-500">{user?.email || ""}</p>
           </div>
 
           <ChevronDown className="h-4 w-4 text-slate-500" />
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent
-        align="end"
-        className="w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
-      >
+      <DropdownMenuContent align="end" className="w-56 rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl">
+        <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-slate-500">
+          {user?.login ? `@${user.login}` : "Conta"}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="my-1 bg-slate-100" />
         <DropdownMenuItem
           onClick={handleProfile}
-          className="cursor-pointer rounded-lg text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:text-slate-900"
+          className="cursor-pointer rounded-md px-2 py-2 text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:text-slate-900"
         >
           <User className="mr-2 h-4 w-4" />
-          Perfil
+          Meu perfil
         </DropdownMenuItem>
-
         <DropdownMenuItem
           onClick={handleLogout}
-          className="cursor-pointer rounded-lg text-red-600 hover:bg-red-50 focus:bg-red-50 focus:text-red-700"
+          className="cursor-pointer rounded-md px-2 py-2 text-red-600 hover:bg-red-50 focus:bg-red-50 focus:text-red-700"
         >
           <LogOut className="mr-2 h-4 w-4" />
           Sair

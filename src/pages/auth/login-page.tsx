@@ -1,9 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { LockKeyhole, Mail, Orbit } from "lucide-react";
-import { useAuthStore } from "../../store/auth-store";
-import { loginRequest, meRequest } from "@/services/api/auth";
+import { Activity, CalendarClock, Eye, EyeOff, Loader2, Server } from "lucide-react";
+
 import { getApiErrorMessage } from "@/lib/api-error";
+import { btn, input, label } from "@/lib/ui";
+import { loginRequest, meRequest } from "@/services/api/auth";
+import { useAuthStore } from "../../store/auth-store";
+
+const HIGHLIGHTS = [
+  { icon: Activity, text: "Saúde de cada automação e o erro de cada execução num lugar só." },
+  { icon: Server, text: "Máquinas, filas e logs ao vivo, sem precisar abrir o servidor." },
+  { icon: CalendarClock, text: "Agendamentos, versões dos robôs e execução manual com um clique." },
+];
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -12,237 +20,125 @@ export function LoginPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setError(null);
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const login = formData.get("login") as string;
-    const password = formData.get("password") as string;
+    const login = String(formData.get("login") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
 
     try {
       const tokens = await loginRequest(login, password);
-
-      setTokens({
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-      });
-
+      setTokens({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
       const user = await meRequest();
-
-      setAuth({
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        user,
-      });
-
-      navigate("/dashboard");
-      } catch (err) {
-        setError(getApiErrorMessage(err, "Erro ao realizar login"));
-      } finally {
-        setLoading(false);
-      }
+      setAuth({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, user });
+      navigate("/");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Não foi possível entrar. Confira o login e a senha."));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="min-h-screen w-full overflow-hidden bg-[#040b22]">
-      <div className="grid min-h-screen w-full lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="relative hidden min-h-screen overflow-hidden lg:flex">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.18),transparent_25%),radial-gradient(circle_at_center,rgba(29,78,216,0.10),transparent_35%),linear-gradient(180deg,#050b1f_0%,#071436_100%)]" />
-          <div className="absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(59,130,246,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.06)_1px,transparent_1px)] [background-size:44px_44px]" />
-
-          <div className="relative z-10 flex w-full flex-col justify-between px-14 py-12 xl:px-20 xl:py-14">
-            <div className="inline-flex w-fit items-center gap-3 rounded-full border border-cyan-400/20 bg-white/5 px-5 py-3 backdrop-blur-md">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-400/10 ring-1 ring-cyan-300/30">
-                <Orbit className="h-5 w-5 text-cyan-300" />
+    <div className="min-h-screen w-full bg-[#040b22]">
+      <div className="grid min-h-screen w-full lg:grid-cols-[1.05fr_0.95fr]">
+        {/* Lado esquerdo: só o essencial sobre o sistema. */}
+        <section className="relative hidden overflow-hidden lg:flex">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.22),transparent_30%),linear-gradient(180deg,#050b1f_0%,#071436_100%)]" />
+          <div className="relative z-10 flex w-full flex-col justify-between px-14 py-12 xl:px-20">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                <img src="/favicon.svg" alt="" className="h-6 w-6" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-white">OrkaFlow</p>
-                <p className="text-xs text-slate-300">
-                  Automation Orchestration Platform
-                </p>
+                <p className="text-xs text-slate-400">Orquestrador de robôs da ALZ Grãos</p>
               </div>
             </div>
 
-            <div className="relative mx-auto flex h-[420px] w-full max-w-[760px] items-center justify-center">
-              <div className="absolute h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-              <div className="absolute h-[360px] w-[360px] rounded-full border border-cyan-400/10" />
-              <div className="absolute h-[260px] w-[260px] rounded-full border border-cyan-300/10" />
-
-              <div className="relative h-40 w-40 rounded-full bg-gradient-to-br from-[#2563eb] via-[#3b82f6] to-[#7c3aed] p-[9px] shadow-[0_0_80px_rgba(59,130,246,0.35)]">
-                <div className="flex h-full w-full items-center justify-center rounded-full border border-white/10 bg-[#0b1739] shadow-2xl shadow-blue-950/50">
-                  <div className="absolute inset-4 rounded-full border border-cyan-300/15" />
-                  <div className="absolute inset-7 rounded-full border border-dashed border-cyan-300/20 animate-spin [animation-duration:20s]" />
-                  <div className="h-11 w-11 rounded-full bg-cyan-300 shadow-[0_0_35px_rgba(103,232,249,0.9)]" />
-                </div>
-              </div>
-
-              <div className="absolute left-[14%] top-[14%] h-16 w-16 rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c173a] to-[#16224d] shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-3.5 w-3.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.95)]" />
-                </div>
-              </div>
-
-              <div className="absolute right-[14%] top-[14%] h-16 w-16 rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c173a] to-[#16224d] shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-3.5 w-3.5 rounded-full bg-sky-300 shadow-[0_0_18px_rgba(125,211,252,0.95)]" />
-                </div>
-              </div>
-
-              <div className="absolute bottom-[14%] left-[18%] h-16 w-16 rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c173a] to-[#16224d] shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-3.5 w-3.5 rounded-full bg-violet-300 shadow-[0_0_18px_rgba(196,181,253,0.95)]" />
-                </div>
-              </div>
-
-              <div className="absolute bottom-[12%] right-[18%] h-16 w-16 rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c173a] to-[#16224d] shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-3.5 w-3.5 rounded-full bg-blue-300 shadow-[0_0_18px_rgba(147,197,253,0.95)]" />
-                </div>
-              </div>
-
-              <svg
-                className="pointer-events-none absolute inset-0 h-full w-full"
-                viewBox="0 0 760 420"
-                fill="none"
-              >
-                <path
-                  d="M380 210 L160 92"
-                  stroke="rgba(56,189,248,0.35)"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M380 210 L600 92"
-                  stroke="rgba(96,165,250,0.35)"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M380 210 L190 330"
-                  stroke="rgba(168,85,247,0.35)"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M380 210 L570 322"
-                  stroke="rgba(59,130,246,0.35)"
-                  strokeWidth="2"
-                />
-              </svg>
+            <div className="max-w-[520px] space-y-8">
+              <h2 className="text-4xl font-semibold leading-tight tracking-tight text-white">
+                Tudo que roda, onde roda e o que deu errado. Em uma tela.
+              </h2>
+              <ul className="space-y-4">
+                {HIGHLIGHTS.map(({ icon: Icon, text }) => (
+                  <li key={text} className="flex items-start gap-3 text-slate-300">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-300">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[15px] leading-7">{text}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            <div className="max-w-[560px] space-y-5">
-              <p className="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300">
-                Controle centralizado
-              </p>
-
-              <h3 className="text-5xl font-semibold leading-[1.05] tracking-tight text-white xl:text-4xl">
-                Orquestre, distribua e monitore automações em um só lugar.
-              </h3>
-
-              <p className="text-xl leading-8 text-slate-300/85">
-                Um painel pensado para operação real: controle de tarefas,
-                runners, bots, logs, versões e execução com estabilidade.
-              </p>
-            </div>
+            <p className="text-xs text-slate-500">© 2026 OrkaFlow</p>
           </div>
         </section>
 
-        <section className="relative flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#0c1537_0%,#111d4a_100%)] px-6 py-10 sm:px-10 lg:px-12">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.18),transparent_35%)]" />
-
-
-          <div className="relative z-10 w-full max-w-[520px] rounded-[34px] bg-[#f7f7fb] p-8 text-slate-900 shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:p-10">
-            <div className="mb-8">
-              <h2 className="text-5xl font-semibold tracking-tight text-slate-950">
-                Entrar
-              </h2>
-
-              <p className="mt-4 max-w-[700px] text-[14px] leading-8 text-slate-600">
-                Acesse o painel para controlar tarefas, runners e automações.
-              </p>
+        {/* Lado direito: o formulário. */}
+        <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10">
+          <div className="w-full max-w-[420px] rounded-2xl border border-white/10 bg-white p-8 text-slate-900 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+            <div className="mb-6 flex items-center gap-3 lg:hidden">
+              <img src="/favicon.svg" alt="" className="h-8 w-8" />
+              <span className="text-lg font-semibold">OrkaFlow</span>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Entrar</h1>
+            <p className="mt-1 text-sm text-slate-500">Use o seu login do painel.</p>
+
+            <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
+              <div>
+                <label htmlFor="login" className={label}>
                   Login
                 </label>
-
-                <div className="flex h-14 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-slate-900 shadow-sm transition focus-within:border-slate-300">
-                  <Mail className="h-4 w-4 text-slate-400" />
-                  <input
-                    name="login"
-                    autoComplete="username"
-                    className="h-full w-full bg-transparent text-base outline-none placeholder:text-slate-400"
-                    type="text"
-                    placeholder="seu.login"
-                  />
-                </div>
+                <input id="login" name="login" type="text" autoComplete="username" autoFocus required className={input} placeholder="seu.login" />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">
+              <div>
+                <label htmlFor="password" className={label}>
                   Senha
                 </label>
-
-                <div className="flex h-14 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-slate-900 shadow-sm transition focus-within:border-slate-300">
-                  <LockKeyhole className="h-4 w-4 text-slate-400" />
+                <div className="relative">
                   <input
+                    id="password"
                     name="password"
+                    type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
-                    className="h-full w-full bg-transparent text-base outline-none placeholder:text-slate-400"
-                    type="password"
+                    required
+                    className={`${input} pr-11`}
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:text-slate-700"
+                    aria-label={showPassword ? "Esconder senha" : "Mostrar senha"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 pt-1 text-sm">
-                <label className="flex items-center gap-3 text-slate-600">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Lembrar acesso
-                </label>
-
-                <button
-                  type="button"
-                  className="font-medium text-[#314e86] transition hover:text-[#1f3c74]"
-                >
-                  Esqueci minha senha
-                </button>
               </div>
 
               {error && (
-                <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600">
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {error}
                 </div>
               )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-blue-600 py-3 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Entrando..." : "Entrar"}
-            </button>
+              <button type="submit" disabled={loading} className={`${btn.primary} w-full`}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loading ? "Entrando..." : "Entrar"}
+              </button>
             </form>
 
-            <div className="mt-8 rounded-[24px] border border-slate-200 bg-[#fdfdff] p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                Plataforma
-              </p>
-              <p className="mt-3 text-[14px] leading-8 text-slate-600">
-                Controle, execute e acompanhe automações com visão centralizada e
-                operação estável.
-              </p>
-            </div>
-
-            <p className="mt-8 text-center text-sm text-slate-500">
-              © 2026 OrkaFlow. Todos os direitos reservados.
+            <p className="mt-6 text-center text-xs text-slate-500">
+              Esqueceu a senha? Peça a um administrador do painel para redefinir.
             </p>
           </div>
         </section>

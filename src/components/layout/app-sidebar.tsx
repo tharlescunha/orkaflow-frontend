@@ -26,6 +26,10 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSystemHealth } from "@/hooks/use-system-health";
 
+// VITE_ENV_LABEL no build (ex.: "Homologação"); sem ela, pelo modo do Vite.
+const ENVIRONMENT_LABEL: string =
+  (import.meta.env.VITE_ENV_LABEL as string | undefined) || (import.meta.env.DEV ? "Desenvolvimento" : "Produção");
+
 type AppSidebarProps = {
   collapsed: boolean;
   // Dentro do painel deslizante do celular: sempre aberta e sem a largura fixa.
@@ -150,7 +154,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
                             "transition-colors duration-200 ease-out",
                             isOpen ? "justify-start" : "justify-center",
                             isActive
-                              ? "bg-white text-slate-900 shadow-sm"
+                              ? "bg-blue-600 text-white shadow-sm"
                               : "text-slate-300 hover:bg-white/10 hover:text-white"
                           )
                         }
@@ -187,7 +191,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
           <div className="shrink-0 border-t border-slate-800 p-4">
             <div className="rounded-xl bg-white/5 p-3">
               <p className="text-sm font-medium">Ambiente</p>
-              <p className="mt-1 text-xs text-slate-400">Produção</p>
+              <p className="mt-1 text-xs text-slate-400">{ENVIRONMENT_LABEL}</p>
             </div>
           </div>
         )}

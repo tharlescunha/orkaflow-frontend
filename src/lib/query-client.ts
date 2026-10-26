@@ -30,6 +30,9 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
+      // Polling só com a aba visível; dados recentes não refazem fetch a cada montagem.
+      refetchIntervalInBackground: false,
+      staleTime: 5_000,
     },
   },
 });
