@@ -21,7 +21,7 @@ function BootSplash() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f3f4f6] px-6 text-slate-800">
+    <div className="flex min-h-screen items-center justify-center bg-[#f5f5f5] px-6 text-slate-800">
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-md shadow-blue-600/30">
           <img src="/favicon.svg" alt="" className="h-7 w-7 brightness-0 invert" />
