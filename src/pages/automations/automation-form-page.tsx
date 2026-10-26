@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { KeyRound, Save, X } from "lucide-react";
@@ -773,7 +774,7 @@ function AutomationForm({
         </div>
       </form>
 
-      {credentialsModalOpen ? (
+      {credentialsModalOpen ? createPortal(
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 px-4 py-6"
           onClick={closeCredentialsModal}
@@ -966,6 +967,8 @@ function AutomationForm({
             </div>
           </div>
         </div>
+        ,
+        document.body
       ) : null}
     </>
   );

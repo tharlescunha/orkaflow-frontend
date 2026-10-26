@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, KeyRound, Save, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -917,7 +918,7 @@ export function TaskCreatePage() {
         </aside>
       </form>
 
-      {credentialsModalOpen ? (
+      {credentialsModalOpen ? createPortal(
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-4 py-6"
           onClick={closeCredentialsModal}
@@ -1104,6 +1105,8 @@ export function TaskCreatePage() {
             </div>
           </div>
         </div>
+        ,
+        document.body
       ) : null}
     </div>
   );

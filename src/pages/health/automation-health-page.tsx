@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -647,7 +648,7 @@ function DetailModal({ item, onClose }: { item: AutomationHealthItemRead; onClos
     };
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0" onClick={onClose} />
       <div className={cn(card, "relative max-h-[90vh] w-full max-w-5xl overflow-hidden shadow-2xl")}>
@@ -762,5 +763,7 @@ function DetailModal({ item, onClose }: { item: AutomationHealthItemRead; onClos
         </div>
       </div>
     </div>
+    ,
+    document.body
   );
 }
