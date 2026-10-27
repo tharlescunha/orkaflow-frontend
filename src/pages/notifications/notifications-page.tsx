@@ -97,7 +97,7 @@ export function NotificationsPage() {
     <div className="space-y-5">
       <section className={card}>
         <PageHeader
-          title="Notificações"
+          title="Chamado de erro"
           description="Quando um agendamento falha várias vezes seguidas, o sistema envia uma requisição HTTP configurável (ex.: abrir chamado no desk) e pode pausar o agendamento."
           meta={
             channelQuery.data ? (

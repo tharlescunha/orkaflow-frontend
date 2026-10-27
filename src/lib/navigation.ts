@@ -77,7 +77,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "MCP", to: "/integration/mcp", icon: Plug, keywords: "ia claude token" },
       { label: "API", to: "/integration/api", icon: BookOpen, keywords: "documentação rotas" },
-      { label: "Notificações", to: "/notifications", icon: Bell, keywords: "chamado webhook" },
+      // A tela só faz uma coisa: abrir chamado no desk quando o agendamento falha N vezes seguidas.
+      { label: "Chamado de erro", to: "/notifications", icon: Bell, keywords: "notificações chamado desk webhook" },
       { label: "Eventos", to: "/events", icon: Zap, keywords: "gatilho quando então webhook teams" },
     ],
   },
