@@ -9,6 +9,7 @@ export type BotListItem = {
   release_version?: string | null;
   active: boolean;
   auto_update: boolean;
+  reads_task_file_arg?: boolean;
   created_at: string;
 };
 
@@ -32,6 +33,8 @@ export type BotRead = {
   timeout_default: number;
   active: boolean;
   auto_update: boolean;
+  /** Robô antigo lê o caminho do JSON da task em sys.argv[1]; com maestro não precisa. */
+  reads_task_file_arg?: boolean;
   current_version?: string | null;
   release_version?: string | null;
   created_at: string;
@@ -52,6 +55,7 @@ export type BotCreatePayload = {
   timeout_default: number;
   active: boolean;
   auto_update?: boolean;
+  reads_task_file_arg?: boolean;
 };
 
 export type BotUpdatePayload = {
@@ -68,6 +72,7 @@ export type BotUpdatePayload = {
   release_version?: string;
   active?: boolean;
   auto_update?: boolean;
+  reads_task_file_arg?: boolean;
 };
 
 export type BotFilters = {

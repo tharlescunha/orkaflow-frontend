@@ -180,6 +180,14 @@ export function BotDetailPage() {
                       </span>
                     }
                   />
+                  <InfoItem
+                    label="Arquivo da task por argumento"
+                    value={
+                      <span className={cn(badge, bot.reads_task_file_arg === false ? tone.info : tone.neutral)}>
+                        {bot.reads_task_file_arg === false ? "Não (usa maestro)" : "Sim (robô antigo)"}
+                      </span>
+                    }
+                  />
                   <InfoItem label="Nome" value={bot.name} />
                 </div>
               </section>

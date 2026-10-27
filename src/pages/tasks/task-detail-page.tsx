@@ -36,6 +36,7 @@ import {
   type TaskStatus,
 } from "@/services/api/tasks";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { listTaskErrorsByTask } from "@/services/api/task-errors";
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
 import { RefreshIndicator } from "@/components/common/refresh-indicator";
@@ -410,6 +411,15 @@ export function TaskDetailPage() {
     refetchIntervalInBackground: false,
   });
 
+  // Print da tela no momento do erro (o robô tira pelo maestro; o worker anexa ao erro da task).
+  const failedStatus = ["error", "timeout", "forced_stop"].includes(String(task?.status ?? ""));
+  const taskErrorsQuery = useQuery({
+    queryKey: ["task-errors-of-task", taskId],
+    queryFn: () => listTaskErrorsByTask({ taskId, limit: 5 }),
+    enabled: Number.isFinite(taskId) && taskId > 0 && failedStatus,
+  });
+  const errorScreenshot = taskErrorsQuery.data?.items.find((item) => item.error_screenshot_base64)?.error_screenshot_base64 ?? null;
+
   async function refreshAfterAction() {
     await queryClient.invalidateQueries({ queryKey: ["task-detail", taskId] });
     await queryClient.invalidateQueries({ queryKey: ["task-logs", taskId] });
@@ -668,6 +678,23 @@ export function TaskDetailPage() {
                           {finalSummary.errorLine && finalSummary.errorLine !== finalSummary.headline ? (
                             <p className="mt-1 font-mono text-xs break-words text-red-700">{finalSummary.errorLine}</p>
                           ) : null}
+                          {(status === "running" || status === "stop_requested") && task.progress_current != null ? (
+                            <div className="mt-2 max-w-md">
+                              <p className="text-xs font-medium text-slate-700">
+                                Etapa {task.progress_current}
+                                {task.progress_total ? ` de ${task.progress_total}` : ""}
+                                {task.progress_text ? ` · ${task.progress_text}` : ""}
+                              </p>
+                              {task.progress_total ? (
+                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                  <div
+                                    className="h-full rounded-full bg-blue-600 transition-all"
+                                    style={{ width: `${Math.min(100, Math.round((task.progress_current / task.progress_total) * 100))}%` }}
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
 
@@ -776,6 +803,19 @@ export function TaskDetailPage() {
                           </li>
                         ))}
                       </ul>
+                    </Section>
+                  ) : null}
+
+                  {errorScreenshot ? (
+                    <Section title="Tela no momento do erro" icon={<AlertCircle className="h-4 w-4 text-red-500" />}>
+                      <p className="mb-3 text-sm text-slate-600">Print tirado pelo robô quando o erro aconteceu.</p>
+                      <a href={`data:image/jpeg;base64,${errorScreenshot}`} target="_blank" rel="noreferrer" className="block">
+                        <img
+                          src={`data:image/jpeg;base64,${errorScreenshot}`}
+                          alt="Tela da máquina no momento do erro"
+                          className="max-h-[480px] w-auto max-w-full rounded-lg border border-slate-200 shadow-sm"
+                        />
+                      </a>
                     </Section>
                   ) : null}
 

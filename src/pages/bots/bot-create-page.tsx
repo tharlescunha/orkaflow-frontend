@@ -31,6 +31,7 @@ type CreateBotFormState = {
   timeout_default: string;
   active: boolean;
   auto_update: boolean;
+  reads_task_file_arg: boolean;
 };
 
 type FieldErrors = Partial<Record<keyof CreateBotFormState, string>>;
@@ -47,6 +48,8 @@ const initialFormState: CreateBotFormState = {
   timeout_default: "600",
   active: true,
   auto_update: false,
+  // Bot novo nasce sem o argumento: o jeito recomendado é a biblioteca maestro.
+  reads_task_file_arg: false,
 };
 
 /**
@@ -162,6 +165,7 @@ export function BotCreatePage() {
       timeout_default: Number(form.timeout_default),
       active: form.active,
       auto_update: form.auto_update,
+      reads_task_file_arg: form.reads_task_file_arg,
     });
   }
 
@@ -399,6 +403,21 @@ export function BotCreatePage() {
                       </label>
                       <p className={cn(hint, "ml-7")}>
                         Quando ativado, o worker faz git pull antes de cada execução e cria uma nova versão automaticamente se detectar código novo.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                        <input
+                          checked={form.reads_task_file_arg}
+                          onChange={(e) => handleChangeField("reads_task_file_arg", e.target.checked)}
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Robô lê o arquivo da task por argumento (robô antigo)
+                      </label>
+                      <p className={cn(hint, "ml-7")}>
+                        Marque só se o robô lê o caminho do JSON em sys.argv[1]. Robô com a biblioteca maestro não precisa: o worker chama só python main.py.
                       </p>
                     </div>
                   </div>

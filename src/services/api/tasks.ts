@@ -38,6 +38,10 @@ export type TaskListItem = {
   stop_requested: boolean;
   /** Por que está na fila (só em waiting): automação ocupada, grupo exclusivo, sem runner. */
   waiting_reason?: string | null;
+  /** Etapa informada pelo robô (maestro.step). */
+  progress_current?: number | null;
+  progress_total?: number | null;
+  progress_text?: string | null;
   correlation_id?: string | null;
   queue_name?: string | null;
   execution_duration_seconds?: number | null;
@@ -173,6 +177,9 @@ export type TaskRead = {
   created_at: string;
   updated_at: string | null;
   waiting_reason?: string | null;
+  progress_current?: number | null;
+  progress_total?: number | null;
+  progress_text?: string | null;
   parameters: TaskParameter[];
   children?: TaskChildRead[];
   telemetry?: TaskTelemetry | null;

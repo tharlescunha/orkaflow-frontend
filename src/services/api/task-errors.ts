@@ -29,6 +29,8 @@ export type TaskErrorBase = {
   code: string | null;
   created_at: string;
   updated_at?: string | null;
+  /** Print da tela no momento do erro (JPEG/PNG em base64), quando o robô tirou pelo maestro. */
+  error_screenshot_base64?: string | null;
 };
 
 export type TaskErrorListItem = TaskErrorBase;

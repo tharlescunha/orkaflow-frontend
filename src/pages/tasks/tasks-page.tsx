@@ -573,6 +573,16 @@ export function TasksPage() {
                             {task.waiting_reason}
                           </p>
                         ) : null}
+                        {canStop(task.status) && task.progress_current != null ? (
+                          <p
+                            className="mt-1 max-w-[260px] truncate text-[11px] text-blue-700"
+                            title={task.progress_text || undefined}
+                          >
+                            Etapa {task.progress_current}
+                            {task.progress_total ? ` de ${task.progress_total}` : ""}
+                            {task.progress_text ? ` · ${task.progress_text}` : ""}
+                          </p>
+                        ) : null}
                       </td>
                       <td className={table.td}>
                         <span className={table.truncate} title={automationLabel(task)}>

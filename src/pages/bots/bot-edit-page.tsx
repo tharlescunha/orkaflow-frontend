@@ -31,6 +31,7 @@ type EditFormState = {
   timeout_default: string;
   active: boolean;
   auto_update: boolean;
+  reads_task_file_arg: boolean;
 };
 
 type FieldErrors = Partial<Record<keyof EditFormState, string>>;
@@ -49,6 +50,7 @@ function formFromBot(bot: BotRead): EditFormState {
     timeout_default: String(bot.timeout_default ?? 3600),
     active: Boolean(bot.active),
     auto_update: Boolean(bot.auto_update),
+    reads_task_file_arg: bot.reads_task_file_arg ?? true,
   };
 }
 
@@ -178,6 +180,7 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
       timeout_default: Number(form.timeout_default),
       active: form.active,
       auto_update: form.auto_update,
+      reads_task_file_arg: form.reads_task_file_arg,
     };
 
     // O link vem do servidor com o token escondido (***). Só é enviado se a pessoa trocou por um novo;
@@ -335,6 +338,21 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
                 </label>
                 <p className={cn(hint, "ml-7")}>
                   Quando ativado, o worker faz git pull antes de cada execução e cria uma nova versão automaticamente se detectar código novo.
+                </p>
+              </div>
+
+              <div>
+                <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                  <input
+                    checked={form.reads_task_file_arg}
+                    onChange={(e) => handleChange("reads_task_file_arg", e.target.checked)}
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Robô lê o arquivo da task por argumento (robô antigo)
+                </label>
+                <p className={cn(hint, "ml-7")}>
+                  Marque só se o robô lê o caminho do JSON em sys.argv[1]. Robô com a biblioteca maestro não precisa: o worker chama só python main.py.
                 </p>
               </div>
             </div>
