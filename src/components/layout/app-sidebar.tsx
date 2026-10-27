@@ -59,7 +59,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
         if (collapsed) setHovered(false);
       }}
       className={cn(
-        "h-full shrink-0 border-r border-slate-200 bg-[#f8f9fb] text-slate-700",
+        "h-full shrink-0 border-r border-slate-200 bg-white text-slate-700",
         "overflow-hidden transition-[width] duration-300 ease-out",
         mobile ? "flex w-full flex-col bg-white" : "hidden md:flex md:flex-col",
         !mobile && (isOpen ? "w-[256px]" : "w-[76px]")
@@ -107,7 +107,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
                           cn(
                             "group flex items-center gap-3 rounded-lg px-3 py-2 text-[14.5px] font-medium transition-colors duration-150",
                             isOpen ? "justify-start" : "justify-center",
-                            isActive ? "bg-slate-200/70 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-200/50 hover:text-slate-900"
+                            isActive ? "bg-[#F7EDDF] font-semibold text-[#7a4a12]" : "text-slate-700 hover:bg-[#F7EDDF]/60 hover:text-slate-900"
                           )
                         }
                         title={!isOpen ? item.label : undefined}
