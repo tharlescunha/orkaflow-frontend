@@ -16,6 +16,11 @@ export type CredentialRead = {
   repository_id: number;
   repository_name?: string | null;
   active: boolean;
+  // Saúde: valida | nao_verificada | invalida | senha_incorreta | senha_expirada | usuario_bloqueado
+  status?: string | null;
+  status_reason?: string | null;
+  status_updated_at?: string | null;
+  status_task_id?: number | null;
   created_at: string;
   updated_at?: string | null;
 };

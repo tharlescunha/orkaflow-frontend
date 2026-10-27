@@ -1,8 +1,10 @@
 import { useMemo, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { KeyRound, Pencil, ShieldCheck } from "lucide-react";
 
+import { CredentialStatusBadge } from "@/components/common/credential-status";
+import { credentialStatusLabel, isCredentialInvalid } from "@/lib/credential-status";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
@@ -73,8 +75,11 @@ export function CredentialDetailPage() {
           description="Cadastro da credencial e as chaves dos segredos protegidos. Os valores nunca aparecem aqui."
           meta={
             credential ? (
-              <span className={cn(badge, credential.active ? tone.success : tone.neutral)}>
-                {credential.active ? "Ativa" : "Inativa"}
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className={cn(badge, credential.active ? tone.success : tone.neutral)}>
+                  {credential.active ? "Ativa" : "Inativa"}
+                </span>
+                <CredentialStatusBadge status={credential.status} reason={credential.status_reason} updatedAt={credential.status_updated_at} />
               </span>
             ) : null
           }
@@ -109,6 +114,32 @@ export function CredentialDetailPage() {
             />
           ) : credential ? (
             <>
+              {isCredentialInvalid(credential.status) && (
+                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                  <div>
+                    <p className="font-medium">
+                      Um robô avisou: {credentialStatusLabel(credential.status).toLowerCase()}
+                      {credential.status_reason ? ` (${credential.status_reason})` : ""}.
+                    </p>
+                    <p className="mt-0.5 text-red-800/80">
+                      Os agendamentos das automações que usam esta credencial foram pausados e novas tasks estão bloqueadas.
+                      Ao salvar um valor novo em Segredos, a credencial volta para "não verificada" e os agendamentos reativam sozinhos.
+                      {credential.status_task_id ? (
+                        <>
+                          {" "}
+                          Detectado na{" "}
+                          <Link to={`/tasks/${credential.status_task_id}`} className="underline underline-offset-2">
+                            task #{credential.status_task_id}
+                          </Link>
+                          .
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <section className={card}>
                 <div className={cardHeader}>
                   <h2 className={cardTitle}>Segredos cadastrados</h2>

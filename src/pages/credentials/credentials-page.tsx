@@ -5,6 +5,7 @@ import { Eye, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 
 import { ActionsMenu } from "@/components/common/actions-menu";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { CredentialStatusBadge } from "@/components/common/credential-status";
 import { EmptyState } from "@/components/common/empty-state";
 import { FilterBar, Pagination, SearchInput } from "@/components/common/filter-bar";
 import { PageHeader } from "@/components/common/page-header";
@@ -242,8 +243,15 @@ export function CredentialsPage() {
                         </span>
                       </td>
                       <td className={table.td}>
-                        <span className={cn(badge, credential.active ? tone.success : tone.neutral)}>
-                          {credential.active ? "Ativa" : "Inativa"}
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className={cn(badge, credential.active ? tone.success : tone.neutral)}>
+                            {credential.active ? "Ativa" : "Inativa"}
+                          </span>
+                          <CredentialStatusBadge
+                            status={credential.status}
+                            reason={credential.status_reason}
+                            updatedAt={credential.status_updated_at}
+                          />
                         </span>
                       </td>
                       <td className={cn(table.tdMuted, "whitespace-nowrap")}>{formatDateTime(credential.created_at)}</td>

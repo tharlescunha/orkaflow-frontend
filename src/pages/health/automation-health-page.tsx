@@ -22,6 +22,7 @@ import { FilterBar, SearchInput } from "@/components/common/filter-bar";
 import { QueryError } from "@/components/common/query-error";
 import { EmptyState } from "@/components/common/empty-state";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { CredentialAlertStrip } from "@/components/common/credential-status";
 import { RefreshIndicator } from "@/components/common/refresh-indicator";
 import { CardSkeleton } from "@/components/common/skeleton";
 import { normalizeSearch } from "@/lib/search";
@@ -578,6 +579,12 @@ export function AutomationHealthPage() {
                           )}
                         </div>
                       </div>
+
+                      {item.credential_alerts && item.credential_alerts.length > 0 && (
+                        <div className="mt-3 pl-2">
+                          <CredentialAlertStrip alerts={item.credential_alerts} compact />
+                        </div>
+                      )}
 
                       <div className={`mt-3 grid pl-2 ${sizeClasses.infoGrid}`}>
                         <InfoItem icon={Activity} label="Regra" value={formatRelativeRule(item.schedule?.rule_label)} textClassName={sizeClasses.text} />

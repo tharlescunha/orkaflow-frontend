@@ -6,6 +6,7 @@ import { Link2, Pencil, Play, Server, Unlink, X } from "lucide-react";
 
 import { ActionsMenu } from "@/components/common/actions-menu";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { CredentialAlertStrip } from "@/components/common/credential-status";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
@@ -222,6 +223,8 @@ export function AutomationDetailPage() {
             />
           ) : (
             <div className="space-y-6">
+              <CredentialAlertStrip alerts={automation.credential_alerts} />
+
               <section className={card}>
                 <div className={cardHeader}>
                   <h2 className={cardTitle}>Resumo</h2>

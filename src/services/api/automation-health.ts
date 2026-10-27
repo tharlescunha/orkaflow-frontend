@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { CredentialAlert } from "@/components/common/credential-status";
 
 export type AutomationHealthStatus =
   | "success"
@@ -76,6 +77,7 @@ export type AutomationHealthItemRead = {
 
   schedule?: AutomationHealthScheduleRead | null;
   last_task?: AutomationHealthTaskRead | null;
+  credential_alerts?: CredentialAlert[];
 };
 
 export type AutomationHealthListResponse = {

@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { CredentialAlert } from "@/components/common/credential-status";
 
 export type AutomationRead = {
   id: number;
@@ -18,6 +19,8 @@ export type AutomationRead = {
   success_triggers?: AutomationSuccessTriggerRead[];
   default_parameters_json?: Record<string, unknown> | null;
   default_runtime_parameters_json?: Record<string, unknown> | null;
+  // Credenciais inválidas usadas pela automação (saúde de credenciais).
+  credential_alerts?: CredentialAlert[];
   created_at: string;
   updated_at?: string | null;
 };
