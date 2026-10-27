@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   BotListResponse,
   BotRead,
+  BotSourceInspection,
   BotCreatePayload as CreateBotPayload,
   BotUpdatePayload as UpdateBotPayload,
 } from "@/types/bot";
@@ -59,5 +60,11 @@ export async function updateBot(botId: number, payload: UpdateBotPayload) {
 
 export async function deleteBot(botId: number) {
   const response = await api.delete(`/api/v1/bots/${botId}`);
+  return response.data;
+}
+
+/** Confere se o link do Git funciona e traz nome, descrição, último commit e última tag. Nada é gravado. */
+export async function inspectBotSource(sourceUrl: string) {
+  const response = await api.post<BotSourceInspection>("/api/v1/bots/inspect-source", { source_url: sourceUrl });
   return response.data;
 }

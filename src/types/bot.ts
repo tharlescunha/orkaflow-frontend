@@ -89,3 +89,14 @@ export type RepositoryOption = {
 
 export type CreateBotPayload = BotCreatePayload;
 export type UpdateBotPayload = BotUpdatePayload;
+
+/** Resposta de POST /bots/inspect-source: o que o Git sabe sobre o link, antes de salvar. */
+export type BotSourceInspection = {
+  name: string;
+  description: string | null;
+  branch: string;
+  repository: string;
+  head: { hash: string; short: string; author: string; committed_at: string; message: string };
+  latest_tag: string | null;
+  suggested_version: string;
+};
