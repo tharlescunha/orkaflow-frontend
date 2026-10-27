@@ -1,10 +1,29 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { useSystemHealth } from "@/hooks/use-system-health";
 import { ENVIRONMENT_LABEL, NAV_GROUPS, isExactOnly } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
+
+// Id da última task com falha que o usuário já viu na tela de Erros.
+const SEEN_ERRORS_KEY = "orkaflow:errors-seen";
+
+function readSeenErrors(): number {
+  try {
+    return Number(localStorage.getItem(SEEN_ERRORS_KEY) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeenErrors(total: number) {
+  try {
+    localStorage.setItem(SEEN_ERRORS_KEY, String(total));
+  } catch {
+    // sem storage: o badge só não é lembrado entre sessões
+  }
+}
 
 type AppSidebarProps = {
   collapsed: boolean;
@@ -19,9 +38,17 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
   const [hovered, setHovered] = useState(false);
 
   const isOpen = mobile || !collapsed || hovered;
-  const { errors24h, failedTasks } = useSystemHealth();
-  // badge do item "Erros": erros das ultimas 24h (ou tasks falhas, o que for maior)
-  const errorsBadge = Math.max(errors24h, failedTasks.length);
+  const { failedTasks } = useSystemHealth();
+  const { pathname } = useLocation();
+  // Badge do item "Erros": só as falhas (últimas 24h) que surgiram depois da última visita à tela de
+  // Erros. Ao entrar lá, o número some; volta quando uma task nova falhar.
+  const onErrorsPage = pathname.startsWith("/errors");
+  const newestFailedId = failedTasks.reduce((max, task) => Math.max(max, task.id), 0);
+  useEffect(() => {
+    if (onErrorsPage && newestFailedId > readSeenErrors()) writeSeenErrors(newestFailedId);
+  }, [onErrorsPage, newestFailedId]);
+  const seenId = readSeenErrors();
+  const errorsBadge = onErrorsPage ? 0 : failedTasks.filter((task) => task.id > seenId).length;
 
   return (
     <aside
@@ -40,21 +67,21 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
     >
       <div className="flex h-full min-h-0 flex-col">
         {/* Marca */}
-        <NavLink to="/" onClick={onNavigate} className={cn("flex items-center gap-2.5 px-4 pb-2 pt-5", !isOpen && "justify-center px-0")}>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-md shadow-blue-600/30">
-            <img src="/favicon.svg" alt="" className="h-5 w-5 brightness-0 invert" />
+        <NavLink to="/" onClick={onNavigate} className={cn("mx-3 flex items-center gap-3 border-b border-slate-200 px-1 pb-4 pt-5", !isOpen && "justify-center px-0")}>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-md shadow-blue-600/30">
+            <img src="/favicon.svg" alt="" className="h-6 w-6 brightness-0 invert" />
           </span>
           {isOpen && (
             <span className="min-w-0">
-              <span className="block truncate text-[15px] font-semibold leading-tight text-slate-900">OrkaFlow</span>
-              <span className="block truncate text-[11px] text-slate-500">{ENVIRONMENT_LABEL}</span>
+              <span className="block truncate text-[19px] font-bold leading-tight tracking-tight text-slate-900">OrkaFlow</span>
+              <span className="block truncate text-[10px] font-medium uppercase tracking-wider text-slate-400">{ENVIRONMENT_LABEL}</span>
             </span>
           )}
         </NavLink>
 
         <nav
           className={cn(
-            "min-h-0 flex-1 px-3 py-3",
+            "min-h-0 flex-1 px-3 pb-3 pt-4",
             "overflow-y-auto overflow-x-hidden scroll-smooth",
             "[scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.45)_transparent]",
             "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/70"
