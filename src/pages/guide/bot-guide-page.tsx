@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -34,6 +34,7 @@ import {
   CODE_TASK_JSON,
   MAESTRO_REFERENCE,
 } from "./bot-guide-code";
+import { TOKEN_CLASS, tokenize, type Lang } from "./code-highlight";
 
 /**
  * Guia do Bot: como montar um robô para o orquestrador, do main.py ao agendamento.
@@ -90,10 +91,10 @@ export function BotGuidePage() {
               Instale o Maestro uma vez, gere o <Inline>task.json</Inline> de exemplo e rode com <Inline>producao=False</Inline>:
               logs no console, resultado em <Inline>resultado.json</Inline>, nada vai para a rede.
             </p>
-            <Code title="Terminal" code={CODE_LOCAL_INSTALL} />
+            <Code title="Terminal" code={CODE_LOCAL_INSTALL} lang="shell" />
             <Code title="No robô" code={CODE_LOCAL_RUN} />
             <Details summary="Como é o task.json">
-              <Code title="task.json" code={CODE_TASK_JSON} />
+              <Code title="task.json" code={CODE_TASK_JSON} lang="json" />
             </Details>
           </Step>
 
@@ -249,18 +250,32 @@ function Step({ n, icon, title, children }: { n: number; icon: ReactNode; title:
 }
 
 function Inline({ children }: { children: ReactNode }) {
-  return <code className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[12.5px] text-slate-800">{children}</code>;
+  return <code className="rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[12.5px] text-[#0451a5]">{children}</code>;
 }
 
-function Code({ title, code }: { title: string; code: string }) {
+function Highlighted({ code, lang }: { code: string; lang: Lang }) {
+  const tokens = useMemo(() => tokenize(code, lang), [code, lang]);
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/80 px-3 py-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-300">{title}</span>
+    <code>
+      {tokens.map((token, index) => (
+        <span key={index} className={TOKEN_CLASS[token.kind]}>
+          {token.text}
+        </span>
+      ))}
+    </code>
+  );
+}
+
+// Bloco de código no padrão das telas: fundo claro, cantos arredondados, código colorido como no editor.
+function Code({ title, code, lang = "python" }: { title: string; code: string; lang?: Lang }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{title}</span>
         <CopyButton value={code} label={`Copiar ${title}`} />
       </div>
-      <pre className="max-h-[480px] overflow-auto px-4 py-3 font-mono text-[12px] leading-5 text-slate-100">
-        <code>{code}</code>
+      <pre className="max-h-[480px] overflow-auto px-4 py-3 font-mono text-[12.5px] leading-6">
+        <Highlighted code={code} lang={lang} />
       </pre>
     </div>
   );
@@ -331,8 +346,8 @@ function ReferenceGroup({ title, calls }: { title: string; calls: { call: string
                 <code className="font-mono text-[12.5px] font-semibold text-slate-900">{item.call}</code>
                 <p className="mt-1 text-sm leading-6 text-slate-600">{item.what}</p>
               </div>
-              <pre className="overflow-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[12px] leading-5 text-slate-800">
-                <code>{item.example}</code>
+              <pre className="overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[12px] leading-5">
+                <Highlighted code={item.example} lang="python" />
               </pre>
             </div>
           ))}
