@@ -47,29 +47,29 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#f5f5f5] px-4 py-10 text-slate-800">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#e9edf3] bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.14),transparent_55%)] px-4 py-10 text-slate-800">
       <div className="w-full max-w-[960px]">
-        <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_24px_60px_-30px_rgba(15,23,42,0.35)] lg:grid-cols-[1fr_1fr]">
+        <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_30px_70px_-30px_rgba(15,23,42,0.45)] lg:grid-cols-[1fr_1fr]">
           {/* Lado esquerdo: a marca e o que o painel faz. */}
-          <section className="hidden flex-col justify-between border-r border-slate-200 bg-[#f8f9fb] p-10 lg:flex">
+          <section className="hidden flex-col justify-between bg-[linear-gradient(160deg,#1e3a8a_0%,#1d4ed8_100%)] p-10 text-white lg:flex">
             <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 shadow-md shadow-blue-600/30">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
                 <img src="/favicon.svg" alt="" className="h-7 w-7 brightness-0 invert" />
               </span>
               <span>
-                <span className="block text-[22px] font-bold leading-tight tracking-tight text-slate-900">OrkaFlow</span>
-                <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">{ENVIRONMENT_LABEL}</span>
+                <span className="block text-[22px] font-bold leading-tight tracking-tight text-white">OrkaFlow</span>
+                <span className="block text-[11px] font-medium uppercase tracking-wider text-blue-200">{ENVIRONMENT_LABEL}</span>
               </span>
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-2xl font-semibold leading-snug tracking-tight text-slate-900">
+              <h2 className="text-2xl font-semibold leading-snug tracking-tight text-white">
                 Tudo que roda, onde roda e o que deu errado. Em uma tela.
               </h2>
               <ul className="space-y-3">
                 {HIGHLIGHTS.map(({ icon: Icon, text }) => (
-                  <li key={text} className="flex items-start gap-3 text-slate-600">
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <li key={text} className="flex items-start gap-3 text-blue-100">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="text-[14px] leading-6">{text}</span>
@@ -78,7 +78,7 @@ export function LoginPage() {
               </ul>
             </div>
 
-            <p className="text-xs text-slate-400">Orquestrador de robôs da ALZ Grãos · © 2026</p>
+            <p className="text-xs text-blue-200/80">Orquestrador de robôs da ALZ Grãos · © 2026</p>
           </section>
 
           {/* Lado direito: o formulário. */}
