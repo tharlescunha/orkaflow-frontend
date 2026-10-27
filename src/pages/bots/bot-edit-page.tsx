@@ -173,13 +173,18 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
       repository_id: Number(form.repository_id),
       source_type: form.source_type.trim(),
       execution_mode: form.execution_mode,
-      source_url: form.source_url.trim() || null,
       entrypoint: form.entrypoint.trim(),
       requirements_file: form.requirements_file.trim() || null,
       timeout_default: Number(form.timeout_default),
       active: form.active,
       auto_update: form.auto_update,
     };
+
+    // O link vem do servidor com o token escondido (***). Só é enviado se a pessoa trocou por um novo;
+    // mandar o mascarado de volta apagaria o token.
+    if (form.source_url.trim() !== initial.source_url.trim()) {
+      payload.source_url = form.source_url.trim() || null;
+    }
 
     updateMutation.mutate(payload);
   }
@@ -281,7 +286,14 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
               />
             </FormField>
 
-            <FormField label="URL de origem">
+            <FormField
+              label="URL de origem"
+              hintText={
+                form.source_url.includes("***@")
+                  ? "O token está escondido (***) e continua salvo. Para trocar, apague e cole o link completo com o token novo."
+                  : "Se o link tiver token, cole completo; ele fica guardado e nunca aparece na tela."
+              }
+            >
               <input
                 value={form.source_url}
                 onChange={(e) => handleChange("source_url", e.target.value)}
