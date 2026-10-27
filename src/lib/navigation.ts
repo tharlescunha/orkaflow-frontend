@@ -55,7 +55,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Runners", to: "/runners", icon: Server, keywords: "máquinas" },
       { label: "Runner Config", to: "/runner-configs", icon: Settings2, keywords: "configuração máquinas" },
-      { label: "Guia do Bot", to: "/worker-registration", icon: FileText, keywords: "instalar worker" },
+      { label: "Guia do Bot", to: "/worker-registration", icon: FileText, keywords: "maestro robô main.py como fazer" },
     ],
   },
   {

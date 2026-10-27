@@ -14,7 +14,7 @@ import { RunnerDetailPage } from "../../pages/runners/runner-detail-page";
 import { RunnerConfigsPage } from "../../pages/runner-config/runner-configs-page";
 import { RunnerConfigDetailPage } from "../../pages/runner-config/runner-config-detail-page";
 import { RunnerConfigEditPage } from "../../pages/runner-config/runner-config-edit-page";
-import { WorkerRegistrationPage } from "../../pages/runner-config/worker-registration-page";
+import { BotGuidePage } from "../../pages/guide/bot-guide-page";
 import { RunnerLogsPage } from "../../pages/runner-logs/runner-logs-page";
 import { ProfilePage } from "../../pages/profile/profile-page";
 import { useAuthStore } from "../../store/auth-store";
@@ -161,7 +161,7 @@ export const router = createBrowserRouter([
       { path: "integration/mcp", element: <IntegrationMcpPage /> },
       { path: "integration/api", element: <IntegrationApiPage /> },
 
-      { path: "worker-registration", element: <WorkerRegistrationPage /> },
+      { path: "worker-registration", element: <BotGuidePage /> },
       { path: "profile", element: <ProfilePage /> },
 
       { path: "*", element: <NotFoundPage /> },
