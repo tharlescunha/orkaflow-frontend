@@ -17,7 +17,7 @@ import { TaskStuckBadge } from "@/components/common/task-stuck-badge";
 import { getApiErrorMessage, withApiDetail } from "@/lib/api-error";
 import { EMPTY, formatDuration, formatTimeSmart } from "@/lib/format";
 import { rerunPayload } from "@/lib/run-task";
-import { btn, card, table } from "@/lib/ui";
+import { badge, btn, card, table, tone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api/client";
 import { listRunners } from "@/services/api/runners";
@@ -542,6 +542,14 @@ export function TasksPage() {
                       <td className={cn(table.tdMuted, "tabular-nums text-[13px]")}>#{task.id}</td>
                       <td className={table.td}>
                         <StatusBadge status={task.status} />
+                        {task.execution_mode === "retry" && (task.retry_count ?? 0) > 0 && (
+                          <span
+                            className={cn(badge, tone.info, "mt-1")}
+                            title={task.parent_task_id ? `Tentativa automática da task #${task.parent_task_id}` : undefined}
+                          >
+                            tentativa {task.retry_count}
+                          </span>
+                        )}
                         <div>
                           <TaskStuckBadge task={task} runner={task.runner_id ? runnersById.get(task.runner_id) : null} />
                         </div>

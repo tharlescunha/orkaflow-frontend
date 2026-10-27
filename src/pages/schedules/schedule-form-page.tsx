@@ -35,6 +35,9 @@ type FormState = {
   active: boolean;
   use_default_runtime_parameters: boolean;
   runtime_parameters_json: string;
+  retry_max: string;
+  retry_delay_seconds: string;
+  retry_on: string[];
 
   calendar_interval_value: string;
 
@@ -65,6 +68,9 @@ const initialFormState: FormState = {
   active: true,
   use_default_runtime_parameters: true,
   runtime_parameters_json: "",
+  retry_max: "0",
+  retry_delay_seconds: "300",
+  retry_on: ["erro", "timeout"],
 
   calendar_interval_value: "1",
 
@@ -223,6 +229,9 @@ function scheduleToForm(schedule: ScheduleRead): FormState {
       ? JSON.stringify(schedule.runtime_parameters_json, null, 2)
       : "",
     calendar_interval_value: String(schedule.interval_value ?? 1),
+    retry_max: String(schedule.retry_max ?? 0),
+    retry_delay_seconds: String(schedule.retry_delay_seconds ?? 300),
+    retry_on: schedule.retry_on ?? ["erro", "timeout"],
     ...parseCronToForm(schedule.cron_expression),
   };
 }
@@ -468,6 +477,13 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
     if (!form.automation_id) next.automation_id = "Escolha a automação que vai rodar.";
     if (!isValidPriority(form.priority)) next.priority = "Use um número inteiro de 1 a 10.";
     if (!form.timezone.trim()) next.timezone = "Informe o fuso horário (ex.: America/Sao_Paulo).";
+    const retryDelay = Number(form.retry_delay_seconds);
+    if (!Number.isInteger(retryDelay) || retryDelay < 0 || retryDelay > 86400) {
+      next.retry_delay_seconds = "Use um número inteiro de segundos (0 a 86400).";
+    }
+    if (form.retry_max !== "0" && form.retry_on.length === 0) {
+      next.retry_on = "Escolha ao menos um tipo de falha para tentar de novo.";
+    }
 
     if (form.schedule_type === "calendar") {
       if (form.calendar_type !== "once") {
@@ -519,6 +535,9 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
       active: form.active,
       use_default_runtime_parameters: form.use_default_runtime_parameters,
       runtime_parameters_json: form.use_default_runtime_parameters ? null : runtimeParameters,
+      retry_max: Number(form.retry_max),
+      retry_delay_seconds: Number(form.retry_delay_seconds),
+      retry_on: form.retry_on,
     };
 
     if (form.schedule_type === "calendar") {
@@ -689,6 +708,66 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
                   Agendamento ativo
                 </label>
               </div>
+            </div>
+          </section>
+
+          <section className={card}>
+            <div className={cardHeader}>
+              <h2 className={cardTitle}>Retentativa automática</h2>
+              <span className="text-xs text-slate-500">Se a task deste agendamento falhar, o orquestrador tenta de novo sozinho.</span>
+            </div>
+
+            <div className="grid gap-5 px-5 py-5 md:grid-cols-3">
+              <Field label="Tentativas extras" hintText="0 = não tenta de novo. Máximo 5.">
+                <select value={form.retry_max} onChange={(e) => handleChange("retry_max", e.target.value)} className={select}>
+                  {["0", "1", "2", "3", "4", "5"].map((n) => (
+                    <option key={n} value={n}>
+                      {n === "0" ? "Nenhuma" : `${n} tentativa${n === "1" ? "" : "s"}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field
+                label="Espera entre tentativas (segundos)"
+                error={errors.retry_delay_seconds}
+                hintText="300 = 5 minutos. Tentativas × espera precisa caber no intervalo do agendamento."
+              >
+                <input
+                  value={form.retry_delay_seconds}
+                  onChange={(e) => handleChange("retry_delay_seconds", e.target.value)}
+                  className={input}
+                  type="number"
+                  min={0}
+                  max={86400}
+                  disabled={form.retry_max === "0"}
+                />
+              </Field>
+
+              <Field label="Tentar de novo quando" error={errors.retry_on} hintText="Cancelada, parada forçada e credencial inválida nunca repetem.">
+                <div className="flex flex-col gap-2 pt-1">
+                  {[
+                    ["erro", "Terminou com erro"],
+                    ["timeout", "Estourou o tempo"],
+                  ].map(([value, text]) => (
+                    <label key={value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.retry_on.includes(value)}
+                        disabled={form.retry_max === "0"}
+                        onChange={(e) =>
+                          handleChange(
+                            "retry_on",
+                            e.target.checked ? [...form.retry_on, value] : form.retry_on.filter((v) => v !== value)
+                          )
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {text}
+                    </label>
+                  ))}
+                </div>
+              </Field>
             </div>
           </section>
 

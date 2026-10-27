@@ -61,7 +61,7 @@ type PendingConfirm = "cancel" | "request-stop" | "force-stop" | "rerun" | null;
 const EXECUTION_MODE_LABEL: Record<string, string> = {
   manual: "Manual",
   api: "API",
-  retry: "Retry automático",
+  retry: "Retentativa automática",
   reprocess: "Reprocessamento",
   scheduled: "Agendamento",
 };
@@ -76,7 +76,7 @@ function describeOrigin(task?: TaskRead): { text: string; to?: string } {
     };
   }
   if (task.execution_mode === "retry" && task.parent_task_id) {
-    return { text: `Retry da task #${task.parent_task_id}`, to: `/tasks/${task.parent_task_id}` };
+    return { text: `Tentativa automática ${task.retry_count ?? ""} da task #${task.parent_task_id}`, to: `/tasks/${task.parent_task_id}` };
   }
   const mode = EXECUTION_MODE_LABEL[task.execution_mode] ?? task.execution_mode;
   if (task.created_by_name) {
@@ -725,7 +725,7 @@ export function TaskDetailPage() {
                         <InfoItem label="Solicitada para" value={formatDateTime(task.requested_start_at)} />
                       ) : null}
                       {(task.retry_count ?? 0) > 0 ? (
-                        <InfoItem label="Tentativas (retry)" value={String(task.retry_count)} />
+                        <InfoItem label="Tentativa automática nº" value={String(task.retry_count)} />
                       ) : null}
                       {task.queue_name ? <InfoItem label="Fila" value={task.queue_name} /> : null}
                       {task.correlation_id ? (

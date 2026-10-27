@@ -46,6 +46,10 @@ export type ScheduleRead = {
   last_skipped_at?: string | null;
   created_at: string;
   updated_at: string;
+  // Retentativa automática (0-5 tentativas extras, espera em segundos, em quais falhas).
+  retry_max?: number;
+  retry_delay_seconds?: number;
+  retry_on?: string[];
 };
 
 export type ListSchedulesParams = {
@@ -66,6 +70,9 @@ export type CreateSchedulePayload = {
   use_default_runtime_parameters: boolean;
   timezone: string;
   active: boolean;
+  retry_max?: number;
+  retry_delay_seconds?: number;
+  retry_on?: string[];
 };
 
 export type UpdateSchedulePayload = {
@@ -86,4 +93,7 @@ export type UpdateSchedulePayload = {
   interval_value?: number | null;
   interval_unit?: string | null;
   misfire_policy?: string | null;
+  retry_max?: number;
+  retry_delay_seconds?: number;
+  retry_on?: string[];
 };

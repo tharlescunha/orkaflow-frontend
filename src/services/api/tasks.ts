@@ -33,6 +33,8 @@ export type TaskListItem = {
   items_processed: number;
   items_failed: number;
   execution_mode: string;
+  retry_count?: number | null;
+  parent_task_id?: number | null;
   stop_requested: boolean;
   correlation_id?: string | null;
   queue_name?: string | null;
