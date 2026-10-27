@@ -136,7 +136,7 @@ function RequestSection({ request }: { request: NonNullable<NotificationLogDetai
             <table className="w-full text-left text-xs">
               <tbody>
                 {headers.map(([k, v]) => (
-                  <tr key={k} className="border-b border-slate-100 last:border-0">
+                  <tr key={k} className="border-b border-slate-200/80 last:border-0">
                     <th className="whitespace-nowrap bg-slate-50 px-2 py-1 font-mono font-medium text-slate-700">
                       {k}
                     </th>

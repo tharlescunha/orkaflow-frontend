@@ -121,7 +121,7 @@ export function SearchableMultiSelect<T extends string | number>({
         onClick={toggleOpen}
         disabled={disabled}
         title={selectedLabels.join(", ") || undefined}
-        className="flex h-10 w-full items-center justify-between gap-3 border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex h-10 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className="truncate text-left">
           {buttonText(label, selectedValues.length, selectedLabels[0])}
@@ -133,7 +133,7 @@ export function SearchableMultiSelect<T extends string | number>({
         ? createPortal(
             <div
               ref={panelRef}
-              className="fixed z-[10000] flex flex-col border border-slate-200 bg-white shadow-xl"
+              className="fixed z-[10000] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
               style={{
                 left: rect.left,
                 width: Math.max(rect.width, 300),
@@ -158,7 +158,7 @@ export function SearchableMultiSelect<T extends string | number>({
                     }
                   }}
                   placeholder={searchPlaceholder}
-                  className="h-9 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm text-slate-900 outline-none focus:border-slate-900"
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
@@ -199,7 +199,7 @@ export function SearchableMultiSelect<T extends string | number>({
                         className="flex w-full items-start gap-3 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                       >
                         <span
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border ${
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                             checked
                               ? "border-slate-900 bg-slate-900 text-white"
                               : "border-slate-300 bg-white text-transparent"

@@ -283,7 +283,7 @@ function FieldTable({ rows }: { rows: FieldRow[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={`${row.where}-${row.name}`} className="border-b border-slate-100 align-top last:border-b-0">
+            <tr key={`${row.where}-${row.name}`} className="border-b border-slate-200/80 align-top last:border-b-0">
               <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-900">
                 {row.name}
                 {row.required && <span className="ml-1 text-red-600" title="Obrigatório">*</span>}

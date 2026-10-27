@@ -228,7 +228,7 @@ export function ApiTokensCard({ userId, userName, onCreated, hideGuideLink }: Ap
               </thead>
               <tbody>
                 {visible.map((token) => (
-                  <tr key={token.id} className="border-b border-slate-100 last:border-b-0">
+                  <tr key={token.id} className="border-b border-slate-200/80 last:border-b-0">
                     <td className="max-w-[220px] truncate py-2 pr-3 font-medium text-slate-900" title={token.name}>
                       {token.name}
                     </td>
