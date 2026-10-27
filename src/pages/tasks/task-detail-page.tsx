@@ -9,8 +9,10 @@ import {
   CheckCircle2,
   Clock3,
   Cpu,
+  Download,
   FileCode2,
   FileText,
+  Paperclip,
   HardDrive,
   ListFilter,
   MemoryStick,
@@ -26,8 +28,10 @@ import {
 import {
   cancelTask,
   createTask,
+  downloadTaskAttachment,
   forceStopTask,
   getTask,
+  listTaskAttachments,
   listTaskLogs,
   requestStopTask,
   type TaskChildRead,
@@ -107,6 +111,13 @@ type TaskParameterItem = {
   parameter_value?: string | null;
   is_secret?: boolean | null;
 };
+
+function formatBytes(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return "---";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatMb(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return EMPTY;
@@ -419,6 +430,31 @@ export function TaskDetailPage() {
     enabled: Number.isFinite(taskId) && taskId > 0 && failedStatus,
   });
   const errorScreenshot = taskErrorsQuery.data?.items.find((item) => item.error_screenshot_base64)?.error_screenshot_base64 ?? null;
+
+  // Arquivos que o robô anexou pelo maestro (attach): planilhas, PDFs, logs.
+  const attachmentsQuery = useQuery({
+    queryKey: ["task-attachments", taskId],
+    queryFn: () => listTaskAttachments(taskId),
+    enabled: Number.isFinite(taskId) && taskId > 0,
+    refetchInterval: isLive ? DETAIL_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+  });
+  const attachments = attachmentsQuery.data?.items ?? [];
+
+  async function handleDownloadAttachment(attachmentId: number, filename: string) {
+    try {
+      const url = await downloadTaskAttachment(taskId, attachmentId);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (error) {
+      toast.error(withApiDetail("Não foi possível baixar o arquivo.", error));
+    }
+  }
 
   async function refreshAfterAction() {
     await queryClient.invalidateQueries({ queryKey: ["task-detail", taskId] });
@@ -816,6 +852,28 @@ export function TaskDetailPage() {
                           className="max-h-[480px] w-auto max-w-full rounded-lg border border-slate-200 shadow-sm"
                         />
                       </a>
+                    </Section>
+                  ) : null}
+
+                  {attachments.length > 0 ? (
+                    <Section title="Arquivos anexados pelo robô" icon={<Paperclip className="h-4 w-4 text-slate-500" />}>
+                      <ul className="divide-y divide-slate-100">
+                        {attachments.map((item) => (
+                          <li key={item.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAttachment(item.id, item.filename)}
+                              className={cn(link, "inline-flex items-center gap-1.5")}
+                            >
+                              <Download className="h-4 w-4" />
+                              {item.filename}
+                            </button>
+                            <span className="text-xs text-slate-500">{formatBytes(item.size_bytes)}</span>
+                            {item.description ? <span className="text-xs text-slate-600">{item.description}</span> : null}
+                            <span className="ml-auto text-xs text-slate-500">{formatDateTime(item.created_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </Section>
                   ) : null}
 

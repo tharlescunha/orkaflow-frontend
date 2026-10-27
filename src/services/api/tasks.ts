@@ -308,6 +308,30 @@ export async function forceStopTask(taskId: number) {
 }
 
 // A API devolve as linhas mais recentes primeiro (limite máximo 500).
+/** Arquivo anexado pelo robô (maestro.attach). */
+export type TaskAttachmentRead = {
+  id: number;
+  task_id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  description?: string | null;
+  created_at: string;
+};
+
+export async function listTaskAttachments(taskId: number) {
+  const response = await api.get<{ items: TaskAttachmentRead[]; total: number }>(`/api/v1/tasks/${taskId}/attachments`);
+  return response.data;
+}
+
+/** Baixa o anexo com o token da sessão e devolve uma URL de blob para o navegador salvar. */
+export async function downloadTaskAttachment(taskId: number, attachmentId: number) {
+  const response = await api.get<Blob>(`/api/v1/tasks/${taskId}/attachments/${attachmentId}/download`, {
+    responseType: "blob",
+  });
+  return URL.createObjectURL(response.data);
+}
+
 export async function listTaskLogs(taskId: number, limit = 100) {
   const response = await api.get<TaskLogListResponse>(
     `/api/v1/task-logs/task/${taskId}`,
