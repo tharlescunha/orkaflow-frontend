@@ -23,17 +23,21 @@ type RunnerLike = {
 type Props = {
   task: StuckTaskLike;
   runner?: RunnerLike | null;
+  /** Motivo gravado pelo orquestrador (fila com explicação); vence a dedução local. */
+  waitingReason?: string | null;
 };
 
-export function TaskStuckBadge({ task, runner }: Props) {
+export function TaskStuckBadge({ task, runner, waitingReason }: Props) {
   const minutes = getTaskStuckMinutes(task);
   if (minutes === null) return null;
 
   // Sem runner atribuído, a task ainda está na fila esperando o distribuidor
   // escolher uma máquina (ou não há máquina online liberada para essa automação).
-  const reason = runner
-    ? describeRunnerProblem(getRunnerHealth(runner))
-    : "sem runner atribuído, aguardando máquina disponível";
+  const reason =
+    waitingReason ||
+    (runner
+      ? describeRunnerProblem(getRunnerHealth(runner))
+      : "sem runner atribuído, aguardando máquina disponível");
 
   return (
     // Compacta na tabela: o motivo fica na dica (title) para não quebrar a coluna em várias linhas.

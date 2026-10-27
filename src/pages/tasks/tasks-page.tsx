@@ -550,9 +550,29 @@ export function TasksPage() {
                             tentativa {task.retry_count}
                           </span>
                         )}
+                        {task.execution_mode === "trigger" && task.parent_task_id && (
+                          <span
+                            className={cn(badge, tone.info, "mt-1")}
+                            title={`Disparada pelo gatilho de sucesso da task #${task.parent_task_id}`}
+                          >
+                            gatilho da #{task.parent_task_id}
+                          </span>
+                        )}
                         <div>
-                          <TaskStuckBadge task={task} runner={task.runner_id ? runnersById.get(task.runner_id) : null} />
+                          <TaskStuckBadge
+                            task={task}
+                            runner={task.runner_id ? runnersById.get(task.runner_id) : null}
+                            waitingReason={task.waiting_reason}
+                          />
                         </div>
+                        {task.status === "waiting" && task.waiting_reason ? (
+                          <p
+                            className="mt-1 max-w-[260px] truncate text-[11px] text-amber-700"
+                            title={task.waiting_reason}
+                          >
+                            {task.waiting_reason}
+                          </p>
+                        ) : null}
                       </td>
                       <td className={table.td}>
                         <span className={table.truncate} title={automationLabel(task)}>

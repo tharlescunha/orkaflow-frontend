@@ -30,6 +30,7 @@ import {
   getTask,
   listTaskLogs,
   requestStopTask,
+  type TaskChildRead,
   type TaskLogItem,
   type TaskRead,
   type TaskStatus,
@@ -64,7 +65,15 @@ const EXECUTION_MODE_LABEL: Record<string, string> = {
   retry: "Retentativa automática",
   reprocess: "Reprocessamento",
   scheduled: "Agendamento",
+  trigger: "Gatilho de sucesso",
 };
+
+// Como uma task filha foi originada (encadeamento visível).
+function describeChildOrigin(child: TaskChildRead): string {
+  if (child.execution_mode === "trigger") return "gatilho de sucesso";
+  if (child.execution_mode === "retry") return `tentativa automática ${child.retry_count ?? ""}`.trim();
+  return EXECUTION_MODE_LABEL[child.execution_mode] ?? child.execution_mode;
+}
 
 // "Criado por": o agendamento quando foi automático, senão quem disparou.
 function describeOrigin(task?: TaskRead): { text: string; to?: string } {
@@ -77,6 +86,12 @@ function describeOrigin(task?: TaskRead): { text: string; to?: string } {
   }
   if (task.execution_mode === "retry" && task.parent_task_id) {
     return { text: `Tentativa automática ${task.retry_count ?? ""} da task #${task.parent_task_id}`, to: `/tasks/${task.parent_task_id}` };
+  }
+  if (task.execution_mode === "trigger" && task.parent_task_id) {
+    return { text: `Disparada pela task #${task.parent_task_id} (gatilho de sucesso)`, to: `/tasks/${task.parent_task_id}` };
+  }
+  if (task.parent_task_id) {
+    return { text: `Encadeada pela task #${task.parent_task_id}`, to: `/tasks/${task.parent_task_id}` };
   }
   const mode = EXECUTION_MODE_LABEL[task.execution_mode] ?? task.execution_mode;
   if (task.created_by_name) {
@@ -641,7 +656,9 @@ export function TaskDetailPage() {
                             <p className={`mt-1 text-sm ${headerTone.text}`}>
                               {status === "running" || status === "stop_requested"
                                 ? "Execução em andamento."
-                                : status === "waiting" || status === "ready"
+                                : status === "waiting" && task.waiting_reason
+                                  ? task.waiting_reason
+                                  : status === "waiting" || status === "ready"
                                   ? "Na fila, aguardando uma máquina."
                                   : status === "scheduled"
                                     ? "Agendada para começar mais tarde."
@@ -731,8 +748,36 @@ export function TaskDetailPage() {
                       {task.correlation_id ? (
                         <InfoItem label="Correlation ID" value={task.correlation_id} />
                       ) : null}
+                      {status === "waiting" && task.waiting_reason ? (
+                        <InfoItem
+                          label="Por que está na fila"
+                          value={<span className="text-amber-700">{task.waiting_reason}</span>}
+                        />
+                      ) : null}
                     </div>
                   </Section>
+
+                  {task.children && task.children.length > 0 ? (
+                    <Section
+                      title="Tasks disparadas por esta"
+                      icon={<ChevronRight className="h-4 w-4 text-slate-500" />}
+                    >
+                      <ul className="divide-y divide-slate-100">
+                        {task.children.map((child) => (
+                          <li key={child.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm">
+                            <Link className={link} to={`/tasks/${child.id}`}>
+                              #{child.id} · {child.automation_name || `Automação #${child.automation_id}`}
+                            </Link>
+                            <StatusBadge status={child.status} />
+                            <span className="text-xs text-slate-500">{describeChildOrigin(child)}</span>
+                            <span className="ml-auto text-xs text-slate-500">
+                              criada {formatDateTime(child.created_at)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Section>
+                  ) : null}
 
                   <TaskLogConsole
                     lines={consoleLines}

@@ -36,10 +36,24 @@ export type TaskListItem = {
   retry_count?: number | null;
   parent_task_id?: number | null;
   stop_requested: boolean;
+  /** Por que está na fila (só em waiting): automação ocupada, grupo exclusivo, sem runner. */
+  waiting_reason?: string | null;
   correlation_id?: string | null;
   queue_name?: string | null;
   execution_duration_seconds?: number | null;
   final_message?: string | null;
+};
+
+/** Task criada a partir de outra (gatilho de sucesso, retentativa, parent_task_id via API). */
+export type TaskChildRead = {
+  id: number;
+  automation_id: number;
+  automation_name?: string | null;
+  status: TaskStatus;
+  execution_mode: string;
+  retry_count?: number | null;
+  created_at: string;
+  finished_at?: string | null;
 };
 
 export type TaskListResponse = {
@@ -158,7 +172,9 @@ export type TaskRead = {
   runner_claimed_at: string | null;
   created_at: string;
   updated_at: string | null;
+  waiting_reason?: string | null;
   parameters: TaskParameter[];
+  children?: TaskChildRead[];
   telemetry?: TaskTelemetry | null;
   runner_details?: RunnerDetailsRead | null;
   runner_usage?: RunnerUsageRead | null;
