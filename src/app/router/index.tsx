@@ -44,6 +44,9 @@ import { ScheduleFormPage } from "../../pages/schedules/schedule-form-page";
 import { CalendarsPage } from "../../pages/calendars/calendars-page";
 import { CalendarFormPage } from "../../pages/calendars/calendar-form-page";
 
+import { ExclusiveGroupsPage } from "../../pages/exclusive-groups/exclusive-groups-page";
+import { ExclusiveGroupFormPage } from "../../pages/exclusive-groups/exclusive-group-form-page";
+
 import { EnvVariablesPage } from "../../pages/env-variables/env-variables-page";
 import { CredentialsPage } from "../../pages/credentials/credentials-page";
 import { CredentialCreatePage } from "../../pages/credentials/credential-create-page";
@@ -134,6 +137,10 @@ export const router = createBrowserRouter([
       { path: "calendars", element: <CalendarsPage /> },
       { path: "calendars/new", element: <CalendarFormPage /> },
       { path: "calendars/:calendarId/edit", element: <CalendarFormPage /> },
+
+      { path: "exclusive-groups", element: <ExclusiveGroupsPage /> },
+      { path: "exclusive-groups/new", element: <ExclusiveGroupFormPage /> },
+      { path: "exclusive-groups/:groupId/edit", element: <ExclusiveGroupFormPage /> },
 
       { path: "env-variables", element: <EnvVariablesPage /> },
       { path: "credentials", element: <CredentialsPage /> },
