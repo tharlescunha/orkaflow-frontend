@@ -30,7 +30,7 @@ if __name__ == "__main__":
         sys.exit(1)   # diferente de 0 = a task fica com erro
 `;
 
-export const CODE_LOCAL_INSTALL = `pip install "git+https://dev.azure.com/SEU-ORG/SEU-PROJETO/_git/orkaflow-worker#subdirectory=maestro"
+export const CODE_LOCAL_INSTALL = `pip install git+https://github.com/tharlescunha/maestro.git
 python -m maestro init      # cria task.json ao lado do main.py`;
 
 export const CODE_LOCAL_RUN = `maestro = Maestro(producao=False)   # lê ./task.json, imprime no console, grava ./resultado.json`;
