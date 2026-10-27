@@ -49,6 +49,8 @@ import { CredentialEditPage } from "../../pages/credentials/credential-edit-page
 
 import { UsersPage } from "../../pages/users/users-page";
 import { NotificationsPage } from "../../pages/notifications/notifications-page";
+import { EventsPage } from "../../pages/events/events-page";
+import { EventFormPage } from "../../pages/events/event-form-page";
 import { UserCreatePage } from "../../pages/users/user-create-page";
 import { UserDetailPage } from "../../pages/users/user-detail-page";
 import { UserEditPage } from "../../pages/users/user-edit-page";
@@ -134,6 +136,9 @@ export const router = createBrowserRouter([
 
       { path: "users", element: <UsersPage /> },
       { path: "notifications", element: <NotificationsPage /> },
+      { path: "events", element: <EventsPage /> },
+      { path: "events/new", element: <EventFormPage /> },
+      { path: "events/:id/edit", element: <EventFormPage /> },
       { path: "users/new", element: <UserCreatePage /> },
       { path: "users/:userId", element: <UserDetailPage /> },
       { path: "users/:userId/edit", element: <UserEditPage /> },

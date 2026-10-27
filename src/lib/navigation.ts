@@ -21,6 +21,7 @@ import {
   UserCircle2,
   Users,
   Variable,
+  Zap,
 } from "lucide-react";
 
 export type NavItem = {
@@ -76,6 +77,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "MCP", to: "/integration/mcp", icon: Plug, keywords: "ia claude token" },
       { label: "API", to: "/integration/api", icon: BookOpen, keywords: "documentação rotas" },
       { label: "Notificações", to: "/notifications", icon: Bell, keywords: "chamado webhook" },
+      { label: "Eventos", to: "/events", icon: Zap, keywords: "gatilho quando então webhook teams" },
     ],
   },
   {
