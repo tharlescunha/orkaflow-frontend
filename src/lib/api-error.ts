@@ -86,6 +86,11 @@ export function getApiErrorMessage(
       | undefined;
     const detail = typeof data === "object" && data !== null ? data.detail : undefined;
 
+    // 404/405 numa rota que o painel conhece: a API no servidor ainda é uma versão antiga.
+    if (error.response.status === 405 || (error.response.status === 404 && detail === "Not Found")) {
+      return "A API do servidor está desatualizada e ainda não tem esta função. Atualize o backend (git pull e reinicie a API) e tente de novo.";
+    }
+
     if (typeof detail === "string" && detail.trim()) return detail;
 
     if (Array.isArray(detail)) {
