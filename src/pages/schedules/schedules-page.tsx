@@ -72,6 +72,7 @@ function getTypeLabel(schedule: ScheduleRead) {
     month: "Calendário · Meses",
   };
 
+  if (schedule.business_day_of_month) return "Calendário · Dia útil do mês";
   return labels[schedule.calendar_type ?? ""] ?? "Calendário";
 }
 
@@ -90,6 +91,9 @@ function getRuleLabel(schedule: ScheduleRead) {
     month: "mês(es)",
   };
 
+  if (schedule.business_day_of_month) {
+    return `${schedule.business_day_of_month}º dia útil às ${schedule.time_of_day ?? "08:00"}`;
+  }
   if (schedule.calendar_type === "once") {
     return "Execução única";
   }

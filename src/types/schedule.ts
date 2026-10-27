@@ -54,6 +54,9 @@ export type ScheduleRead = {
   calendar_id?: number | null;
   calendar_policy?: "skip" | "defer";
   calendar_name?: string | null;
+  // "No N-ésimo dia útil do mês às HH:MM" (com calendar_type month).
+  business_day_of_month?: number | null;
+  time_of_day?: string | null;
 };
 
 export type ListSchedulesParams = {
@@ -79,6 +82,9 @@ export type CreateSchedulePayload = {
   retry_on?: string[];
   calendar_id?: number | null;
   calendar_policy?: "skip" | "defer";
+  // "No N-ésimo dia útil do mês às HH:MM" (com calendar_type month).
+  business_day_of_month?: number | null;
+  time_of_day?: string | null;
 };
 
 export type UpdateSchedulePayload = {
@@ -104,4 +110,7 @@ export type UpdateSchedulePayload = {
   retry_on?: string[];
   calendar_id?: number | null;
   calendar_policy?: "skip" | "defer";
+  // "No N-ésimo dia útil do mês às HH:MM" (com calendar_type month).
+  business_day_of_month?: number | null;
+  time_of_day?: string | null;
 };

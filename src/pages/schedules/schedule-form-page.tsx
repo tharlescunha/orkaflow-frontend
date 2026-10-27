@@ -37,7 +37,9 @@ type FormState = {
   automation_id: string;
   priority: string;
   schedule_type: ScheduleType;
-  calendar_type: CalendarType;
+  calendar_type: CalendarType | "business_day";
+  business_day_of_month: string;
+  time_of_day: string;
   policy: SchedulePolicy;
   timezone: string;
   active: boolean;
@@ -75,6 +77,8 @@ const initialFormState: FormState = {
   priority: "5",
   schedule_type: "calendar",
   calendar_type: "once",
+  business_day_of_month: "1",
+  time_of_day: "08:00",
   policy: "create_always",
   timezone: "America/Sao_Paulo",
   active: true,
@@ -235,7 +239,9 @@ function scheduleToForm(schedule: ScheduleRead): FormState {
     automation_id: String(schedule.automation_id ?? ""),
     priority: String(schedule.priority ?? 5),
     schedule_type: schedule.schedule_type ?? "calendar",
-    calendar_type: schedule.calendar_type ?? "once",
+    calendar_type: schedule.business_day_of_month ? "business_day" : (schedule.calendar_type ?? "once"),
+    business_day_of_month: String(schedule.business_day_of_month ?? 1),
+    time_of_day: schedule.time_of_day ?? "08:00",
     policy: schedule.policy ?? "create_always",
     timezone: schedule.timezone ?? "America/Sao_Paulo",
     active: Boolean(schedule.active),
@@ -517,7 +523,11 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
     }
 
     if (form.schedule_type === "calendar") {
-      if (form.calendar_type !== "once") {
+      if (form.calendar_type === "business_day") {
+        const n = Number(form.business_day_of_month);
+        if (!Number.isInteger(n) || n < 1 || n > 23) next.business_day_of_month = "Use um número de 1 a 23.";
+        if (!/^\d{2}:\d{2}$/.test(form.time_of_day)) next.time_of_day = "Informe o horário (HH:MM).";
+      } else if (form.calendar_type !== "once") {
         const interval = Number(form.calendar_interval_value);
         if (!Number.isInteger(interval) || interval < 1) {
           next.calendar_interval_value = "O intervalo precisa ser um número inteiro maior que zero.";
@@ -584,12 +594,16 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
         month: "months",
       };
 
+      const isBusinessDay = form.calendar_type === "business_day";
+      const calendarType: CalendarType = isBusinessDay ? "month" : (form.calendar_type as CalendarType);
       const payload = {
         ...commonPayload,
-        calendar_type: form.calendar_type,
+        calendar_type: calendarType,
         cron_expression: null,
-        interval_value: form.calendar_type === "once" ? null : Math.max(1, Number(form.calendar_interval_value || 1)),
-        interval_unit: unitMap[form.calendar_type],
+        interval_value: isBusinessDay ? 1 : calendarType === "once" ? null : Math.max(1, Number(form.calendar_interval_value || 1)),
+        interval_unit: unitMap[calendarType],
+        business_day_of_month: isBusinessDay ? Number(form.business_day_of_month) : null,
+        time_of_day: isBusinessDay ? form.time_of_day : null,
       };
 
       if (isEditMode) {
@@ -606,6 +620,8 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
       cron_expression: cronPreview,
       interval_value: null,
       interval_unit: null,
+      business_day_of_month: null,
+      time_of_day: null,
     };
 
     if (isEditMode) {
@@ -879,10 +895,11 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
                     <Field label="Frequência">
                       <select
                         value={form.calendar_type}
-                        onChange={(e) => handleChange("calendar_type", e.target.value as CalendarType)}
+                        onChange={(e) => handleChange("calendar_type", e.target.value as CalendarType | "business_day")}
                         className={select}
                       >
                         <option value="once">Execução única</option>
+                        <option value="business_day">No N-ésimo dia útil do mês</option>
                         <option value="second">A cada X segundos</option>
                         <option value="minute">A cada X minutos</option>
                         <option value="hour">A cada X horas</option>
@@ -892,7 +909,28 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
                       </select>
                     </Field>
 
-                    {form.calendar_type !== "once" ? (
+                    {form.calendar_type === "business_day" ? (
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <Field label="Dia útil nº" error={errors.business_day_of_month} hintText="1 = primeiro dia útil do mês.">
+                          <input
+                            value={form.business_day_of_month}
+                            onChange={(e) => handleChange("business_day_of_month", e.target.value)}
+                            className={input}
+                            type="number"
+                            min={1}
+                            max={23}
+                          />
+                        </Field>
+                        <Field label="Horário" error={errors.time_of_day} hintText="No fuso do agendamento.">
+                          <input
+                            value={form.time_of_day}
+                            onChange={(e) => handleChange("time_of_day", e.target.value)}
+                            className={input}
+                            type="time"
+                          />
+                        </Field>
+                      </div>
+                    ) : form.calendar_type !== "once" ? (
                       <Field label="Intervalo" error={errors.calendar_interval_value}>
                         <input
                           value={form.calendar_interval_value}
@@ -905,7 +943,11 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
                     ) : null}
                   </div>
 
-                  <Preview label="Resumo">{formatCalendarPreview(form.calendar_type, form.calendar_interval_value)}</Preview>
+                  <Preview label="Resumo">
+                    {form.calendar_type === "business_day"
+                      ? `Roda todo mês no ${form.business_day_of_month}º dia útil às ${form.time_of_day}, contando os dias úteis e feriados do calendário escolhido${form.calendar_id ? "" : " (sem calendário: segunda a sexta)"}.`
+                      : formatCalendarPreview(form.calendar_type, form.calendar_interval_value)}
+                  </Preview>
                 </div>
               ) : (
                 <div className="space-y-5">
