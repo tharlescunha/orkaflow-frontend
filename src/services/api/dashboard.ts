@@ -70,12 +70,23 @@ export type DashboardRecentTaskItem = {
   final_message: string | null;
 };
 
+/** Um ponto do gráfico: hora (período 1d) ou dia (demais), no horário de Brasília. */
+export type DashboardTimelineItem = {
+  key: string;
+  label: string;
+  success_tasks: number;
+  error_tasks: number;
+  other_tasks: number;
+  total_tasks: number;
+};
+
 export type DashboardOverviewResponse = {
   period: DashboardPeriod;
   date_from: string;
   date_to: string;
   summary: DashboardOverviewSummary;
   tasks_per_hour: DashboardTasksPerHourItem[];
+  timeline: DashboardTimelineItem[];
   recent_tasks: DashboardRecentTaskItem[];
 };
 
