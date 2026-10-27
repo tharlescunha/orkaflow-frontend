@@ -748,7 +748,7 @@ export function TaskDetailPage() {
                       title="Resultado JSON"
                       icon={<FileCode2 className="h-4 w-4 text-slate-500" />}
                     >
-                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 font-mono leading-6">
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 font-mono leading-6">
                         {resultJsonText}
                       </pre>
                     </Section>

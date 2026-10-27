@@ -73,7 +73,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
           </span>
           {isOpen && (
             <span className="min-w-0">
-              <span className="block truncate text-[19px] font-bold leading-tight tracking-tight text-slate-900">OrkaFlow</span>
+              <span className="block truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900">OrkaFlow</span>
               <span className="block truncate text-[10px] font-medium uppercase tracking-wider text-slate-400">{ENVIRONMENT_LABEL}</span>
             </span>
           )}

@@ -1,22 +1,22 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Monitor, Save, Server } from "lucide-react";
+import { Save } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
+import { ExecutionModePicker, type ExecutionMode } from "@/components/common/execution-mode-picker";
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { DetailSkeleton } from "@/components/common/skeleton";
 import { getApiErrorMessage } from "@/lib/api-error";
-import { badge, btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, select, textarea, tone } from "@/lib/ui";
+import { btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, textarea } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { getBot, updateBot } from "@/services/api/bots";
 import { listRepositories } from "@/services/api/repositories";
 import { toast } from "@/store/toast-store";
 import type { BotRead, BotUpdatePayload as UpdateBotPayload } from "@/types/bot";
 
-type ExecutionMode = "background" | "foreground";
 
 type EditFormState = {
   name: string;
@@ -52,35 +52,6 @@ function formFromBot(bot: BotRead): EditFormState {
   };
 }
 
-function getExecutionModeContent(mode: ExecutionMode) {
-  if (mode === "background") {
-    return {
-      title: "Execução em background",
-      description:
-        "O bot executa em segundo plano, sem depender de interação visual com a tela do usuário. É indicado para rotinas de API, processamento interno, integrações, leitura e escrita de arquivos, banco de dados e execuções silenciosas no worker.",
-      importance:
-        "Selecione background apenas para bots que realmente não precisam abrir sistema, clicar, digitar, focar janela ou interagir com desktop.",
-      warning:
-        "Se o bot precisa de tela, janela ativa, sessão logada ou interação visual, ele não vai funcionar corretamente em background.",
-      icon: Server,
-      panelClassName: "border-emerald-200 bg-emerald-50/50",
-      alertClassName: "border-red-200 bg-red-50 text-red-800",
-    };
-  }
-
-  return {
-    title: "Execução em foreground",
-    description:
-      "O bot executa com interação na área de trabalho da máquina. É indicado para automações RPA que precisam abrir aplicações locais, usar clique, digitação, foco de janela, leitura visual, sessão do usuário e operação em tela.",
-    importance:
-      "Selecione foreground para bots que dependem de interface gráfica ou qualquer interação visual com o sistema operacional ou com aplicativos instalados na máquina.",
-    warning:
-      "Esse modo deve ser usado quando o bot precisa acessar tela. Escolher foreground corretamente evita falhas de execução em bots que dependem da interface do usuário.",
-    icon: Monitor,
-    panelClassName: "border-amber-200 bg-amber-50/50",
-    alertClassName: "border-amber-200 bg-amber-50 text-amber-800",
-  };
-}
 
 // Tela: carrega o bot e só monta o formulário quando os dados chegam
 // (assim o refetch não sobrescreve o que a pessoa digitou).
@@ -147,10 +118,6 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
     queryFn: () => listRepositories(true),
   });
 
-  const executionModeContent = useMemo(
-    () => getExecutionModeContent(form.execution_mode),
-    [form.execution_mode]
-  );
 
   const updateMutation = useMutation({
     mutationFn: (payload: UpdateBotPayload) => updateBot(botId, payload),
@@ -218,7 +185,6 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
   }
 
   const repositories = repositoriesQuery.data ?? [];
-  const ExecutionModeIcon = executionModeContent.icon;
   const isSubmitting = updateMutation.isPending;
 
   return (
@@ -292,66 +258,10 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
               />
             </FormField>
 
-            <FormField label="Tipo de execução">
-              <select
-                value={form.execution_mode}
-                onChange={(e) => handleChange("execution_mode", e.target.value as ExecutionMode)}
-                className={select}
-              >
-                <option value="background">Background</option>
-                <option value="foreground">Foreground</option>
-              </select>
-            </FormField>
-
             <div className="md:col-span-2">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-sm font-semibold text-slate-900">Escolha corretamente o tipo de execução</p>
-                <p className="mt-1 text-sm leading-6 text-slate-700">
-                  Essa configuração define como o worker vai executar o bot. Selecionar o modo errado pode fazer a
-                  automação falhar, mesmo com código correto.
-                </p>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="grid gap-4 md:grid-cols-2">
-                <ExecutionModeOptionCard
-                  title="Background"
-                  description="Para bots que executam sem depender de tela, interface gráfica ou interação visual."
-                  active={form.execution_mode === "background"}
-                  badgeClassName={tone.success}
-                  onClick={() => handleChange("execution_mode", "background")}
-                />
-
-                <ExecutionModeOptionCard
-                  title="Foreground"
-                  description="Para bots que precisam abrir sistema, clicar, digitar, focar janela ou interagir com a área de trabalho."
-                  active={form.execution_mode === "foreground"}
-                  badgeClassName={tone.warning}
-                  onClick={() => handleChange("execution_mode", "foreground")}
-                />
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className={cn("flex gap-3 rounded-lg border px-4 py-4 text-sm text-slate-700", executionModeContent.panelClassName)}>
-                <ExecutionModeIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-semibold text-slate-900">{executionModeContent.title}</p>
-                  <p className="mt-1 leading-6 text-slate-700">{executionModeContent.description}</p>
-                  <p className="mt-3 leading-6 text-slate-700">{executionModeContent.importance}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className={cn("flex gap-3 rounded-lg border px-4 py-3", executionModeContent.alertClassName)}>
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="text-sm leading-6">
-                  <span className="font-semibold">Atenção: </span>
-                  {executionModeContent.warning}
-                </div>
-              </div>
+              <FormField label="Tipo de execução" hintText="Define como o worker roda o robô. O modo errado faz a automação falhar mesmo com código certo.">
+                <ExecutionModePicker value={form.execution_mode} onChange={(mode) => handleChange("execution_mode", mode)} />
+              </FormField>
             </div>
 
             <FormField label="Entrypoint" error={errors.entrypoint}>
@@ -457,39 +367,3 @@ function FormField({
   );
 }
 
-function ExecutionModeOptionCard({
-  title,
-  description,
-  active,
-  badgeClassName,
-  onClick,
-}: {
-  title: string;
-  description: string;
-  active: boolean;
-  badgeClassName: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "w-full rounded-lg border px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-        active ? "border-blue-500 bg-blue-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{title}</p>
-          <p className="mt-1 text-sm leading-6 text-slate-700">{description}</p>
-        </div>
-
-        <span className={cn(badge, "shrink-0", active ? badgeClassName : tone.neutral)}>
-          {active ? "Selecionado" : "Opção"}
-        </span>
-      </div>
-    </button>
-  );
-}

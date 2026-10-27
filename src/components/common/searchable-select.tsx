@@ -29,6 +29,7 @@ type SearchableSelectProps<T extends string | number> = {
 };
 
 const PANEL_MAX_HEIGHT = 320;
+const MIN_PANEL_HEIGHT = 200;
 
 export function SearchableSelect<T extends string | number>({
   value,
@@ -47,7 +48,7 @@ export function SearchableSelect<T extends string | number>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
-  const [rect, setRect] = useState<{ top: number; left: number; width: number; up: boolean } | null>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number; up: boolean; maxHeight: number } | null>(null);
 
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -74,11 +75,13 @@ export function SearchableSelect<T extends string | number>({
     if (!el) return;
     const r = el.getBoundingClientRect();
     const below = window.innerHeight - r.bottom;
-    const up = below < PANEL_MAX_HEIGHT + 16 && r.top > below;
+    // Prefere abrir para baixo (encolhe a lista se preciso); só sobe quando embaixo não cabe quase nada.
+    const up = below < MIN_PANEL_HEIGHT + 16 && r.top > below;
+    const maxHeight = Math.min(PANEL_MAX_HEIGHT, Math.max(MIN_PANEL_HEIGHT, (up ? r.top : below) - 16));
     // Lista mais larga que o campo: nunca passa da borda direita da tela.
     const width = Math.max(r.width, 260);
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    setRect({ top: up ? r.top - 4 : r.bottom + 4, left, width: r.width, up });
+    setRect({ top: up ? r.top - 4 : r.bottom + 4, left, width: r.width, up, maxHeight });
   }
 
   function openPanel() {
@@ -186,7 +189,7 @@ export function SearchableSelect<T extends string | number>({
         title={selected?.label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-10 w-full items-center justify-between gap-2 border border-slate-300 bg-white px-3 text-left text-sm text-slate-900 outline-none transition hover:bg-slate-50 focus:border-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-sm text-slate-900 shadow-sm outline-none transition hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
       >
         <span className={`truncate ${showPlaceholder ? "text-slate-400" : ""}`}>
           {loading ? "Carregando..." : buttonText}
@@ -227,11 +230,11 @@ export function SearchableSelect<T extends string | number>({
             <div
               ref={panelRef}
               role="listbox"
-              className="fixed z-[10000] flex flex-col border border-slate-200 bg-white shadow-xl"
+              className="fixed z-[10000] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
               style={{
                 left: rect.left,
                 width: Math.max(rect.width, 260),
-                maxHeight: PANEL_MAX_HEIGHT,
+                maxHeight: rect.maxHeight,
                 ...(rect.up ? { bottom: window.innerHeight - rect.top } : { top: rect.top }),
               }}
             >
@@ -246,7 +249,7 @@ export function SearchableSelect<T extends string | number>({
                   }}
                   onKeyDown={onSearchKeyDown}
                   placeholder={searchPlaceholder}
-                  className="h-9 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm text-slate-900 outline-none focus:border-slate-900"
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
