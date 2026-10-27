@@ -539,7 +539,7 @@ export function TasksPage() {
                       className={cn(table.trClickable, failed && "bg-red-50/40 hover:bg-red-50/70")}
                       onClick={() => navigate(`/tasks/${task.id}`)}
                     >
-                      <td className={cn(table.tdStrong, "tabular-nums")}>#{task.id}</td>
+                      <td className={cn(table.tdMuted, "tabular-nums text-[13px]")}>#{task.id}</td>
                       <td className={table.td}>
                         <StatusBadge status={task.status} />
                         <div>
