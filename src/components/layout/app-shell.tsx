@@ -4,6 +4,7 @@ import { AppHeader } from "./app-header";
 import { AppSidebar } from "./app-sidebar";
 import { ConnectionBanner } from "./connection-banner";
 import { SystemHealthBanner } from "./system-health-banner";
+import { useVersionCheck } from "@/hooks/use-version-check";
 import { CommandPalette } from "@/components/common/command-palette";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
@@ -24,6 +25,8 @@ export function AppShell({ content }: { content?: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
+  // Recarrega sozinho na próxima troca de tela quando sai versão nova do painel.
+  useVersionCheck();
 
   const closeSearch = useCallback(() => setSearchOpen(false), []);
 

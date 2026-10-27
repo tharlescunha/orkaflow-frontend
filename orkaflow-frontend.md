@@ -33,6 +33,18 @@ server {
     root /var/www/orkaflow-frontend/dist;   # copie o conteúdo de dist/ para cá
     index index.html;
 
+    # index.html e version.json nunca ficam em cache: é por eles que o navegador descobre
+    # que saiu versão nova (os arquivos em /assets têm hash no nome e podem ficar em cache).
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    location = /version.json {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -49,6 +61,15 @@ server {
 
 Depois de publicar uma nova versão: `npm run build`, copie `dist/` para o diretório do nginx
 e recarregue com `sudo nginx -t && sudo systemctl reload nginx`.
+
+### Como o navegador dos usuários pega a versão nova
+
+Ninguém precisa apertar Ctrl+Shift+R. Cada build grava um identificador no bundle e em
+`dist/version.json`. O painel compara os dois a cada minuto, ao voltar para a aba e ao trocar
+de tela; quando o servidor tem um build diferente, ele recarrega na próxima troca de tela
+(para não perder um formulário no meio). Para isso funcionar o `index.html` e o `version.json`
+não podem ficar em cache (cabeçalhos acima; no Azure Static Web App isso está no
+`public/staticwebapp.config.json`).
 
 ---
 
