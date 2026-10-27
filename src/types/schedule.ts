@@ -50,6 +50,10 @@ export type ScheduleRead = {
   retry_max?: number;
   retry_delay_seconds?: number;
   retry_on?: string[];
+  // Calendário de dias permitidos (null = roda em qualquer dia) e o que fazer em dia não permitido.
+  calendar_id?: number | null;
+  calendar_policy?: "skip" | "defer";
+  calendar_name?: string | null;
 };
 
 export type ListSchedulesParams = {
@@ -73,6 +77,8 @@ export type CreateSchedulePayload = {
   retry_max?: number;
   retry_delay_seconds?: number;
   retry_on?: string[];
+  calendar_id?: number | null;
+  calendar_policy?: "skip" | "defer";
 };
 
 export type UpdateSchedulePayload = {
@@ -96,4 +102,6 @@ export type UpdateSchedulePayload = {
   retry_max?: number;
   retry_delay_seconds?: number;
   retry_on?: string[];
+  calendar_id?: number | null;
+  calendar_policy?: "skip" | "defer";
 };

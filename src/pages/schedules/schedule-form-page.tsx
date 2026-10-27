@@ -11,6 +11,7 @@ import { withApiDetail } from "@/lib/api-error";
 import { btn, card, cardBody, cardHeader, cardTitle, fieldError, hint, input, label as labelClass, select, textarea } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { getAutomation, listAutomations } from "@/services/api/automations";
+import { listCalendars } from "@/services/api/calendars";
 import { createSchedule, getSchedule, updateSchedule } from "@/services/api/schedules";
 import type {
   CalendarType,
@@ -23,6 +24,13 @@ import type {
 import { toast } from "@/store/toast-store";
 
 type CronMode = "every-x-minutes" | "every-x-hours" | "daily-at" | "weekly-at" | "monthly-at" | "custom";
+
+type CalendarPolicy = "skip" | "defer";
+
+const CALENDAR_POLICY_LABELS: Record<CalendarPolicy, string> = {
+  defer: "Adiar para o próximo dia permitido (mesmo horário)",
+  skip: "Pular a execução",
+};
 
 type FormState = {
   name: string;
@@ -38,6 +46,10 @@ type FormState = {
   retry_max: string;
   retry_delay_seconds: string;
   retry_on: string[];
+  // Calendário de dias permitidos ("" = sem calendário) e o que fazer em dia não permitido.
+  calendar_id: string;
+  calendar_policy: CalendarPolicy;
+  calendar_name: string;
 
   calendar_interval_value: string;
 
@@ -71,6 +83,9 @@ const initialFormState: FormState = {
   retry_max: "0",
   retry_delay_seconds: "300",
   retry_on: ["erro", "timeout"],
+  calendar_id: "",
+  calendar_policy: "defer",
+  calendar_name: "",
 
   calendar_interval_value: "1",
 
@@ -232,6 +247,9 @@ function scheduleToForm(schedule: ScheduleRead): FormState {
     retry_max: String(schedule.retry_max ?? 0),
     retry_delay_seconds: String(schedule.retry_delay_seconds ?? 300),
     retry_on: schedule.retry_on ?? ["erro", "timeout"],
+    calendar_id: schedule.calendar_id ? String(schedule.calendar_id) : "",
+    calendar_policy: schedule.calendar_policy ?? "defer",
+    calendar_name: schedule.calendar_name ?? "",
     ...parseCronToForm(schedule.cron_expression),
   };
 }
@@ -418,6 +436,19 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
     enabled: Number.isFinite(selectedAutomationId) && selectedAutomationId > 0,
   });
 
+  // Só calendários ativos; o já vinculado (edição) continua na lista mesmo se inativo.
+  const calendarsQuery = useQuery({
+    queryKey: ["calendars-options"],
+    queryFn: () => listCalendars({ active: true }),
+  });
+  const calendarOptions = useMemo(() => {
+    const items = (calendarsQuery.data ?? []).map((c) => ({ value: String(c.id), label: c.name }));
+    if (form.calendar_id && !items.some((item) => item.value === form.calendar_id)) {
+      items.push({ value: form.calendar_id, label: `${form.calendar_name || `Calendário #${form.calendar_id}`} (inativo)` });
+    }
+    return items;
+  }, [calendarsQuery.data, form.calendar_id, form.calendar_name]);
+
   const cronPreview = useMemo(() => buildCronExpression(form), [form]);
   const cronDescription = useMemo(() => describeCron(cronPreview), [cronPreview]);
 
@@ -538,6 +569,8 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
       retry_max: Number(form.retry_max),
       retry_delay_seconds: Number(form.retry_delay_seconds),
       retry_on: form.retry_on,
+      calendar_id: form.calendar_id ? Number(form.calendar_id) : null,
+      calendar_policy: form.calendar_policy,
     };
 
     if (form.schedule_type === "calendar") {
@@ -708,6 +741,52 @@ function ScheduleForm({ initial, scheduleId, title, backTo, backLabel, automatio
                   Agendamento ativo
                 </label>
               </div>
+
+              <Field
+                label="Calendário"
+                hintText={
+                  calendarsQuery.isError
+                    ? "Não foi possível carregar os calendários."
+                    : "Dias úteis, feriados e janelas em que o robô não roda. Sem calendário, roda em qualquer dia."
+                }
+              >
+                <select
+                  value={form.calendar_id}
+                  onChange={(e) => handleChange("calendar_id", e.target.value)}
+                  className={select}
+                  disabled={calendarsQuery.isLoading}
+                >
+                  <option value="">Sem calendário</option>
+                  {calendarOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {form.calendar_id ? (
+                <Field
+                  label="Em dia não permitido"
+                  hintText={
+                    form.calendar_policy === "defer"
+                      ? "Feriado ou fim de semana: a execução vai para o próximo dia permitido, no mesmo horário."
+                      : "Feriado ou fim de semana: a execução daquele dia não acontece."
+                  }
+                >
+                  <select
+                    value={form.calendar_policy}
+                    onChange={(e) => handleChange("calendar_policy", e.target.value as CalendarPolicy)}
+                    className={select}
+                  >
+                    {(Object.keys(CALENDAR_POLICY_LABELS) as CalendarPolicy[]).map((value) => (
+                      <option key={value} value={value}>
+                        {CALENDAR_POLICY_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
             </div>
           </section>
 

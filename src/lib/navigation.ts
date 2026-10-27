@@ -6,6 +6,7 @@ import {
   Bot,
   Boxes,
   CalendarClock,
+  CalendarDays,
   ClipboardList,
   FileText,
   FolderGit2,
@@ -83,6 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Administração",
     items: [
+      { label: "Calendários", to: "/calendars", icon: CalendarDays, keywords: "feriados dias úteis janela" },
       { label: "Usuários", to: "/users", icon: Users },
       { label: "Perfil", to: "/profile", icon: UserCircle2, keywords: "minha conta senha" },
     ],

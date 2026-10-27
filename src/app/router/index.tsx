@@ -41,6 +41,9 @@ import { SchedulesPage } from "../../pages/schedules/schedules-page";
 import { ScheduleDetailPage } from "../../pages/schedules/schedule-detail-page";
 import { ScheduleFormPage } from "../../pages/schedules/schedule-form-page";
 
+import { CalendarsPage } from "../../pages/calendars/calendars-page";
+import { CalendarFormPage } from "../../pages/calendars/calendar-form-page";
+
 import { EnvVariablesPage } from "../../pages/env-variables/env-variables-page";
 import { CredentialsPage } from "../../pages/credentials/credentials-page";
 import { CredentialCreatePage } from "../../pages/credentials/credential-create-page";
@@ -127,6 +130,10 @@ export const router = createBrowserRouter([
       { path: "schedules/new", element: <ScheduleFormPage /> },
       { path: "schedules/:scheduleId", element: <ScheduleDetailPage /> },
       { path: "schedules/:scheduleId/edit", element: <ScheduleFormPage /> },
+
+      { path: "calendars", element: <CalendarsPage /> },
+      { path: "calendars/new", element: <CalendarFormPage /> },
+      { path: "calendars/:calendarId/edit", element: <CalendarFormPage /> },
 
       { path: "env-variables", element: <EnvVariablesPage /> },
       { path: "credentials", element: <CredentialsPage /> },
