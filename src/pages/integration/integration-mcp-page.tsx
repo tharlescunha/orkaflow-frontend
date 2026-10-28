@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
-import { DetailSkeleton } from "@/components/common/skeleton";
+import { McpPageSkeleton } from "@/components/common/skeleton";
 import { card } from "@/lib/ui";
 import { getMcpInfo } from "@/services/api/integration";
 import { resolveApiBase } from "./api-base";
@@ -14,14 +14,11 @@ export function IntegrationMcpPage() {
 
   return (
     <section className={card}>
-      <PageHeader
-        title="MCP para IA"
-        description="Conecte o OrkaFlow ao Claude ou a outra IA para consultar e operar o orquestrador conversando."
-      />
+      <PageHeader title="MCP para IA" />
 
       <div className="p-5 md:p-6">
         {infoQuery.isLoading ? (
-          <DetailSkeleton fields={4} />
+          <McpPageSkeleton />
         ) : infoQuery.isError || !info ? (
           <QueryError error={infoQuery.error} what="os dados do MCP" onRetry={() => infoQuery.refetch()} retrying={infoQuery.isFetching} />
         ) : (

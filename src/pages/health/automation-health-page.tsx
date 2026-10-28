@@ -30,7 +30,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { CredentialAlertStrip } from "@/components/common/credential-status";
 import { RefreshIndicator } from "@/components/common/refresh-indicator";
-import { CardSkeleton } from "@/components/common/skeleton";
+import { HealthCardSkeleton } from "@/components/common/skeleton";
 import { StatusBadge } from "@/components/common/status-badge";
 import { normalizeSearch } from "@/lib/search";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -489,7 +489,7 @@ export function AutomationHealthPage() {
   );
 
   const grid = automationHealthQuery.isLoading ? (
-    <CardSkeleton count={8} />
+    <HealthCardSkeleton count={10} gridClassName={sizeClasses.grid} />
   ) : automationHealthQuery.isError ? (
     <QueryError
       error={automationHealthQuery.error}
@@ -624,7 +624,6 @@ export function AutomationHealthPage() {
         <section className={card}>
           <PageHeader
             title="Saúde das automações"
-            description="Verde = ok e dentro do prazo · Âmbar = atrasado, não rodou no tempo esperado · Vermelho = última execução deu erro."
             actions={
               <>
                 {viewSwitch}

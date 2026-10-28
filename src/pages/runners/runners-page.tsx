@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ActionsMenu } from "@/components/common/actions-menu";
 import { RefreshIndicator } from "@/components/common/refresh-indicator";
-import { CardSkeleton } from "@/components/common/skeleton";
+import { RunnerCardSkeleton } from "@/components/common/skeleton";
 import { toast } from "@/store/toast-store";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/format";
@@ -170,7 +170,6 @@ export function RunnersPage() {
       <section className={card}>
         <PageHeader
           title="Runners"
-          description="Acompanhe as máquinas cadastradas e abra os detalhes de cada uma."
           actions={
             <RefreshIndicator
               updatedAt={runnersQuery.dataUpdatedAt}
@@ -198,7 +197,7 @@ export function RunnersPage() {
 
         <div className="p-5">
           {runnersQuery.isLoading ? (
-            <CardSkeleton count={6} />
+            <RunnerCardSkeleton count={5} />
           ) : runnersQuery.isError ? (
             <QueryError
               error={runnersQuery.error}
