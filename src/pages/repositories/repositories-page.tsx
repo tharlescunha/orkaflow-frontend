@@ -242,7 +242,7 @@ export function RepositoriesPage() {
         title={confirm?.active ? "Desativar repositório" : "Ativar repositório"}
         description={
           confirm?.active
-            ? `"${confirm.name}" fica indisponível para novas automações. Você pode ativar de novo depois.`
+            ? `"${confirm.name}" será desativado e todos os bots e automações dele são desativados junto: nada do repositório continua rodando nem sendo sincronizado nas máquinas. Reativar o repositório depois não reativa os bots e automações (isso é feito um a um).`
             : `"${confirm?.name ?? ""}" volta a ficar disponível para automações.`
         }
         confirmLabel={confirm?.active ? "Desativar" : "Ativar"}
