@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { Save, Send } from "lucide-react";
+import { Save, Send, X } from "lucide-react";
 
 import { PageHeader } from "@/components/common/page-header";
 import { QueryError } from "@/components/common/query-error";
-import { SearchableSelect } from "@/components/common/searchable-select";
+import { SearchableMultiSelect } from "@/components/common/searchable-multi-select";
 import { DetailSkeleton } from "@/components/common/skeleton";
 import { withApiDetail } from "@/lib/api-error";
 import { btn, card, cardHeader, cardTitle, fieldError, focusRing, hint, input, label as labelClass, select, textarea } from "@/lib/ui";
@@ -44,7 +44,8 @@ type FormState = {
   description: string;
   active: boolean;
   scope_type: EventScopeType;
-  scope_id: number | "";
+  // Alvos da regra (ids de bots ou de automações). Vários de uma vez: a mesma regra para o projeto inteiro.
+  scope_ids: number[];
   trigger_type: string;
   trigger_key: string;
   trigger_value: string;
@@ -64,7 +65,7 @@ const emptyForm: FormState = {
   description: "",
   active: true,
   scope_type: "automation",
-  scope_id: "",
+  scope_ids: [],
   trigger_type: "task_error",
   trigger_key: "",
   trigger_value: "",
@@ -84,7 +85,7 @@ function ruleToForm(rule: EventRule): FormState {
     description: rule.description ?? "",
     active: Boolean(rule.active),
     scope_type: rule.scope_type ?? "all",
-    scope_id: rule.scope_id ?? "",
+    scope_ids: rule.scope_ids?.length ? rule.scope_ids : rule.scope_id != null ? [rule.scope_id] : [],
     trigger_type: rule.trigger_type ?? "task_error",
     trigger_key: cfg.key ?? "",
     trigger_value: cfg.value ?? "",
@@ -111,8 +112,8 @@ function validate(f: FormState): FormErrors {
   if (!name) next.name = "Dê um nome ao evento.";
   else if (name.length > NAME_MAX) next.name = `Máximo de ${NAME_MAX} caracteres.`;
 
-  if (f.scope_type !== "all" && f.scope_id === "")
-    next.scope_id = f.scope_type === "bot" ? "Escolha o bot." : "Escolha a automação.";
+  if (f.scope_type !== "all" && f.scope_ids.length === 0)
+    next.scope_ids = f.scope_type === "bot" ? "Escolha pelo menos um bot." : "Escolha pelo menos uma automação.";
   if (!f.trigger_type) next.trigger_type = "Escolha o que dispara o evento.";
   if (f.trigger_type === "result_contains" && !f.trigger_key.trim()) next.trigger_key = "Informe a chave do retorno (ex.: status).";
   if (f.trigger_type === "exit_code") {
@@ -146,7 +147,8 @@ function toPayload(f: FormState): EventRulePayload {
     description: f.description.trim() || null,
     active: f.active,
     scope_type: f.scope_type,
-    scope_id: f.scope_type === "all" || f.scope_id === "" ? null : Number(f.scope_id),
+    scope_id: f.scope_type === "all" || f.scope_ids.length === 0 ? null : f.scope_ids[0],
+    scope_ids: f.scope_type === "all" ? [] : f.scope_ids,
     trigger_type: f.trigger_type,
     trigger_config,
     pre_steps: stepsToApi(f.pre_steps),
@@ -303,8 +305,8 @@ function EventForm({ initial, ruleId, title }: EventFormProps) {
   }
 
   function setScope(scope: EventScopeType) {
-    setForm((prev) => ({ ...prev, scope_type: scope, scope_id: scope === prev.scope_type ? prev.scope_id : "" }));
-    setErrors((prev) => ({ ...prev, scope_id: undefined }));
+    setForm((prev) => ({ ...prev, scope_type: scope, scope_ids: scope === prev.scope_type ? prev.scope_ids : [] }));
+    setErrors((prev) => ({ ...prev, scope_ids: undefined }));
   }
 
   function insertVariable(token: string) {
@@ -425,40 +427,37 @@ function EventForm({ initial, ruleId, title }: EventFormProps) {
 
               {form.scope_type === "automation" && (
                 <div className="md:col-span-2">
-                  <label htmlFor="ev-scope-automation" className={labelClass}>
-                    Automação
-                  </label>
-                  <SearchableSelect<number>
-                    id="ev-scope-automation"
-                    value={form.scope_id}
-                    onChange={(value) => setField("scope_id", value)}
+                  <span className={labelClass}>Automações</span>
+                  <SearchableMultiSelect<number>
+                    label="Escolha as automações"
+                    selectedValues={form.scope_ids}
+                    onChange={(values) => setField("scope_ids", values)}
                     options={automationOptions}
-                    placeholder="Escolha a automação"
                     searchPlaceholder="Buscar automação..."
-                    loading={automationsQuery.isLoading}
-                    emptyText={automationsQuery.isError ? "Não foi possível carregar as automações." : "Nenhuma automação ativa."}
+                    emptyText={automationsQuery.isError ? "Não foi possível carregar as automações." : automationsQuery.isLoading ? "Carregando..." : "Nenhuma automação ativa."}
+                    className="w-full"
                   />
-                  {errors.scope_id && <p className={fieldError}>{errors.scope_id}</p>}
+                  <ScopeChips options={automationOptions} selected={form.scope_ids} onRemove={(id) => setField("scope_ids", form.scope_ids.filter((v) => v !== id))} />
+                  <p className={hint}>Pode marcar mais de uma: a mesma regra vale para todas.</p>
+                  {errors.scope_ids && <p className={fieldError}>{errors.scope_ids}</p>}
                 </div>
               )}
 
               {form.scope_type === "bot" && (
                 <div className="md:col-span-2">
-                  <label htmlFor="ev-scope-bot" className={labelClass}>
-                    Bot
-                  </label>
-                  <SearchableSelect<number>
-                    id="ev-scope-bot"
-                    value={form.scope_id}
-                    onChange={(value) => setField("scope_id", value)}
+                  <span className={labelClass}>Bots</span>
+                  <SearchableMultiSelect<number>
+                    label="Escolha os bots"
+                    selectedValues={form.scope_ids}
+                    onChange={(values) => setField("scope_ids", values)}
                     options={botOptions}
-                    placeholder="Escolha o bot"
                     searchPlaceholder="Buscar bot..."
-                    loading={botsQuery.isLoading}
-                    emptyText={botsQuery.isError ? "Não foi possível carregar os bots." : "Nenhum bot cadastrado."}
+                    emptyText={botsQuery.isError ? "Não foi possível carregar os bots." : botsQuery.isLoading ? "Carregando..." : "Nenhum bot cadastrado."}
+                    className="w-full"
                   />
-                  <p className={hint}>Vale para todas as automações deste bot.</p>
-                  {errors.scope_id && <p className={fieldError}>{errors.scope_id}</p>}
+                  <ScopeChips options={botOptions} selected={form.scope_ids} onRemove={(id) => setField("scope_ids", form.scope_ids.filter((v) => v !== id))} />
+                  <p className={hint}>Pode marcar mais de um (ex.: os 4 bots do projeto Insumos). Vale para todas as automações desses bots.</p>
+                  {errors.scope_ids && <p className={fieldError}>{errors.scope_ids}</p>}
                 </div>
               )}
 
@@ -679,6 +678,40 @@ function EventForm({ initial, ruleId, title }: EventFormProps) {
         </div>
       </section>
     </form>
+  );
+}
+
+/** Alvos escolhidos, em chips com X: dá para ver a lista inteira sem abrir o seletor. */
+function ScopeChips({
+  options,
+  selected,
+  onRemove,
+}: {
+  options: { value: number; label: string; description?: string | null }[];
+  selected: number[];
+  onRemove: (id: number) => void;
+}) {
+  if (selected.length === 0) return null;
+  const byId = new Map(options.map((o) => [o.value, o]));
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {selected.map((id) => {
+        const option = byId.get(id);
+        return (
+          <span key={id} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 py-0.5 pl-2.5 pr-1 text-xs font-medium text-blue-800">
+            {option?.label ?? `#${id}`}
+            <button
+              type="button"
+              onClick={() => onRemove(id)}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-700 hover:bg-blue-200"
+              aria-label={`Tirar ${option?.label ?? id}`}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        );
+      })}
+    </div>
   );
 }
 

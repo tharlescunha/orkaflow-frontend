@@ -33,6 +33,7 @@ function toPayload(rule: EventRule): EventRulePayload {
     active: rule.active,
     scope_type: rule.scope_type,
     scope_id: rule.scope_id,
+    scope_ids: rule.scope_ids ?? [],
     trigger_type: rule.trigger_type,
     trigger_config: rule.trigger_config ?? {},
     pre_steps: rule.pre_steps ?? [],

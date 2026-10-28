@@ -26,6 +26,8 @@ export type EventRule = {
   active: boolean;
   scope_type: EventScopeType;
   scope_id: number | null;
+  /** Vários alvos (bots ou automações) na mesma regra; scope_id é o primeiro. */
+  scope_ids: number[];
   scope_label: string | null;
   trigger_type: string;
   trigger_label: string;
