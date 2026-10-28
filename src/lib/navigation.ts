@@ -20,6 +20,7 @@ import {
   Server,
   Settings2,
   Siren,
+  SlidersHorizontal,
   UserCircle2,
   Users,
   Variable,
@@ -89,6 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Calendários", to: "/calendars", icon: CalendarDays, keywords: "feriados dias úteis janela" },
       { label: "Usuários", to: "/users", icon: Users },
+      { label: "Configurações", to: "/settings", icon: SlidersHorizontal, keywords: "ambientes git token devops github" },
       { label: "Perfil", to: "/profile", icon: UserCircle2, keywords: "minha conta senha" },
     ],
   },

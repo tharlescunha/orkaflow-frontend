@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { CheckCircle2, GitCommitHorizontal, Loader2, RefreshCcw, Save, Tag } from "lucide-react";
 
 import { PageHeader } from "@/components/common/page-header";
+import { GitTokenHint } from "./git-token-hint";
 import { ExecutionModePicker, type ExecutionMode } from "@/components/common/execution-mode-picker";
 import { SearchableSelect } from "@/components/common/searchable-select";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -199,7 +200,7 @@ export function BotCreatePage() {
                 <FormField
                   label="Link do repositório Git"
                   error={errors.source_url}
-                  hintText="O mesmo clone que a máquina vai fazer. Se tiver token, ele fica dentro do link e nunca aparece na tela."
+                  hintText="O mesmo clone que a máquina vai fazer. Pode colar o link limpo: o token vem do ambiente de Git cadastrado em Configurações. Se colar com token dentro, ele é usado e nunca aparece na tela."
                 >
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <input
@@ -227,6 +228,7 @@ export function BotCreatePage() {
                       {isInspecting ? "Lendo o Git..." : synced ? "Sincronizar de novo" : "Sincronizar"}
                     </button>
                   </div>
+                  <GitTokenHint url={form.source_url} />
                 </FormField>
 
                 {inspectError && (

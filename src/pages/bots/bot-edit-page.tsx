@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { GitTokenHint } from "./git-token-hint";
 import { QueryError } from "@/components/common/query-error";
 import { ExecutionModePicker, type ExecutionMode } from "@/components/common/execution-mode-picker";
 import { SearchableSelect } from "@/components/common/searchable-select";
@@ -294,7 +295,7 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
               hintText={
                 form.source_url.includes("***@")
                   ? "O token está escondido (***) e continua salvo. Para trocar, apague e cole o link completo com o token novo."
-                  : "Se o link tiver token, cole completo; ele fica guardado e nunca aparece na tela."
+                  : "Pode ser o link limpo (o token vem do ambiente de Git em Configurações) ou com o token dentro; ele nunca aparece na tela."
               }
             >
               <input
@@ -302,6 +303,7 @@ function BotEditForm({ botId, initial, backTo }: { botId: number; initial: EditF
                 onChange={(e) => handleChange("source_url", e.target.value)}
                 className={cn(input, "font-mono")}
               />
+              <GitTokenHint url={form.source_url} />
             </FormField>
 
             <FormField label="Timeout padrão (segundos)" error={errors.timeout_default} hintText="Tempo máximo de uma execução antes de ser encerrada.">
