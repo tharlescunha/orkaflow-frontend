@@ -27,6 +27,10 @@ export type RunnerRead = {
   access_remote: boolean;
   enabled: boolean;
   status: string;
+  /** Usuário com que a equipe acessa a máquina (cadastrado no painel). */
+  login_user?: string | null;
+  /** Usuário do Windows em que o worker está rodando (informado pelo worker). */
+  os_user?: string | null;
   last_heartbeat?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -61,6 +65,7 @@ export type UpdateRunnerPayload = {
   access_remote?: boolean;
   enabled?: boolean;
   status?: string;
+  login_user?: string | null;
 };
 
 export type UpdateRunnerConfigPayload = {
