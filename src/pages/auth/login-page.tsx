@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Activity, CalendarClock, Eye, EyeOff, Loader2, Server } from "lucide-react";
 
 import { getApiErrorMessage } from "@/lib/api-error";
-import { ENVIRONMENT_LABEL } from "@/lib/navigation";
+import { APP_VERSION, ENVIRONMENT_LABEL } from "@/lib/navigation";
 import { btn, input, label } from "@/lib/ui";
 import { loginRequest, meRequest } from "@/services/api/auth";
 import { useAuthStore } from "../../store/auth-store";
@@ -52,15 +52,19 @@ export function LoginPage() {
       <div className="w-full max-w-[960px]">
         <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_30px_70px_-30px_rgba(15,23,42,0.45)] lg:grid-cols-[1fr_1fr]">
           {/* Lado esquerdo: painel azul do guia, logo na versão escura e a frase de assinatura. */}
-          <section className="hidden flex-col justify-between bg-regente-gradient p-10 text-white lg:flex">
+          <section className="hidden flex-col justify-between gap-12 bg-[linear-gradient(160deg,#1e3a8a_0%,#1d4ed8_100%)] p-10 text-white lg:flex">
             <div className="flex items-center gap-3">
-              <img src="/brand/regente-icone-sobre-escuro.svg" alt="Regente" className="h-12 w-12 shrink-0" />
+              <img src="/brand/regente-icone-sobre-escuro.svg" alt="Regente" className="h-11 w-11 shrink-0" />
               <span>
-                <span className="block text-[26px] font-bold leading-tight tracking-[-0.035em] text-white">Regente</span>
-                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-regente-200">{ENVIRONMENT_LABEL}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[24px] font-bold leading-none tracking-[-0.035em] text-white">Regente</span>
+                  <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-px text-[10px] font-bold leading-4 text-regente-200 ring-1 ring-white/20">v{APP_VERSION}</span>
+                </span>
+                <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-200">{ENVIRONMENT_LABEL}</span>
               </span>
             </div>
 
+            {/* gap-12 acima garante um respiro entre a marca e o texto mesmo em telas baixas. */}
             <div className="space-y-6">
               <div className="space-y-3">
                 <h2 className="text-[28px] font-bold leading-tight tracking-tight text-white">Cada automação no seu compasso.</h2>
@@ -87,8 +91,11 @@ export function LoginPage() {
               <div className="mb-6 flex items-center gap-3 lg:hidden">
                 <img src="/brand/regente-icone.svg" alt="Regente" className="h-10 w-10 shrink-0" />
                 <span>
-                  <span className="block text-xl font-bold leading-tight tracking-[-0.035em] text-regente-ink">Regente</span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-[22px] font-bold leading-none tracking-[-0.035em] text-regente-ink">Regente</span>
+                    <span className="shrink-0 rounded-full bg-regente-100 px-1.5 py-px text-[10px] font-bold leading-4 text-[#1E40AF]">v{APP_VERSION}</span>
+                  </span>
+                  <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
                 </span>
               </div>
 

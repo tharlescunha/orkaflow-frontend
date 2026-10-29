@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { useSystemHealth } from "@/hooks/use-system-health";
-import { ENVIRONMENT_LABEL, NAV_GROUPS, isExactOnly } from "@/lib/navigation";
+import { APP_VERSION, ENVIRONMENT_LABEL, NAV_GROUPS, isExactOnly } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
 
@@ -68,12 +68,15 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
       <div className="flex h-full min-h-0 flex-col">
         {/* Marca */}
         <NavLink to="/" onClick={onNavigate} className={cn("mx-3 flex items-center gap-3 border-b border-slate-200 px-1 pb-4 pt-5", !isOpen && "justify-center px-0")}>
-          {/* Logo simples do Regente: ícone original do guia (sem recolorir) + nome em Inter Bold. */}
+          {/* Logo simples do Regente como no guia: ícone original, nome em Inter Bold (−3,5%), selo de versão e legenda. */}
           <img src="/brand/regente-icone.svg" alt="Regente" className="h-10 w-10 shrink-0" />
           {isOpen && (
             <span className="min-w-0">
-              <span className="block truncate text-[22px] font-bold leading-tight tracking-[-0.035em] text-regente-ink">Regente</span>
-              <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
+              <span className="flex items-center gap-2">
+                <span className="truncate text-[22px] font-bold leading-none tracking-[-0.035em] text-regente-ink">Regente</span>
+                <span className="shrink-0 rounded-full bg-regente-100 px-1.5 py-px text-[10px] font-bold leading-4 text-[#1E40AF]">v{APP_VERSION}</span>
+              </span>
+              <span className="mt-0.5 block truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
             </span>
           )}
         </NavLink>

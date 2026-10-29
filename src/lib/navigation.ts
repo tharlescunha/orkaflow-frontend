@@ -117,6 +117,9 @@ export function describeRoute(pathname: string): { group?: string; label?: strin
   return best ? { group: best.group, label: best.item.label } : {};
 }
 
+// Versão do produto mostrada no selo ao lado do nome (sidebar e login), como no guia da marca.
+export const APP_VERSION = "3.0";
+
 // VITE_ENV_LABEL no build (ex.: "Homologação"); sem ela, pelo modo do Vite.
 export const ENVIRONMENT_LABEL: string =
   (import.meta.env.VITE_ENV_LABEL as string | undefined) || (import.meta.env.DEV ? "Desenvolvimento" : "Produção");
