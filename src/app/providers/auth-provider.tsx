@@ -23,11 +23,9 @@ function BootSplash() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-6 text-slate-800">
       <div className="flex flex-col items-center gap-4 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-md shadow-blue-600/30">
-          <img src="/favicon.svg" alt="" className="h-7 w-7 brightness-0 invert" />
-        </div>
+        <img src="/brand/regente-icone.svg" alt="Regente" className="h-14 w-14" />
         <div>
-          <p className="text-lg font-semibold text-slate-900">OrkaFlow</p>
+          <p className="text-lg font-bold tracking-[-0.035em] text-regente-ink">Regente</p>
           <p className="mt-1 text-sm text-slate-500">Conectando ao servidor...</p>
         </div>
         {slow && (

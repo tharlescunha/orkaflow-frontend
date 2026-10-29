@@ -14,7 +14,8 @@ const HIGHLIGHTS = [
   { icon: CalendarClock, text: "Agendamentos, versões dos robôs e execução manual com um clique." },
 ];
 
-// Tela de login no mesmo padrão claro do painel: fundo cinza neutro, cartão branco, azul só no essencial.
+// Tela de login na marca Regente: painel azul com o logo na versão escura, cartão branco com o formulário.
+// O formulário e o fluxo de autenticação não mudam.
 export function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -47,29 +48,28 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#e9edf3] bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.14),transparent_55%)] px-4 py-10 text-slate-800">
+    <div className="flex min-h-screen w-full items-center justify-center bg-regente-bg bg-[radial-gradient(ellipse_at_top,rgba(29,78,216,0.12),transparent_55%)] px-4 py-10 text-slate-800">
       <div className="w-full max-w-[960px]">
         <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_30px_70px_-30px_rgba(15,23,42,0.45)] lg:grid-cols-[1fr_1fr]">
-          {/* Lado esquerdo: a marca e o que o painel faz. */}
-          <section className="hidden flex-col justify-between bg-[linear-gradient(160deg,#1e3a8a_0%,#1d4ed8_100%)] p-10 text-white lg:flex">
+          {/* Lado esquerdo: painel azul do guia, logo na versão escura e a frase de assinatura. */}
+          <section className="hidden flex-col justify-between bg-regente-gradient p-10 text-white lg:flex">
             <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-                <img src="/favicon.svg" alt="" className="h-7 w-7 brightness-0 invert" />
-              </span>
+              <img src="/brand/regente-icone-sobre-escuro.svg" alt="Regente" className="h-12 w-12 shrink-0" />
               <span>
-                <span className="block text-[22px] font-bold leading-tight tracking-tight text-white">OrkaFlow</span>
-                <span className="block text-[11px] font-medium uppercase tracking-wider text-blue-200">{ENVIRONMENT_LABEL}</span>
+                <span className="block text-[26px] font-bold leading-tight tracking-[-0.035em] text-white">Regente</span>
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-regente-200">{ENVIRONMENT_LABEL}</span>
               </span>
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-2xl font-semibold leading-snug tracking-tight text-white">
-                Tudo que roda, onde roda e o que deu errado. Em uma tela.
-              </h2>
+              <div className="space-y-3">
+                <h2 className="text-[28px] font-bold leading-tight tracking-tight text-white">Cada automação no seu compasso.</h2>
+                <p className="text-[15px] leading-6 text-regente-200">Agende, dispare e acompanhe bots, APIs e robôs em um só painel.</p>
+              </div>
               <ul className="space-y-3">
                 {HIGHLIGHTS.map(({ icon: Icon, text }) => (
-                  <li key={text} className="flex items-start gap-3 text-blue-100">
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
+                  <li key={text} className="flex items-start gap-3 text-regente-200">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white ring-1 ring-white/20">
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="text-[14px] leading-6">{text}</span>
@@ -78,21 +78,22 @@ export function LoginPage() {
               </ul>
             </div>
 
-            <p className="text-xs text-blue-200/80">Orquestrador de robôs da ALZ Grãos · © 2026</p>
+            <p className="text-xs text-regente-200/80">Orquestrador de automações da ALZ Grãos · © 2026</p>
           </section>
 
           {/* Lado direito: o formulário. */}
           <section className="flex items-center justify-center p-8 sm:p-10">
             <div className="w-full max-w-[380px]">
               <div className="mb-6 flex items-center gap-3 lg:hidden">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600">
-                  <img src="/favicon.svg" alt="" className="h-6 w-6 brightness-0 invert" />
+                <img src="/brand/regente-icone.svg" alt="Regente" className="h-10 w-10 shrink-0" />
+                <span>
+                  <span className="block text-xl font-bold leading-tight tracking-[-0.035em] text-regente-ink">Regente</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
                 </span>
-                <span className="text-xl font-bold tracking-tight text-slate-900">OrkaFlow</span>
               </div>
 
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Entrar</h1>
-              <p className="mt-1 text-sm text-slate-500">Use o seu login do painel.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-regente-ink">Entrar</h1>
+              <p className="mt-1 text-sm text-regente-muted">Use o seu login do painel.</p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
                 <div>

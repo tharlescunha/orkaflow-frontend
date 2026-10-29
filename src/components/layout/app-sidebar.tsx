@@ -68,13 +68,12 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
       <div className="flex h-full min-h-0 flex-col">
         {/* Marca */}
         <NavLink to="/" onClick={onNavigate} className={cn("mx-3 flex items-center gap-3 border-b border-slate-200 px-1 pb-4 pt-5", !isOpen && "justify-center px-0")}>
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-md shadow-blue-600/30">
-            <img src="/favicon.svg" alt="" className="h-6 w-6 brightness-0 invert" />
-          </span>
+          {/* Logo simples do Regente: ícone original do guia (sem recolorir) + nome em Inter Bold. */}
+          <img src="/brand/regente-icone.svg" alt="Regente" className="h-10 w-10 shrink-0" />
           {isOpen && (
             <span className="min-w-0">
-              <span className="block truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900">OrkaFlow</span>
-              <span className="block truncate text-[10px] font-medium uppercase tracking-wider text-slate-400">{ENVIRONMENT_LABEL}</span>
+              <span className="block truncate text-[22px] font-bold leading-tight tracking-[-0.035em] text-regente-ink">Regente</span>
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
             </span>
           )}
         </NavLink>
