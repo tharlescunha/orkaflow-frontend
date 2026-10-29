@@ -57,7 +57,7 @@ export function LoginPage() {
               <img src="/brand/regente-icone-sobre-escuro.svg" alt="Regente" className="h-11 w-11 shrink-0" />
               <span>
                 <span className="flex items-center gap-2">
-                  <span className="text-[24px] font-bold leading-none tracking-[-0.035em] text-white">Regente</span>
+                  <span className="text-[24px] font-bold leading-7 tracking-[-0.035em] text-white">Regente</span>
                   <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-px text-[10px] font-bold leading-4 text-regente-200 ring-1 ring-white/20">v{APP_VERSION}</span>
                 </span>
                 <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-200">{ENVIRONMENT_LABEL}</span>
@@ -92,7 +92,7 @@ export function LoginPage() {
                 <img src="/brand/regente-icone.svg" alt="Regente" className="h-10 w-10 shrink-0" />
                 <span>
                   <span className="flex items-center gap-2">
-                    <span className="text-[22px] font-bold leading-none tracking-[-0.035em] text-regente-ink">Regente</span>
+                    <span className="text-[22px] font-bold leading-7 tracking-[-0.035em] text-regente-ink">Regente</span>
                     <span className="shrink-0 rounded-full bg-regente-100 px-1.5 py-px text-[10px] font-bold leading-4 text-[#1E40AF]">v{APP_VERSION}</span>
                   </span>
                   <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>

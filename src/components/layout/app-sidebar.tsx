@@ -73,7 +73,8 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
           {isOpen && (
             <span className="min-w-0">
               <span className="flex items-center gap-2">
-                <span className="truncate text-[22px] font-bold leading-none tracking-[-0.035em] text-regente-ink">Regente</span>
+                {/* leading-7 (e não leading-none): com truncate, altura de linha menor que a fonte corta o topo do "R". */}
+                <span className="truncate text-[22px] font-bold leading-7 tracking-[-0.035em] text-regente-ink">Regente</span>
                 <span className="shrink-0 rounded-full bg-regente-100 px-1.5 py-px text-[10px] font-bold leading-4 text-[#1E40AF]">v{APP_VERSION}</span>
               </span>
               <span className="mt-0.5 block truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-regente-muted">{ENVIRONMENT_LABEL}</span>
