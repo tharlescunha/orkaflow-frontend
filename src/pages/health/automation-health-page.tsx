@@ -1,19 +1,15 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
-  AlertTriangle,
   Bot,
   CalendarClock,
-  CheckCircle2,
-  CircleAlert,
   Clock3,
   ExternalLink,
   FolderGit2,
   HeartPulse,
-  Loader2,
   Maximize2,
   Minimize2,
   Monitor,
@@ -44,9 +40,47 @@ import { createTask } from "@/services/api/tasks";
 import type { TaskStatus } from "@/services/api/tasks";
 import { listAutomationHealth, type AutomationHealthItemRead, type AutomationHealthStatus } from "@/services/api/automation-health";
 import { badge, btn, card, focusRing, tone } from "@/lib/ui";
+import { HEALTH_VISUAL, getHealthVisual } from "@/lib/health-visual";
 import { cn } from "@/lib/utils";
 
 type ActiveFilter = "active" | "inactive" | "all";
+
+/**
+ * Card de fora da lista de automações (ex.: sistema externo da tela Sync), no mesmo molde dos cards do Health:
+ * mesmas cores por situação, mesmos filtros por status e o mesmo modo Foco.
+ */
+export type HealthExtraCard = {
+  key: string;
+  status: AutomationHealthStatus;
+  /** Texto do selo (ex.: "OK", "Sem resposta"). */
+  statusLabel: string;
+  title: string;
+  subtitle: string;
+  chip?: { label: string; isOverdue: boolean } | null;
+  infos: { icon: ComponentType<{ className?: string }>; label: string; value: string }[];
+  /** Texto usado pela busca. */
+  searchText: string;
+  onClick: () => void;
+};
+
+export type AutomationHealthPageProps = {
+  title?: string;
+  description?: string;
+  /** Só estas automações (ids). Sem isto, todas. */
+  onlyAutomationIds?: number[];
+  /** Botões a mais no topo, ao lado dos modos de visualização. */
+  headerActions?: ReactNode;
+  /** Conteúdo entre o topo e os filtros (formulários, escolha de automações). */
+  topContent?: ReactNode;
+  /** Cards a mais, misturados aos das automações. */
+  extraCards?: HealthExtraCard[];
+  /** Modais a mais (ex.: detalhe de um sistema externo). */
+  extraModals?: ReactNode;
+  emptyTitle?: string;
+  emptyDescription?: string;
+  /** Troca a chave de armazenamento do modo de visualização (cada tela lembra o seu). */
+  viewStorageKey?: string;
+};
 
 const ACTIVE_FILTER_OPTIONS: SearchableOption<ActiveFilter>[] = [
   { value: "active", label: "Somente ativas" },
@@ -68,10 +102,10 @@ const REFRESH_MS = 10_000;
 // Mesma chave de antes; "sm" = compacto, "focus" = foco, qualquer outro = normal (compatível com o valor antigo sm/md/lg).
 const VIEW_STORAGE_KEY = "automation-health-card-scale";
 
-function getStoredViewMode(): ViewMode {
+function getStoredViewMode(storageKey: string): ViewMode {
   if (typeof window === "undefined") return "normal";
   try {
-    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey);
     if (stored === "sm") return "compact";
     if (stored === "focus") return "focus";
     return "normal";
@@ -147,71 +181,7 @@ function getTimeChipInfo(item: AutomationHealthItemRead): { label: string; isOve
   return null;
 }
 
-type HealthVisual = {
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-  cardClass: string;
-  badgeClass: string;
-  accentClass: string;
-  iconClass: string;
-  filterActiveClass: string;
-  filterTextClass: string;
-  bandClass: string;
-};
-
-const HEALTH_VISUAL: Record<AutomationHealthStatus, HealthVisual> = {
-  success: {
-    label: "OK",
-    icon: CheckCircle2,
-    cardClass: "border-emerald-200 bg-emerald-50/60 hover:border-emerald-300",
-    badgeClass: tone.success,
-    accentClass: "bg-emerald-500",
-    iconClass: "text-emerald-600",
-    filterActiveClass: "border-emerald-600 bg-emerald-600 text-white",
-    filterTextClass: "text-emerald-700",
-    bandClass: "from-emerald-50 to-white border-emerald-200",
-  },
-  running: {
-    label: "Rodando",
-    icon: Loader2,
-    cardClass: "border-blue-200 bg-blue-50/60 hover:border-blue-300",
-    badgeClass: tone.info,
-    accentClass: "bg-blue-500",
-    iconClass: "text-blue-600",
-    filterActiveClass: "border-blue-600 bg-blue-600 text-white",
-    filterTextClass: "text-blue-700",
-    bandClass: "from-blue-50 to-white border-blue-200",
-  },
-  // warning = atrasado: não rodou quando devia — âmbar, diferente do vermelho de erro de execução
-  warning: {
-    label: "Atrasado",
-    icon: AlertTriangle,
-    cardClass: "border-amber-200 bg-amber-50/60 hover:border-amber-300",
-    badgeClass: tone.warning,
-    accentClass: "bg-amber-500",
-    iconClass: "text-amber-600",
-    filterActiveClass: "border-amber-600 bg-amber-600 text-white",
-    filterTextClass: "text-amber-700",
-    bandClass: "from-amber-50 to-white border-amber-200",
-  },
-  error: {
-    label: "Erro",
-    icon: CircleAlert,
-    cardClass: "border-red-200 bg-red-50/60 hover:border-red-300",
-    badgeClass: tone.danger,
-    accentClass: "bg-red-500",
-    iconClass: "text-red-600",
-    filterActiveClass: "border-red-600 bg-red-600 text-white",
-    filterTextClass: "text-red-700",
-    bandClass: "from-red-50 to-white border-red-200",
-  },
-};
-
 const STATUS_ORDER: AutomationHealthStatus[] = ["success", "running", "warning", "error"];
-
-function getHealthVisual(status: string): HealthVisual {
-  return HEALTH_VISUAL[status as AutomationHealthStatus] ?? HEALTH_VISUAL.warning;
-}
 
 function getSizeClasses(size: CardSize, focus: boolean) {
   if (size === "compact") {
@@ -302,16 +272,31 @@ function InfoItem({
   );
 }
 
-export function AutomationHealthPage() {
+type Entry =
+  | { kind: "automation"; status: AutomationHealthStatus; item: AutomationHealthItemRead }
+  | { kind: "extra"; status: AutomationHealthStatus; card: HealthExtraCard };
+
+export function AutomationHealthPage({
+  title = "Saúde das automações",
+  description,
+  onlyAutomationIds,
+  headerActions,
+  topContent,
+  extraCards,
+  extraModals,
+  emptyTitle = "Nenhuma automação encontrada",
+  emptyDescription,
+  viewStorageKey = VIEW_STORAGE_KEY,
+}: AutomationHealthPageProps = {}) {
   const queryClient = useQueryClient();
   const [repositoryFilter, setRepositoryFilter] = useState("");
   const [botFilter, setBotFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
   const [statusFilter, setStatusFilter] = useState<AutomationHealthStatus | null>(null);
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => getStoredViewMode(viewStorageKey));
   // Tamanho dos cards no foco: o último escolhido entre compacto/normal (foco não muda o tamanho).
-  const [cardSize, setCardSize] = useState<CardSize>(() => (getStoredViewMode() === "compact" ? "compact" : "normal"));
+  const [cardSize, setCardSize] = useState<CardSize>(() => (getStoredViewMode(viewStorageKey) === "compact" ? "compact" : "normal"));
   const [selectedItem, setSelectedItem] = useState<AutomationHealthItemRead | null>(null);
   const [runNowItem, setRunNowItem] = useState<AutomationHealthItemRead | null>(null);
 
@@ -370,11 +355,11 @@ export function AutomationHealthPage() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(VIEW_STORAGE_KEY, viewMode === "compact" ? "sm" : viewMode === "focus" ? "focus" : "md");
+      window.localStorage.setItem(viewStorageKey, viewMode === "compact" ? "sm" : viewMode === "focus" ? "focus" : "md");
     } catch {
       // sem localStorage (modo privado): só não persiste
     }
-  }, [viewMode]);
+  }, [viewMode, viewStorageKey]);
 
   // Esc sai do foco (quando não há modal aberto, que já usa o Esc para fechar).
   useEffect(() => {
@@ -407,7 +392,9 @@ export function AutomationHealthPage() {
   // Filtros de busca/ativo (antes do filtro por status, para os contadores refletirem a lista toda).
   const baseItems = useMemo(() => {
     const normalizedSearch = normalizeText(search);
+    const scope = onlyAutomationIds ? new Set(onlyAutomationIds) : null;
     return (automationHealthQuery.data ?? []).filter((item) => {
+      if (scope && !scope.has(item.automation_id)) return false;
       const inactive = getInactiveReason(item) !== null;
       if (activeFilter === "active" && inactive) return false;
       if (activeFilter === "inactive" && !inactive) return false;
@@ -426,28 +413,44 @@ export function AutomationHealthPage() {
       ];
       return fields.some((field) => normalizeText(field).includes(normalizedSearch));
     });
-  }, [automationHealthQuery.data, search, activeFilter]);
+  }, [automationHealthQuery.data, search, activeFilter, onlyAutomationIds]);
+
+  // Cards de fora entram na mesma lista (mesma busca, mesmos contadores e filtros por status).
+  // Com filtro de repositório/bot ligado eles saem, pois não pertencem a nenhum.
+  const baseExtra = useMemo(() => {
+    if (repositoryFilter || botFilter || activeFilter === "inactive") return [];
+    const normalizedSearch = normalizeText(search);
+    return (extraCards ?? []).filter((card) => !normalizedSearch || normalizeText(card.searchText).includes(normalizedSearch));
+  }, [extraCards, search, repositoryFilter, botFilter, activeFilter]);
+
+  const baseEntries = useMemo<Entry[]>(
+    () => [
+      ...baseItems.map((item): Entry => ({ kind: "automation", status: item.health_status, item })),
+      ...baseExtra.map((card): Entry => ({ kind: "extra", status: card.status, card })),
+    ],
+    [baseItems, baseExtra]
+  );
 
   const summary = useMemo(() => {
-    return baseItems.reduce(
-      (acc, item) => {
+    return baseEntries.reduce(
+      (acc, entry) => {
         acc.total += 1;
-        if (item.health_status === "success") acc.success += 1;
-        else if (item.health_status === "running") acc.running += 1;
-        else if (item.health_status === "error") acc.error += 1;
+        if (entry.status === "success") acc.success += 1;
+        else if (entry.status === "running") acc.running += 1;
+        else if (entry.status === "error") acc.error += 1;
         else acc.warning += 1;
         return acc;
       },
       { total: 0, success: 0, running: 0, warning: 0, error: 0 }
     );
-  }, [baseItems]);
+  }, [baseEntries]);
 
   // Ordena: erro → atrasado → rodando → ok
-  const sortedItems = useMemo(() => {
+  const sortedEntries = useMemo(() => {
     const order: Record<string, number> = { error: 0, warning: 1, running: 2, success: 3 };
-    const filtered = statusFilter ? baseItems.filter((item) => item.health_status === statusFilter) : baseItems;
-    return [...filtered].sort((a, b) => (order[a.health_status] ?? 9) - (order[b.health_status] ?? 9));
-  }, [baseItems, statusFilter]);
+    const filtered = statusFilter ? baseEntries.filter((entry) => entry.status === statusFilter) : baseEntries;
+    return [...filtered].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  }, [baseEntries, statusFilter]);
 
   const sizeClasses = getSizeClasses(cardSize, focus);
   const hasActiveFilters = Boolean(search.trim() || repositoryFilter || botFilter || activeFilter !== "active" || statusFilter);
@@ -497,11 +500,15 @@ export function AutomationHealthPage() {
       onRetry={() => automationHealthQuery.refetch()}
       retrying={automationHealthQuery.isFetching}
     />
-  ) : sortedItems.length === 0 ? (
+  ) : sortedEntries.length === 0 ? (
     <EmptyState
       icon={HeartPulse}
-      title="Nenhuma automação encontrada"
-      description={hasActiveFilters ? "Nenhuma automação combina com os filtros." : "Cadastre uma automação para acompanhar a saúde dela aqui."}
+      title={emptyTitle}
+      description={
+        hasActiveFilters
+          ? "Nada combina com os filtros."
+          : (emptyDescription ?? "Cadastre uma automação para acompanhar a saúde dela aqui.")
+      }
       action={
         hasActiveFilters ? (
           <button type="button" className={btn.secondary} onClick={clearFilters}>
@@ -512,82 +519,66 @@ export function AutomationHealthPage() {
     />
   ) : (
     <div className={`grid gap-4 ${sizeClasses.grid}`}>
-      {sortedItems.map((item) => {
-        const visual = getHealthVisual(item.health_status);
-        const StatusIcon = visual.icon;
-        const timeChip = getTimeChipInfo(item);
-        const inactiveReason = getInactiveReason(item);
+      {sortedEntries.map((entry) => {
+        if (entry.kind === "extra") {
+          const c = entry.card;
+          return (
+            <HealthCardShell
+              key={c.key}
+              status={c.status}
+              statusLabel={c.statusLabel}
+              title={c.title}
+              subtitle={c.subtitle}
+              timeChip={c.chip ?? null}
+              inactiveReason={null}
+              infos={c.infos}
+              sizeClasses={sizeClasses}
+              onClick={c.onClick}
+            />
+          );
+        }
+
+        const item = entry.item;
         const showRunNow = !focus && canRunNow(item);
 
         return (
-          <div
+          <HealthCardShell
             key={item.automation_id}
-            className={cn("group relative flex flex-col overflow-hidden rounded-xl border shadow-sm transition", visual.cardClass)}
-          >
-            <div className={`absolute left-0 top-0 h-full w-1 ${visual.accentClass}`} />
-
-            <button
-              type="button"
-              onClick={() => setSelectedItem(item)}
-              className={cn("flex w-full flex-1 flex-col rounded-xl text-left", focusRing, sizeClasses.card)}
-            >
-              <div className="flex items-start justify-between gap-3 pl-2">
-                <div className="min-w-0">
-                  <p className={`line-clamp-2 break-words font-semibold text-slate-950 ${sizeClasses.title}`} title={getAutomationTitle(item)}>
-                    {getAutomationTitle(item)}
-                  </p>
-                  <p className={`mt-0.5 line-clamp-1 text-slate-500 ${sizeClasses.text}`}>{item.bot_name || EMPTY}</p>
-                </div>
-
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className={cn(badge, visual.badgeClass, sizeClasses.chip)}>
-                    <StatusIcon className={cn("h-3.5 w-3.5", visual.iconClass, item.health_status === "running" && "animate-spin")} />
-                    {visual.label}
-                  </span>
-
-                  {inactiveReason ? <span className={cn(badge, tone.neutral, sizeClasses.chip)}>{inactiveReason}</span> : null}
-
-                  {timeChip && (
-                    <span className={cn(badge, timeChip.isOverdue ? tone.warning : visual.badgeClass, sizeClasses.chip)}>
-                      <Timer className="h-3 w-3 shrink-0" />
-                      {timeChip.label}
-                    </span>
+            status={item.health_status}
+            statusLabel={getHealthVisual(item.health_status).label}
+            title={getAutomationTitle(item)}
+            subtitle={item.bot_name || EMPTY}
+            timeChip={getTimeChipInfo(item)}
+            inactiveReason={getInactiveReason(item)}
+            alerts={item.credential_alerts}
+            infos={[
+              { icon: Activity, label: "Regra", value: formatRelativeRule(item.schedule?.rule_label) },
+              { icon: Monitor, label: "Máquina", value: getMachineLabel(item) },
+              { icon: Clock3, label: "Última execução", value: formatDateTime(item.last_execution_at) },
+              { icon: Bot, label: "Repositório", value: item.repository_name || EMPTY },
+            ]}
+            sizeClasses={sizeClasses}
+            onClick={() => setSelectedItem(item)}
+            footer={
+              showRunNow ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setRunNowItem(item);
+                  }}
+                  title="Executar agora"
+                  aria-label={`Executar agora: ${getAutomationTitle(item)}`}
+                  className={cn(
+                    "absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-500 opacity-0 shadow-sm transition hover:bg-blue-600 hover:text-white group-hover:opacity-100 focus-visible:opacity-100",
+                    focusRing
                   )}
-                </div>
-              </div>
-
-              {item.credential_alerts && item.credential_alerts.length > 0 && (
-                <div className="mt-3 pl-2">
-                  <CredentialAlertStrip alerts={item.credential_alerts} compact />
-                </div>
-              )}
-
-              <div className={`mt-3 grid pl-2 ${sizeClasses.infoGrid}`}>
-                <InfoItem icon={Activity} label="Regra" value={formatRelativeRule(item.schedule?.rule_label)} textClassName={sizeClasses.text} />
-                <InfoItem icon={Monitor} label="Máquina" value={getMachineLabel(item)} textClassName={sizeClasses.text} />
-                <InfoItem icon={Clock3} label="Última execução" value={formatDateTime(item.last_execution_at)} textClassName={sizeClasses.text} />
-                <InfoItem icon={Bot} label="Repositório" value={item.repository_name || EMPTY} textClassName={sizeClasses.text} />
-              </div>
-            </button>
-
-            {showRunNow && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setRunNowItem(item);
-                }}
-                title="Executar agora"
-                aria-label={`Executar agora: ${getAutomationTitle(item)}`}
-                className={cn(
-                  "absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-500 opacity-0 shadow-sm transition hover:bg-blue-600 hover:text-white group-hover:opacity-100 focus-visible:opacity-100",
-                  focusRing
-                )}
-              >
-                <Play className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+                >
+                  <Play className="h-4 w-4" />
+                </button>
+              ) : null
+            }
+          />
         );
       })}
     </div>
@@ -623,9 +614,11 @@ export function AutomationHealthPage() {
       ) : (
         <section className={card}>
           <PageHeader
-            title="Saúde das automações"
+            title={title}
+            description={description}
             actions={
               <>
+                {headerActions}
                 {viewSwitch}
                 <RefreshIndicator
                   updatedAt={automationHealthQuery.dataUpdatedAt}
@@ -636,6 +629,8 @@ export function AutomationHealthPage() {
               </>
             }
           />
+
+          {topContent}
 
           <FilterBar hasActiveFilters={hasActiveFilters} onClear={clearFilters}>
             <SearchInput value={search} onChange={setSearch} placeholder="Buscar automação, bot, máquina..." />
@@ -717,6 +712,8 @@ export function AutomationHealthPage() {
         onConfirm={() => runNowItem && runNowMutation.mutate(runNowItem)}
       />
 
+      {extraModals}
+
       {selectedItem ? (
         <DetailModal
           item={selectedItem}
@@ -731,6 +728,83 @@ export function AutomationHealthPage() {
           }
         />
       ) : null}
+    </div>
+  );
+}
+
+/** Molde único do card: automações e cards extras (Sync) saem idênticos. */
+function HealthCardShell({
+  status,
+  statusLabel,
+  title,
+  subtitle,
+  timeChip,
+  inactiveReason,
+  alerts,
+  infos,
+  sizeClasses,
+  onClick,
+  footer,
+}: {
+  status: AutomationHealthStatus;
+  statusLabel: string;
+  title: string;
+  subtitle: string;
+  timeChip: { label: string; isOverdue: boolean } | null;
+  inactiveReason: string | null;
+  alerts?: AutomationHealthItemRead["credential_alerts"];
+  infos: { icon: ComponentType<{ className?: string }>; label: string; value: string }[];
+  sizeClasses: ReturnType<typeof getSizeClasses>;
+  onClick: () => void;
+  footer?: ReactNode;
+}) {
+  const visual = getHealthVisual(status);
+  const StatusIcon = visual.icon;
+
+  return (
+    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border shadow-sm transition", visual.cardClass)}>
+      <div className={`absolute left-0 top-0 h-full w-1 ${visual.accentClass}`} />
+
+      <button type="button" onClick={onClick} className={cn("flex w-full flex-1 flex-col rounded-xl text-left", focusRing, sizeClasses.card)}>
+        <div className="flex items-start justify-between gap-3 pl-2">
+          <div className="min-w-0">
+            <p className={`line-clamp-2 break-words font-semibold text-slate-950 ${sizeClasses.title}`} title={title}>
+              {title}
+            </p>
+            <p className={`mt-0.5 line-clamp-1 text-slate-500 ${sizeClasses.text}`}>{subtitle}</p>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <span className={cn(badge, visual.badgeClass, sizeClasses.chip)}>
+              <StatusIcon className={cn("h-3.5 w-3.5", visual.iconClass, status === "running" && "animate-spin")} />
+              {statusLabel}
+            </span>
+
+            {inactiveReason ? <span className={cn(badge, tone.neutral, sizeClasses.chip)}>{inactiveReason}</span> : null}
+
+            {timeChip && (
+              <span className={cn(badge, timeChip.isOverdue ? tone.warning : visual.badgeClass, sizeClasses.chip)}>
+                <Timer className="h-3 w-3 shrink-0" />
+                {timeChip.label}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {alerts && alerts.length > 0 && (
+          <div className="mt-3 pl-2">
+            <CredentialAlertStrip alerts={alerts} compact />
+          </div>
+        )}
+
+        <div className={`mt-3 grid pl-2 ${sizeClasses.infoGrid}`}>
+          {infos.map((info) => (
+            <InfoItem key={info.label} icon={info.icon} label={info.label} value={info.value} textClassName={sizeClasses.text} />
+          ))}
+        </div>
+      </button>
+
+      {footer}
     </div>
   );
 }
@@ -925,7 +999,7 @@ function DetailModal({ item, onClose, onRunNow }: { item: AutomationHealthItemRe
   );
 }
 
-function Fact({
+export function Fact({
   icon: Icon,
   label,
   value,
@@ -952,7 +1026,7 @@ function Fact({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-xl border border-slate-200">
       <h3 className="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</h3>
@@ -961,7 +1035,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function DetailField({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
+export function DetailField({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
   return (
     <div className={cn("min-w-0", className)}>
       <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</dt>

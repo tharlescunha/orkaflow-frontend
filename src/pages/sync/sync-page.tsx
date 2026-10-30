@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Globe, ListChecks, Loader2, Pencil, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
+import { Activity, Check, Clock3, FolderGit2, Globe, ListChecks, Loader2, Pencil, Plus, RefreshCw, Server, Trash2, X } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PageHeader } from "@/components/common/page-header";
-import { QueryError } from "@/components/common/query-error";
-import { TableSkeleton } from "@/components/common/skeleton";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { EMPTY, formatDateTime, formatRelative } from "@/lib/format";
-import { badge, btn, card, chip, input, tone } from "@/lib/ui";
+import { badge, btn, card, input, tone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { listAutomationHealth, type AutomationHealthItemRead } from "@/services/api/automation-health";
+import { listAutomationHealth } from "@/services/api/automation-health";
 import {
   createSyncCheck,
   deleteSyncCheck,
@@ -24,10 +24,11 @@ import {
 } from "@/services/api/sync";
 import { useAuthStore } from "@/store/auth-store";
 import { toast } from "@/store/toast-store";
+import { getHealthVisual } from "@/lib/health-visual";
+import { AutomationHealthPage, DetailField, Fact, Section, type HealthExtraCard } from "../health/automation-health-page";
 
 const STATE_KEY = ["sync-state"];
-const HEALTH_KEY = ["sync-automation-health"];
-const HEALTH_REFRESH_MS = 30_000;
+const ALL_AUTOMATIONS_KEY = ["sync-all-automations"];
 
 const INTERVAL_OPTIONS = [
   { value: 15, label: "15 segundos" },
@@ -43,14 +44,12 @@ function intervalLabel(seconds: number) {
   return INTERVAL_OPTIONS.find((o) => o.value === seconds)?.label ?? `${seconds}s`;
 }
 
-const HEALTH_TONE: Record<string, string> = {
-  success: tone.success,
-  running: tone.info,
-  warning: tone.warning,
-  error: tone.danger,
-};
+function checkStatus(check: SyncCheck): { status: "success" | "running" | "error"; label: string } {
+  if (check.last_ok === null) return { status: "running", label: "Aguardando" };
+  return check.last_ok ? { status: "success", label: "OK" } : { status: "error", label: "Sem resposta" };
+}
 
-/** Painel pessoal: automações escolhidas (como no Health) e sistemas de fora do Regente com ping. */
+/** A tela Sync é a tela de Health, com escopo de automações escolhido por quem usa e sistemas de fora como cards extras. */
 export function SyncPage() {
   const enabled = Boolean(useAuthStore((state) => state.user?.sync_enabled));
 
@@ -79,11 +78,10 @@ type FormState = {
   project: string;
   interval_seconds: number;
   expected_status: string;
-  timeout_seconds: number;
   active: boolean;
 };
 
-const emptyForm: FormState = { name: "", url: "", server: "", project: "", interval_seconds: 60, expected_status: "", timeout_seconds: 10, active: true };
+const emptyForm: FormState = { name: "", url: "", server: "", project: "", interval_seconds: 60, expected_status: "", active: true };
 
 function toForm(check: SyncCheck): FormState {
   return {
@@ -93,12 +91,11 @@ function toForm(check: SyncCheck): FormState {
     project: check.project ?? "",
     interval_seconds: check.interval_seconds,
     expected_status: check.expected_status ? String(check.expected_status) : "",
-    timeout_seconds: check.timeout_seconds,
     active: check.active,
   };
 }
 
-function toPayload(form: FormState): SyncCheckPayload {
+function toPayload(form: FormState, timeoutSeconds: number): SyncCheckPayload {
   const expected = Number(form.expected_status);
   return {
     name: form.name.trim(),
@@ -107,9 +104,59 @@ function toPayload(form: FormState): SyncCheckPayload {
     project: form.project.trim() || null,
     interval_seconds: form.interval_seconds,
     expected_status: form.expected_status.trim() && Number.isInteger(expected) ? expected : null,
-    timeout_seconds: form.timeout_seconds,
+    timeout_seconds: timeoutSeconds,
     active: form.active,
   };
+}
+
+/**
+ * Faz o teste de cada sistema ativo no intervalo dele. Só existe enquanto a tela Sync está aberta:
+ * fechou a tela, parou de testar.
+ */
+function useSyncPings(checks: SyncCheck[], onResult: (check: SyncCheck) => void) {
+  const onResultRef = useRef(onResult);
+  useEffect(() => {
+    onResultRef.current = onResult;
+  });
+
+  // Reinicia os relógios só quando mudar o conjunto de sistemas, o intervalo ou o "ativo".
+  const signature = checks.map((c) => `${c.id}:${c.interval_seconds}:${c.active}`).join("|");
+  const lastPingRef = useRef<Map<number, string | null>>(new Map());
+  useEffect(() => {
+    lastPingRef.current = new Map(checks.map((c) => [c.id, c.last_ping_at]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+
+  useEffect(() => {
+    const inFlight = new Set<number>();
+    const timers: number[] = [];
+
+    async function run(id: number) {
+      if (inFlight.has(id)) return;
+      inFlight.add(id);
+      try {
+        onResultRef.current(await pingSyncCheck(id));
+      } catch {
+        // falha de rede do próprio painel: tenta de novo no próximo intervalo
+      } finally {
+        inFlight.delete(id);
+      }
+    }
+
+    for (const check of checks) {
+      if (!check.active) continue;
+      const intervalMs = check.interval_seconds * 1000;
+      const last = check.last_ping_at ? new Date(check.last_ping_at).getTime() : 0;
+      if (Date.now() - last >= intervalMs) {
+        // Resultado antigo: testa logo, com folga aleatória para os cards não dispararem juntos.
+        timers.push(window.setTimeout(() => void run(check.id), Math.random() * 1500));
+      }
+      timers.push(window.setInterval(() => void run(check.id), intervalMs));
+    }
+
+    return () => timers.forEach((t) => (window.clearTimeout(t), window.clearInterval(t)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
 }
 
 function SyncBoard() {
@@ -117,22 +164,26 @@ function SyncBoard() {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState<SyncCheck | "new" | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<SyncCheck | null>(null);
 
   const stateQuery = useQuery({ queryKey: STATE_KEY, queryFn: getSyncState });
-  const healthQuery = useQuery({
-    queryKey: HEALTH_KEY,
-    queryFn: () => listAutomationHealth(),
-    refetchInterval: HEALTH_REFRESH_MS,
-    refetchIntervalInBackground: false,
+  const automationsQuery = useQuery({
+    queryKey: ALL_AUTOMATIONS_KEY,
+    queryFn: () => listAutomationHealth({ active: true }),
+    enabled: picking,
   });
 
   const state = stateQuery.data;
-  const allAutomations = healthQuery.data?.items ?? [];
-  const picked = useMemo(() => new Set(state?.automation_ids ?? []), [state?.automation_ids]);
-  const shown = allAutomations.filter((item) => picked.has(item.automation_id));
+  const checks = useMemo(() => state?.checks ?? [], [state]);
+  const picked = useMemo(() => new Set(state?.automation_ids ?? []), [state]);
+  const selected = checks.find((c) => c.id === selectedId) ?? null;
 
-  const patchChecks = (fn: (checks: SyncCheck[]) => SyncCheck[]) =>
+  const patchChecks = (fn: (list: SyncCheck[]) => SyncCheck[]) =>
     queryClient.setQueryData<SyncState>(STATE_KEY, (old) => (old ? { ...old, checks: fn(old.checks) } : old));
+
+  const applyResult = (updated: SyncCheck) => patchChecks((list) => list.map((c) => (c.id === updated.id ? updated : c)));
+  useSyncPings(checks, applyResult);
 
   const picksMutation = useMutation({
     mutationFn: (ids: number[]) => setSyncPicks(ids),
@@ -157,9 +208,17 @@ function SyncBoard() {
     mutationFn: (id: number) => deleteSyncCheck(id),
     onSuccess: async () => {
       toast.success("Sistema removido.");
+      setDeleting(null);
+      setSelectedId(null);
       await queryClient.invalidateQueries({ queryKey: STATE_KEY });
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Não foi possível remover o sistema.")),
+  });
+
+  const testNow = useMutation({
+    mutationFn: (id: number) => pingSyncCheck(id),
+    onSuccess: applyResult,
+    onError: (error) => toast.error(getApiErrorMessage(error, "Não foi possível testar agora.")),
   });
 
   function togglePick(id: number) {
@@ -169,292 +228,313 @@ function SyncBoard() {
     picksMutation.mutate([...next]);
   }
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!form.name.trim() || !form.url.trim()) return;
-    saveMutation.mutate(toPayload(form));
-  }
-
   function startNew() {
     setForm(emptyForm);
     setEditing("new");
   }
 
   function startEdit(check: SyncCheck) {
+    setSelectedId(null);
     setForm(toForm(check));
     setEditing(check);
   }
 
-  const checks = state?.checks ?? [];
-  // Poucos itens por pessoa: agrupar a cada render é barato.
-  const groups = new Map<string, SyncCheck[]>();
-  for (const check of checks) {
-    const key = check.project?.trim() || "Sem projeto";
-    groups.set(key, [...(groups.get(key) ?? []), check]);
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!form.name.trim() || !form.url.trim()) return;
+    const timeout = editing && editing !== "new" ? editing.timeout_seconds : 10;
+    saveMutation.mutate(toPayload(form, timeout));
   }
-  const grouped = [...groups.entries()];
 
-  return (
-    <div className="space-y-5">
-      <section className={card}>
-        <PageHeader
-          title="Sync"
-          description="Seu painel: as automações que você escolher e sistemas de fora do Regente, numa tela só. Os testes dos sistemas só rodam com esta tela aberta."
-          actions={
-            <>
-              <button type="button" onClick={() => setPicking((v) => !v)} className={btn.secondary}>
-                <ListChecks className="h-4 w-4" />
-                Escolher automações
-              </button>
-              <button type="button" onClick={startNew} disabled={editing !== null} className={btn.primary}>
-                <Plus className="h-4 w-4" />
-                Adicionar health
-              </button>
-            </>
-          }
-        />
+  const extraCards = useMemo<HealthExtraCard[]>(
+    () =>
+      checks.map((check) => {
+        const { status, label } = checkStatus(check);
+        const failed = check.last_ok === false;
+        return {
+          key: `sync-${check.id}`,
+          status,
+          statusLabel: label,
+          title: check.name,
+          subtitle: check.project || hostOf(check.url),
+          chip: failed
+            ? { label: check.last_status_code ? `HTTP ${check.last_status_code}` : "sem resposta", isOverdue: true }
+            : check.last_latency_ms != null
+              ? { label: `${check.last_latency_ms} ms`, isOverdue: false }
+              : null,
+          infos: [
+            { icon: Activity, label: "Regra", value: `a cada ${intervalLabel(check.interval_seconds)}` },
+            { icon: Server, label: "Servidor", value: check.server || EMPTY },
+            { icon: Clock3, label: "Último ping", value: check.last_ping_at ? formatDateTime(check.last_ping_at) : EMPTY },
+            { icon: FolderGit2, label: "Projeto", value: check.project || EMPTY },
+          ],
+          searchText: [check.name, check.url, check.server, check.project, label].filter(Boolean).join(" "),
+          onClick: () => setSelectedId(check.id),
+        };
+      }),
+    [checks]
+  );
 
-        <div className="space-y-6 p-5 md:p-6">
-          {picking && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-              <p className="mb-3 text-sm text-slate-600">Marque as automações que você quer ver aqui.</p>
-              {healthQuery.isLoading ? (
-                <TableSkeleton rows={3} columns={2} />
-              ) : (
-                <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                  {allAutomations.map((item) => (
-                    <label key={item.automation_id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={picked.has(item.automation_id)}
-                        disabled={picksMutation.isPending}
-                        onChange={() => togglePick(item.automation_id)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="truncate">{item.automation_label || item.automation_name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+  const topContent = (
+    <>
+      {picking && (
+        <div className="mx-5 mt-5 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+          <p className="mb-3 text-sm text-slate-600">Marque as automações que você quer ver aqui.</p>
+          {automationsQuery.isLoading ? (
+            <p className="text-sm text-slate-500">Carregando...</p>
+          ) : (
+            <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+              {(automationsQuery.data?.items ?? []).map((item) => (
+                <label key={item.automation_id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-white">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(item.automation_id)}
+                    disabled={picksMutation.isPending}
+                    onChange={() => togglePick(item.automation_id)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="truncate">{item.automation_label || item.automation_name}</span>
+                </label>
+              ))}
             </div>
           )}
-
-          {editing !== null && (
-            <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-2">
-              <Field label="Nome">
-                <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={120} placeholder="Ex.: API de Insumos" className={input} />
-              </Field>
-              <Field label="Endereço para testar">
-                <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} maxLength={500} placeholder="https://meusistema.exemplo.com/health" className={cn(input, "font-mono")} inputMode="url" />
-              </Field>
-              <Field label="Servidor / onde foi publicado">
-                <input value={form.server} onChange={(e) => setForm({ ...form, server: e.target.value })} maxLength={120} placeholder="Ex.: Azure" className={input} />
-              </Field>
-              <Field label="Projeto">
-                <input value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })} maxLength={120} placeholder="Ex.: Insumos" className={input} />
-              </Field>
-              <Field label="Testar de quanto em quanto tempo">
-                <select value={form.interval_seconds} onChange={(e) => setForm({ ...form, interval_seconds: Number(e.target.value) })} className={input}>
-                  {INTERVAL_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Código esperado (opcional)">
-                <input value={form.expected_status} onChange={(e) => setForm({ ...form, expected_status: e.target.value.replace(/\D/g, "").slice(0, 3) })} placeholder="Vazio = qualquer resposta abaixo de 400" className={input} inputMode="numeric" />
-              </Field>
-              <label className="flex items-center gap-2 pb-2 text-sm text-slate-700 md:col-span-2">
-                <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                Ativo (testar enquanto a tela estiver aberta)
-              </label>
-              <div className="flex gap-2 md:col-span-2 md:justify-end">
-                <button type="button" onClick={() => setEditing(null)} className={btn.secondary} disabled={saveMutation.isPending}>
-                  Cancelar
-                </button>
-                <button type="submit" disabled={saveMutation.isPending || !form.name.trim() || !form.url.trim()} className={btn.primary}>
-                  {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {editing === "new" ? "Adicionar" : "Salvar"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {stateQuery.isLoading ? (
-            <TableSkeleton rows={3} columns={3} />
-          ) : stateQuery.isError ? (
-            <QueryError error={stateQuery.error} what="o seu Sync" onRetry={() => stateQuery.refetch()} retrying={stateQuery.isFetching} />
-          ) : (
-            <>
-              <section>
-                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Automações</h2>
-                {shown.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
-                    Nenhuma automação escolhida. Use &ldquo;Escolher automações&rdquo;.
-                  </p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {shown.map((item) => (
-                      <AutomationCard key={item.automation_id} item={item} />
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section>
-                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Sistemas de fora</h2>
-                {checks.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
-                    Nenhum sistema cadastrado. Use &ldquo;Adicionar health&rdquo;.
-                  </p>
-                ) : (
-                  <div className="space-y-5">
-                    {grouped.map(([project, items]) => (
-                      <div key={project}>
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{project}</div>
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                          {items.map((check) => (
-                            <ExternalCard
-                              key={check.id}
-                              check={check}
-                              onUpdated={(updated) => patchChecks((list) => list.map((c) => (c.id === updated.id ? updated : c)))}
-                              onEdit={() => startEdit(check)}
-                              onDelete={() => deleteMutation.mutate(check.id)}
-                              deleting={deleteMutation.isPending}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </>
-          )}
         </div>
-      </section>
-    </div>
-  );
-}
+      )}
 
-function AutomationCard({ item }: { item: AutomationHealthItemRead }) {
-  const machine = item.machine_display_name || item.machine_label || item.machine_name;
+      {editing !== null && (
+        <form onSubmit={handleSubmit} className="mx-5 mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-2">
+          <Field label="Nome">
+            <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={120} placeholder="Ex.: API de Insumos" className={input} />
+          </Field>
+          <Field label="Endereço para testar">
+            <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} maxLength={500} placeholder="https://meusistema.exemplo.com/health" className={cn(input, "font-mono")} inputMode="url" />
+          </Field>
+          <Field label="Servidor / onde foi publicado">
+            <input value={form.server} onChange={(e) => setForm({ ...form, server: e.target.value })} maxLength={120} placeholder="Ex.: Azure" className={input} />
+          </Field>
+          <Field label="Projeto">
+            <input value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })} maxLength={120} placeholder="Ex.: Insumos" className={input} />
+          </Field>
+          <Field label="Testar de quanto em quanto tempo">
+            <select value={form.interval_seconds} onChange={(e) => setForm({ ...form, interval_seconds: Number(e.target.value) })} className={input}>
+              {INTERVAL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Código esperado (opcional)">
+            <input value={form.expected_status} onChange={(e) => setForm({ ...form, expected_status: e.target.value.replace(/\D/g, "").slice(0, 3) })} placeholder="Vazio = qualquer resposta abaixo de 400" className={input} inputMode="numeric" />
+          </Field>
+          <label className="flex items-center gap-2 pb-2 text-sm text-slate-700 md:col-span-2">
+            <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+            Ativo (testar enquanto a tela estiver aberta)
+          </label>
+          <div className="flex gap-2 md:col-span-2 md:justify-end">
+            <button type="button" onClick={() => setEditing(null)} className={btn.secondary} disabled={saveMutation.isPending}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={saveMutation.isPending || !form.name.trim() || !form.url.trim()} className={btn.primary}>
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {editing === "new" ? "Adicionar" : "Salvar"}
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+
+  const headerActions = (
+    <>
+      <button type="button" onClick={() => setPicking((v) => !v)} className={btn.secondary}>
+        <ListChecks className="h-4 w-4" />
+        Escolher automações
+      </button>
+      <button type="button" onClick={startNew} disabled={editing !== null} className={btn.primary}>
+        <Plus className="h-4 w-4" />
+        Adicionar health
+      </button>
+    </>
+  );
+
+  const extraModals = (
+    <>
+      {selected ? (
+        <ExternalDetailModal
+          check={selected}
+          testing={testNow.isPending}
+          onTest={() => testNow.mutate(selected.id)}
+          onEdit={() => startEdit(selected)}
+          onDelete={() => setDeleting(selected)}
+          onClose={() => setSelectedId(null)}
+        />
+      ) : null}
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Remover sistema"
+        description={deleting ? `Remover "${deleting.name}" do seu Sync? O sistema em si não é afetado.` : ""}
+        confirmLabel="Remover"
+        isPending={deleteMutation.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => deleting && deleteMutation.mutate(deleting.id)}
+      />
+    </>
+  );
+
   return (
-    <div className={cn(card, "space-y-2 p-4")}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-slate-900">{item.automation_label || item.automation_name}</div>
-          {item.repository_name ? <div className="truncate text-xs text-slate-500">{item.repository_name}</div> : null}
-        </div>
-        <span className={cn(badge, HEALTH_TONE[item.health_status] ?? tone.neutral, "shrink-0")}>{item.health_label}</span>
-      </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-slate-500">Máquina</dt>
-        <dd className="truncate text-slate-700">{machine ?? EMPTY}</dd>
-        <dt className="text-slate-500">Última execução</dt>
-        <dd className="text-slate-700" title={formatDateTime(item.last_execution_at)}>
-          {item.last_execution_at ? formatRelative(item.last_execution_at) : EMPTY}
-        </dd>
-        <dt className="text-slate-500">Regra</dt>
-        <dd className="truncate text-slate-700">{item.schedule?.rule_label ?? EMPTY}</dd>
-      </dl>
-    </div>
+    <AutomationHealthPage
+      title="Sync"
+      onlyAutomationIds={state ? state.automation_ids : []}
+      headerActions={headerActions}
+      topContent={topContent}
+      extraCards={extraCards}
+      extraModals={extraModals}
+      emptyTitle="Nada no seu Sync ainda"
+      emptyDescription={'Use "Escolher automações" ou "Adicionar health" para montar o seu painel.'}
+      viewStorageKey="sync-card-scale"
+    />
   );
 }
 
-function ExternalCard({
+function hostOf(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** Detalhe de um sistema de fora: mesmo desenho do detalhe das automações no Health. */
+function ExternalDetailModal({
   check,
-  onUpdated,
+  testing,
+  onTest,
   onEdit,
   onDelete,
-  deleting,
+  onClose,
 }: {
   check: SyncCheck;
-  onUpdated: (check: SyncCheck) => void;
+  testing: boolean;
+  onTest: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  deleting: boolean;
+  onClose: () => void;
 }) {
-  const pingMutation = useMutation({
-    mutationFn: () => pingSyncCheck(check.id),
-    onSuccess: onUpdated,
-  });
-
-  // O teste só roda enquanto este card existe, ou seja, com a tela aberta. O primeiro vem logo ao abrir
-  // (a menos que o último seja recente); os seguintes no intervalo escolhido.
-  const pingRef = useRef(pingMutation.mutate);
-  useEffect(() => {
-    pingRef.current = pingMutation.mutate;
-  });
+  const { status, label } = checkStatus(check);
+  const visual = getHealthVisual(status);
+  const Icon = visual.icon;
 
   useEffect(() => {
-    if (!check.active) return;
-    const intervalMs = check.interval_seconds * 1000;
-    const last = check.last_ping_at ? new Date(check.last_ping_at).getTime() : 0;
-    const stale = Date.now() - last >= intervalMs;
-    // Resultado antigo: testa logo (com uma folga aleatória para os cards não dispararem juntos).
-    const first = stale ? window.setTimeout(() => pingRef.current(), Math.random() * 1500) : undefined;
-    const timer = window.setInterval(() => pingRef.current(), intervalMs);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      if (first !== undefined) window.clearTimeout(first);
-      window.clearInterval(timer);
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
     };
-    // Só reinicia o relógio se o intervalo ou o "ativo" mudarem.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [check.id, check.active, check.interval_seconds]);
+  }, [onClose]);
 
-  const status =
-    check.last_ok === null
-      ? { text: "Aguardando", className: tone.neutral }
-      : check.last_ok
-        ? { text: "No ar", className: tone.success }
-        : { text: "Fora do ar", className: tone.danger };
-
-  return (
-    <div className={cn(card, "space-y-2 p-4", !check.active && "opacity-60")}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-slate-900">{check.name}</div>
-          <div className="truncate font-mono text-xs text-slate-500" title={check.url}>
-            {check.url}
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className={cn(card, "relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden shadow-2xl")}>
+        <div className={cn("border-b bg-gradient-to-r px-6 py-5", visual.bandClass)}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className={cn(badge, visual.badgeClass)}>
+                <Icon className={cn("h-3.5 w-3.5", visual.iconClass, status === "running" && "animate-spin")} />
+                {label}
+              </span>
+              <h2 className="mt-2 truncate text-xl font-semibold text-slate-950" title={check.name}>
+                {check.name}
+              </h2>
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+                <span className="inline-flex items-center gap-1.5">
+                  <Server className="h-4 w-4 text-slate-400" />
+                  {check.server || EMPTY}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <FolderGit2 className="h-4 w-4 text-slate-400" />
+                  {check.project || EMPTY}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Globe className="h-4 w-4 text-slate-400" />
+                  {hostOf(check.url)}
+                </span>
+              </p>
+            </div>
+            <button type="button" onClick={onClose} className={btn.icon} aria-label="Fechar">
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
-        <span className={cn(badge, status.className, "shrink-0")}>{status.text}</span>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Fact
+              icon={Clock3}
+              label="Último ping"
+              value={check.last_ping_at ? formatDateTime(check.last_ping_at) : EMPTY}
+              hint={check.last_ping_at ? formatRelative(check.last_ping_at) : "Ainda não testado"}
+            />
+            <Fact
+              icon={Activity}
+              label="Resposta"
+              value={check.last_status_code ? `HTTP ${check.last_status_code}` : EMPTY}
+              hint={check.last_latency_ms != null ? `${check.last_latency_ms} ms` : undefined}
+              valueClassName={check.last_ok === false ? "text-red-700" : undefined}
+            />
+            <Fact icon={RefreshCw} label="Regra" value={`a cada ${intervalLabel(check.interval_seconds)}`} hint={check.active ? "Testando com a tela aberta" : "Desativado"} />
+          </div>
+
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <Section title="Sistema">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                <DetailField label="Endereço" value={<span className="break-all font-mono text-xs">{check.url}</span>} className="col-span-2" />
+                <DetailField label="Servidor" value={check.server || EMPTY} />
+                <DetailField label="Projeto" value={check.project || EMPTY} />
+                <DetailField label="Código esperado" value={check.expected_status ? String(check.expected_status) : "Abaixo de 400"} />
+                <DetailField label="Tempo máximo" value={`${check.timeout_seconds}s`} />
+              </dl>
+            </Section>
+
+            <Section title="Último teste">
+              {check.last_ping_at ? (
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <DetailField label="Situação" value={<span className={cn(badge, check.last_ok ? tone.success : tone.danger)}>{check.last_ok ? "No ar" : "Sem resposta"}</span>} />
+                  <DetailField label="Tempo de resposta" value={check.last_latency_ms != null ? `${check.last_latency_ms} ms` : EMPTY} />
+                  {check.last_error ? <DetailField label="Motivo" value={check.last_error} className="col-span-2" /> : null}
+                </dl>
+              ) : (
+                <p className="text-sm text-slate-500">Ainda não testado.</p>
+              )}
+            </Section>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/60 px-6 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={btn.secondary} onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+              Editar
+            </button>
+            <button type="button" className={cn(btn.secondary, "text-red-700 hover:bg-red-50")} onClick={onDelete}>
+              <Trash2 className="h-4 w-4" />
+              Remover
+            </button>
+          </div>
+          <button type="button" className={btn.primary} onClick={onTest} disabled={testing}>
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Testar agora
+          </button>
+        </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-slate-500">Servidor</dt>
-        <dd className="flex items-center gap-1 truncate text-slate-700">
-          <Server className="h-3 w-3 text-slate-400" />
-          {check.server ?? EMPTY}
-        </dd>
-        <dt className="text-slate-500">Último ping</dt>
-        <dd className="text-slate-700" title={formatDateTime(check.last_ping_at)}>
-          {check.last_ping_at ? formatRelative(check.last_ping_at) : EMPTY}
-          {check.last_latency_ms != null ? <span className="ml-1 text-slate-400">({check.last_latency_ms} ms)</span> : null}
-        </dd>
-        <dt className="text-slate-500">Regra</dt>
-        <dd className="text-slate-700">a cada {intervalLabel(check.interval_seconds)}</dd>
-      </dl>
-      {check.last_ok === false && check.last_error ? <p className="text-xs text-red-700">{check.last_error}</p> : null}
-      <div className="flex items-center justify-between gap-2 pt-1">
-        <span className={chip}>
-          <Globe className="h-3 w-3" />
-          {check.project ?? "Sem projeto"}
-        </span>
-        <span className="inline-flex gap-1">
-          <button type="button" onClick={() => pingMutation.mutate()} disabled={pingMutation.isPending} className={cn(btn.icon, "h-8 w-8")} aria-label={`Testar ${check.name} agora`}>
-            {pingMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          </button>
-          <button type="button" onClick={onEdit} className={cn(btn.icon, "h-8 w-8")} aria-label={`Editar ${check.name}`}>
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button type="button" onClick={onDelete} disabled={deleting} className={cn(btn.icon, "h-8 w-8 text-red-700 hover:bg-red-50")} aria-label={`Remover ${check.name}`}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </span>
-      </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -466,4 +546,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
-
