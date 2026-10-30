@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, X, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/format";
 import { badge, btn, chip, tone } from "@/lib/ui";
@@ -292,47 +292,83 @@ function RunDetail({ runId }: { runId: number }) {
 }
 
 type Props = {
-  // Regra cujo histórico abre; null fecha o drawer.
+  // Regra cujo histórico abre; null fecha o modal.
   rule: { id: number; name: string } | null;
   onClose: () => void;
 };
 
-// Gaveta à direita (portal, como o LogDetailDrawer): lista os disparos da regra e abre cada um.
+// Modal no centro da tela (portal, como o ConfirmDialog): lista os disparos da regra e abre cada um.
 export function EventRunsDrawer({ rule, onClose }: Props) {
   const [runId, setRunId] = useState<number | null>(null);
   const open = rule != null;
+  const titleId = useId();
 
-  function handleOpenChange(next: boolean) {
-    if (next) return;
+  function close() {
     setRunId(null);
     onClose();
   }
 
-  return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="w-full overflow-y-auto border-slate-200 bg-white text-slate-900 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
-        <SheetHeader className="border-b border-slate-200">
-          {runId != null ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setRunId(null)}
-                className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-slate-600 transition hover:text-blue-700"
-              >
-                <ArrowLeft className="h-4 w-4" /> Voltar ao histórico
-              </button>
-              <SheetTitle className="text-slate-900">Disparo #{runId}</SheetTitle>
-              <SheetDescription className="text-slate-500">Tudo o que foi enviado e devolvido neste disparo.</SheetDescription>
-            </>
-          ) : (
-            <>
-              <SheetTitle className="text-slate-900">Histórico{rule ? ` · ${rule.name}` : ""}</SheetTitle>
-              <SheetDescription className="text-slate-500">Últimos 50 disparos deste evento. Clique em um para ver os detalhes.</SheetDescription>
-            </>
-          )}
-        </SheetHeader>
-        {rule && (runId != null ? <RunDetail runId={runId} /> : <RunsList ruleId={rule.id} onOpen={setRunId} />)}
-      </SheetContent>
-    </Sheet>
+  useEffect(() => {
+    if (!open) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setRunId(null);
+      onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="absolute inset-0 bg-slate-950/55" onClick={close} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div
+          className="relative z-10 flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4">
+            <div className="min-w-0">
+              {runId != null ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setRunId(null)}
+                    className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-slate-600 transition hover:text-blue-700"
+                  >
+                    <ArrowLeft className="h-4 w-4" /> Voltar ao histórico
+                  </button>
+                  <h2 id={titleId} className="text-lg font-semibold text-slate-950">
+                    Disparo #{runId}
+                  </h2>
+                  <p className="text-sm text-slate-500">Tudo o que foi enviado e devolvido neste disparo.</p>
+                </>
+              ) : (
+                <>
+                  <h2 id={titleId} className="truncate text-lg font-semibold text-slate-950">
+                    Histórico{rule ? ` · ${rule.name}` : ""}
+                  </h2>
+                  <p className="text-sm text-slate-500">Últimos 50 disparos deste evento. Clique em um para ver os detalhes.</p>
+                </>
+              )}
+            </div>
+            <button type="button" onClick={close} className="shrink-0 text-slate-400 hover:text-slate-700" aria-label="Fechar">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto pt-4">
+            {rule && (runId != null ? <RunDetail runId={runId} /> : <RunsList ruleId={rule.id} onOpen={setRunId} />)}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
