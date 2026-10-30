@@ -10,6 +10,7 @@ import { DetailSkeleton } from "@/components/common/skeleton";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { badge, btn, card, cardBody, cardHeader, cardTitle, chip, fieldError, hint, input, label, tone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { setSyncPreference } from "@/services/api/sync";
 import { getUserById, updateUser, type UpdateUserPayload, type UserRead } from "@/services/api/users";
 import { useAuthStore } from "@/store/auth-store";
 import { toast } from "@/store/toast-store";
@@ -276,10 +277,54 @@ function ProfileForm({ initial }: { initial: UserRead }) {
           </div>
         </form>
 
-        <div className="px-5 pb-5">
+        <div className="space-y-5 px-5 pb-5">
+          <SyncPreferenceCard initial={Boolean(initial.sync_enabled)} userId={initial.id} />
           <ApiTokensCard />
         </div>
       </section>
+    </div>
+  );
+}
+
+/** Cada pessoa liga o Sync no próprio perfil; para quem não ligou, o menu nem aparece. */
+function SyncPreferenceCard({ initial, userId }: { initial: boolean; userId: number }) {
+  const setUser = useAuthStore((state) => state.setUser);
+  const authUser = useAuthStore((state) => state.user);
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => setSyncPreference(enabled),
+    onSuccess: async (result) => {
+      if (authUser) setUser({ ...authUser, sync_enabled: result.sync_enabled });
+      await queryClient.invalidateQueries({ queryKey: ["user", userId] });
+      toast.success(result.sync_enabled ? "Sync ligado. O item apareceu em Operação." : "Sync desligado.");
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Não foi possível mudar o Sync.")),
+  });
+
+  const enabled = mutation.data?.sync_enabled ?? initial;
+
+  return (
+    <div className={card}>
+      <div className={cardHeader}>
+        <h2 className={cardTitle}>Sync</h2>
+      </div>
+      <div className={cn(cardBody, "flex flex-wrap items-center justify-between gap-4")}>
+        <p className="max-w-2xl text-sm text-slate-600">
+          Painel pessoal para acompanhar só as automações que você escolher e também sistemas de fora do Regente. Vale só para o seu
+          usuário; ligado, aparece no fim de <strong>Operação</strong>.
+        </p>
+        <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={mutation.isPending}
+            onChange={(e) => mutation.mutate(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          />
+          {mutation.isPending ? "Salvando..." : enabled ? "Ligado" : "Desligado"}
+        </label>
+      </div>
     </div>
   );
 }

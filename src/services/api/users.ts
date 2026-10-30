@@ -24,6 +24,7 @@ export type UserRead = {
   role: string;
   profile_id?: number | null;
   profile?: UserProfileRead | null;
+  sync_enabled?: boolean;
   created_at: string;
   updated_at?: string | null;
 };

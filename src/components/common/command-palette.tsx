@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 type Entry = { key: string; label: string; hint: string; to: string; icon: NavItem["icon"]; search: string };
 
 const ALL_ENTRIES: Entry[] = NAV_GROUPS.flatMap((group) =>
-  group.items.map((item) => ({
+  group.items.filter((item) => !item.requires).map((item) => ({
     key: item.to,
     label: item.label,
     hint: group.title,

@@ -4,6 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useSystemHealth } from "@/hooks/use-system-health";
 import { APP_VERSION, ENVIRONMENT_LABEL, NAV_GROUPS, isExactOnly } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
 import { UserMenu } from "./user-menu";
 
 // Id da última task com falha que o usuário já viu na tela de Erros.
@@ -36,6 +37,7 @@ type AppSidebarProps = {
 // Sidebar clara: mesma família de cor do conteúdo, item ativo em azul suave, usuário no rodapé.
 export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebarProps) {
   const [hovered, setHovered] = useState(false);
+  const syncEnabled = useAuthStore((state) => Boolean(state.user?.sync_enabled));
 
   const isOpen = mobile || !collapsed || hovered;
   const { failedTasks } = useSystemHealth();
@@ -97,7 +99,7 @@ export function AppSidebar({ collapsed, mobile = false, onNavigate }: AppSidebar
                   <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{group.title}</div>
                 )}
                 <div className="space-y-0.5">
-                  {group.items.map((item) => {
+                  {group.items.filter((item) => item.requires !== "sync" || syncEnabled).map((item) => {
                     const Icon = item.icon;
                     const showBadge = item.badgeKey === "errors" && errorsBadge > 0;
                     return (

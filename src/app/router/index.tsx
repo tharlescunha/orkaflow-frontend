@@ -64,6 +64,7 @@ import { AppErrorPage, NotFoundPage } from "../../pages/app-error-page";
 import { IntegrationMcpPage } from "../../pages/integration/integration-mcp-page";
 import { IntegrationApiPage } from "../../pages/integration/integration-api-page";
 import { SettingsPage } from "../../pages/settings/settings-page";
+import { SyncPage } from "../../pages/sync/sync-page";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((state) => state.accessToken);
@@ -164,6 +165,7 @@ export const router = createBrowserRouter([
 
       { path: "worker-registration", element: <BotGuidePage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "sync", element: <SyncPage /> },
       { path: "profile", element: <ProfilePage /> },
 
       { path: "*", element: <NotFoundPage /> },

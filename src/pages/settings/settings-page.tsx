@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, GitBranch, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 
@@ -18,6 +19,8 @@ import {
   type GitEnvironmentPayload,
 } from "@/services/api/settings";
 import { toast } from "@/store/toast-store";
+
+import { WorkersTab } from "./workers-tab";
 
 const QUERY_KEY = ["git-environments"];
 
@@ -61,14 +64,42 @@ const EXPIRY_LABEL: Record<GitEnvironment["expiry_status"], { text: string; clas
   vencido: { text: "Vencido", className: tone.danger },
 };
 
-/** Configurações gerais (admin). Por enquanto: ambientes de Git, o token por começo de link. */
+const TABS = [
+  { key: "ambientes", label: "Ambientes" },
+  { key: "works", label: "Works" },
+] as const;
+
+type TabKey = (typeof TABS)[number]["key"];
+
+/** Configurações gerais (admin): Ambientes de Git (token por começo de link) e Works (versão dos workers). */
 export function SettingsPage() {
+  const [params, setParams] = useSearchParams();
+  const tab: TabKey = params.get("aba") === "works" ? "works" : "ambientes";
+
   return (
     <div className="space-y-5">
       <section className={card}>
         <PageHeader title="Configurações" />
-        <div className="p-5 md:p-6">
-          <GitEnvironmentsCard />
+        <div className="space-y-5 p-5 md:p-6">
+          <div role="tablist" aria-label="Seções de configurações" className="flex gap-1 border-b border-slate-200">
+            {TABS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.key}
+                onClick={() => setParams(item.key === "ambientes" ? {} : { aba: item.key }, { replace: true })}
+                className={cn(
+                  "-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition-colors",
+                  tab === item.key ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "ambientes" ? <GitEnvironmentsCard /> : <WorkersTab />}
         </div>
       </section>
     </div>

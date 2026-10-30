@@ -18,6 +18,7 @@ import {
   PlusSquare,
   ScrollText,
   Server,
+  RefreshCw,
   Settings2,
   Siren,
   SlidersHorizontal,
@@ -34,6 +35,8 @@ export type NavItem = {
   // Palavras extras para a busca global achar a tela.
   keywords?: string;
   badgeKey?: "errors";
+  // Item que só aparece para quem ligou a função no próprio perfil.
+  requires?: "sync";
 };
 
 export type NavGroup = { title: string; items: NavItem[] };
@@ -49,6 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Nova Task", to: "/tasks/new", icon: PlusSquare, keywords: "executar rodar" },
       { label: "Logs", to: "/logs", icon: ScrollText, keywords: "máquina ao vivo" },
       { label: "Erros", to: "/errors", icon: Siren, badgeKey: "errors", keywords: "falhas" },
+      { label: "Sync", to: "/sync", icon: RefreshCw, requires: "sync", keywords: "painel pessoal sistemas externos ping" },
     ],
   },
   {
@@ -90,7 +94,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Calendários", to: "/calendars", icon: CalendarDays, keywords: "feriados dias úteis janela" },
       { label: "Usuários", to: "/users", icon: Users },
-      { label: "Configurações", to: "/settings", icon: SlidersHorizontal, keywords: "ambientes git token devops github" },
+      { label: "Configurações", to: "/settings", icon: SlidersHorizontal, keywords: "ambientes git token devops github works worker versão atualizar" },
       { label: "Perfil", to: "/profile", icon: UserCircle2, keywords: "minha conta senha" },
     ],
   },

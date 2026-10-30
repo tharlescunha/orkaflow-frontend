@@ -5,6 +5,8 @@ export type User = {
   email: string;
   role: string;
   active: boolean;
+  /** A pessoa liga a tela Sync no próprio perfil. */
+  sync_enabled?: boolean;
   created_at?: string;
   updated_at?: string | null;
 };
