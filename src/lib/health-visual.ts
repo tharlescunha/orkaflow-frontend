@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { AlertTriangle, CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
 
 import type { AutomationHealthStatus } from "@/services/api/automation-health";
 import { tone } from "@/lib/ui";
@@ -18,6 +18,18 @@ export type HealthVisual = {
 };
 
 export const HEALTH_VISUAL: Record<AutomationHealthStatus, HealthVisual> = {
+  // Agendada: a última task foi marcada para um horário futuro e ainda não rodou. Não é atraso nem problema.
+  scheduled: {
+    label: "Agendada",
+    icon: CalendarClock,
+    cardClass: "border-sky-200 bg-sky-50/60 hover:border-sky-300",
+    badgeClass: "border-sky-200 bg-sky-50 text-sky-700",
+    accentClass: "bg-sky-400",
+    iconClass: "text-sky-600",
+    filterActiveClass: "border-sky-600 bg-sky-600 text-white",
+    filterTextClass: "text-sky-700",
+    bandClass: "from-sky-50 to-white border-sky-200",
+  },
   success: {
     label: "OK",
     icon: CheckCircle2,

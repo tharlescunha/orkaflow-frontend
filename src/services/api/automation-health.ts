@@ -2,6 +2,7 @@ import { api } from "./client";
 import type { CredentialAlert } from "@/components/common/credential-status";
 
 export type AutomationHealthStatus =
+  | "scheduled"
   | "success"
   | "running"
   | "warning"
@@ -66,6 +67,8 @@ export type AutomationHealthItemRead = {
 
   monitored_at: string;
   last_execution_at?: string | null;
+  /** Só no status "scheduled": horário marcado da task que ainda não rodou. */
+  scheduled_start_at?: string | null;
   is_overdue: boolean;
   has_recent_success: boolean;
   has_recent_error: boolean;

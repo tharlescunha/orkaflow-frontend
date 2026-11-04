@@ -154,6 +154,15 @@ function removeAutomationPrefix(value?: string | null) {
 function getTimeChipInfo(item: AutomationHealthItemRead): { label: string; isOverdue: boolean } | null {
   if (item.health_status === "running") return null;
 
+  if (item.health_status === "scheduled") {
+    const startAt = item.scheduled_start_at ? new Date(item.scheduled_start_at).getTime() : NaN;
+    const diffMs = startAt - Date.now();
+    if (Number.isFinite(diffMs) && diffMs > 0) {
+      return { label: "inicia em " + formatDuration(Math.floor(diffMs / 1000)), isOverdue: false };
+    }
+    return null;
+  }
+
   const now = Date.now();
 
   if (item.is_overdue && item.last_execution_at) {
@@ -181,7 +190,7 @@ function getTimeChipInfo(item: AutomationHealthItemRead): { label: string; isOve
   return null;
 }
 
-const STATUS_ORDER: AutomationHealthStatus[] = ["success", "running", "warning", "error"];
+const STATUS_ORDER: AutomationHealthStatus[] = ["success", "running", "scheduled", "warning", "error"];
 
 function getSizeClasses(size: CardSize, focus: boolean) {
   if (size === "compact") {
@@ -438,16 +447,17 @@ export function AutomationHealthPage({
         if (entry.status === "success") acc.success += 1;
         else if (entry.status === "running") acc.running += 1;
         else if (entry.status === "error") acc.error += 1;
+        else if (entry.status === "scheduled") acc.scheduled += 1;
         else acc.warning += 1;
         return acc;
       },
-      { total: 0, success: 0, running: 0, warning: 0, error: 0 }
+      { total: 0, success: 0, running: 0, scheduled: 0, warning: 0, error: 0 }
     );
   }, [baseEntries]);
 
   // Ordena: erro → atrasado → rodando → ok
   const sortedEntries = useMemo(() => {
-    const order: Record<string, number> = { error: 0, warning: 1, running: 2, success: 3 };
+    const order: Record<string, number> = { error: 0, warning: 1, running: 2, scheduled: 3, success: 4 };
     const filtered = statusFilter ? baseEntries.filter((entry) => entry.status === statusFilter) : baseEntries;
     return [...filtered].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
   }, [baseEntries, statusFilter]);
@@ -554,7 +564,7 @@ export function AutomationHealthPage({
             infos={[
               { icon: Activity, label: "Regra", value: formatRelativeRule(item.schedule?.rule_label) },
               { icon: Monitor, label: "Máquina", value: getMachineLabel(item) },
-              { icon: Clock3, label: "Última execução", value: formatDateTime(item.last_execution_at) },
+              { icon: Clock3, label: "Última execução", value: item.last_execution_at ? formatDateTime(item.last_execution_at) : "Ainda não rodou" },
               { icon: Bot, label: "Repositório", value: item.repository_name || EMPTY },
             ]}
             sizeClasses={sizeClasses}
@@ -667,7 +677,7 @@ export function AutomationHealthPage({
             />
 
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
-              {STATUS_ORDER.map((status) => {
+              {STATUS_ORDER.filter((status) => status !== "scheduled" || summary.scheduled > 0 || statusFilter === "scheduled").map((status) => {
                 const visual = HEALTH_VISUAL[status];
                 const Icon = visual.icon;
                 const active = statusFilter === status;
@@ -891,18 +901,41 @@ function DetailModal({ item, onClose, onRunNow }: { item: AutomationHealthItemRe
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {/* O que se procura primeiro */}
           <div className="grid gap-3 sm:grid-cols-3">
-            <Fact icon={Clock3} label="Última execução" value={formatDateTime(item.last_execution_at)} hint={lastTask?.id != null ? `Task #${lastTask.id}` : undefined} />
+            <Fact
+              icon={Clock3}
+              label="Última execução"
+              value={item.last_execution_at ? formatDateTime(item.last_execution_at) : "Ainda não rodou"}
+              hint={lastTask?.id != null ? `Task #${lastTask.id}` : undefined}
+            />
             <Fact
               icon={CalendarClock}
               label="Próxima execução"
-              value={schedule?.next_run_at ? formatDateTime(schedule.next_run_at) : "Só manual"}
-              hint={schedule ? formatRelativeRule(schedule.rule_label) : "Sem agendamento"}
+              value={
+                item.health_status === "scheduled" && item.scheduled_start_at
+                  ? formatDateTime(item.scheduled_start_at)
+                  : schedule?.next_run_at
+                    ? formatDateTime(schedule.next_run_at)
+                    : "Só manual"
+              }
+              hint={
+                item.health_status === "scheduled"
+                  ? "Task agendada para este horário"
+                  : schedule
+                    ? formatRelativeRule(schedule.rule_label)
+                    : "Sem agendamento"
+              }
             />
             <Fact
               icon={Activity}
               label="Situação"
               value={visual.label}
-              hint={item.is_overdue ? "Não rodou no tempo esperado" : `Monitorado em ${formatDateTime(item.monitored_at)}`}
+              hint={
+                item.health_status === "scheduled"
+                  ? "Aguardando o horário marcado; ainda não rodou"
+                  : item.is_overdue
+                    ? "Não rodou no tempo esperado"
+                    : `Monitorado em ${formatDateTime(item.monitored_at)}`
+              }
               valueClassName={item.is_overdue ? "text-amber-700" : item.health_status === "error" ? "text-red-700" : undefined}
             />
           </div>
