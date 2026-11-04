@@ -219,6 +219,10 @@ export async function getDashboardBots(
 /** Carga por hora do dia (horário de Brasília), geral e por máquina. */
 export type DashboardHourlyLoadHour = {
   hour: number;
+  /** Identifica a barra: "08" por hora do dia; "2026-11-04T11" na janela de 24 h. */
+  key: string;
+  /** "08h", ou "ontem 11h" / "hoje 11h" na janela de 24 h. */
+  title: string;
   tasks: number;
   avg_tasks_per_day: number;
   /** Minutos com task rodando na hora, em média por dia (passa de 60 com tasks simultâneas). */

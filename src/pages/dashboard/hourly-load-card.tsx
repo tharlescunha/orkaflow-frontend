@@ -38,6 +38,11 @@ function formatValue(value: number, metric: Metric) {
   return value.toFixed(1).replace(".", ",");
 }
 
+/** "tasks" na janela de 24 h (contagem da hora); "tasks por dia" nos demais períodos (média). */
+function tasksUnit(days: number) {
+  return days === 1 ? "tasks" : "tasks por dia";
+}
+
 function segmentClass(active: boolean) {
   return cn(
     "h-9 px-3.5 text-sm font-medium transition first:rounded-l-lg last:rounded-r-lg",
@@ -106,12 +111,13 @@ export function HourlyLoadCard({
               <BusiestAndFree series={series} metric={metric} />
             </div>
 
-            <HourlyChart series={series} metric={metric} scopeLabel={scopeLabel} />
+            <HourlyChart series={series} metric={metric} scopeLabel={scopeLabel} days={data.days} />
             <Heatmap data={data} metric={metric} selectedId={runnerId} onSelect={setRunnerId} />
 
             <p className="px-2 text-xs text-slate-500">
               Horário de Brasília. {data.days === 1 ? "Últimas 24 horas" : `Média por dia nos ${data.days} dias`}, contando as tasks pela hora em que começaram.
               {metric === "minutes" ? " No geral, passa de 60 min na hora quando há tasks ao mesmo tempo." : ""}
+              {data.days === 1 ? " As pontas (ontem e hoje) são horas parciais." : ""}
             </p>
           </>
         )}
@@ -134,19 +140,32 @@ function BusiestAndFree({ series, metric }: { series: DashboardHourlyLoadHour[];
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-600">
       <span>
-        Mais cheias: <strong className="text-amber-700">{busiest.map((h) => hourLabel(h.hour)).join(", ") || "---"}</strong>
+        Mais cheias: <strong className="text-amber-700">{busiest.map((h) => h.title || hourLabel(h.hour)).join(", ") || "---"}</strong>
       </span>
       <span>
-        Mais livres: <strong className="text-emerald-700">{freest.map((h) => hourLabel(h.hour)).join(", ")}</strong>
+        Mais livres: <strong className="text-emerald-700">{freest.map((h) => h.title || hourLabel(h.hour)).join(", ")}</strong>
       </span>
     </div>
   );
 }
 
-function HourlyChart({ series, metric, scopeLabel }: { series: DashboardHourlyLoadHour[]; metric: Metric; scopeLabel: string }) {
+function HourlyChart({
+  series,
+  metric,
+  scopeLabel,
+  days,
+}: {
+  series: DashboardHourlyLoadHour[];
+  metric: Metric;
+  scopeLabel: string;
+  days: number;
+}) {
   const max = Math.max(0, ...series.map((h) => valueOf(h, metric)));
   const rows = series.map((h) => ({
+    key: h.key || String(h.hour),
     label: hourLabel(h.hour),
+    title: h.title || hourLabel(h.hour),
+    hour: h.hour,
     value: valueOf(h, metric),
     tasks: h.avg_tasks_per_day,
     minutes: h.avg_busy_minutes,
@@ -166,7 +185,14 @@ function HourlyChart({ series, metric, scopeLabel }: { series: DashboardHourlyLo
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barCategoryGap="20%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} interval={1} />
+            <XAxis
+              dataKey="key"
+              tickFormatter={(key) => rows.find((r) => r.key === key)?.label ?? ""}
+              tick={{ fontSize: 11, fill: "#64748b" }}
+              axisLine={false}
+              tickLine={false}
+              interval={1}
+            />
             <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} allowDecimals={metric === "tasks"} />
             <Tooltip
               cursor={{ fill: "rgba(148,163,184,0.12)" }}
@@ -174,16 +200,18 @@ function HourlyChart({ series, metric, scopeLabel }: { series: DashboardHourlyLo
               separator=""
               formatter={(_value, _name, item) => {
                 const row = item.payload as (typeof rows)[number];
-                return [`${formatValue(row.minutes, "minutes")} rodando · ${formatValue(row.tasks, "tasks")} tasks por dia`, ""];
+                return [`${formatValue(row.minutes, "minutes")} rodando · ${formatValue(row.tasks, "tasks")} ${tasksUnit(days)}`, ""];
               }}
-              labelFormatter={(label) => {
-                const hh = String(label).replace("h", "");
-                return `Entre ${hh}:00 e ${hh}:59`;
+              labelFormatter={(key) => {
+                const row = rows.find((r) => r.key === key);
+                if (!row) return "";
+                const hh = String(row.hour).padStart(2, "0");
+                return `${row.title} (${hh}:00 a ${hh}:59)`;
               }}
             />
             <Bar dataKey="value" radius={[3, 3, 0, 0]}>
               {rows.map((row) => (
-                <Cell key={row.label} fill={colorFor(row.value)} />
+                <Cell key={row.key} fill={colorFor(row.value)} />
               ))}
             </Bar>
           </BarChart>
@@ -231,9 +259,9 @@ function Heatmap({
           <thead>
             <tr>
               <th className="w-40 text-left font-medium text-slate-500" />
-              {Array.from({ length: 24 }, (_, hour) => (
-                <th key={hour} className="font-medium text-slate-500">
-                  {String(hour).padStart(2, "0")}
+              {data.hours.map((hour) => (
+                <th key={hour.key || hour.hour} title={hour.title} className="font-medium text-slate-500">
+                  {String(hour.hour).padStart(2, "0")}
                 </th>
               ))}
             </tr>
@@ -260,8 +288,8 @@ function Heatmap({
                   const intensity = max > 0 ? value / max : 0;
                   return (
                     <td
-                      key={hour.hour}
-                      title={`${runner.label || runner.name} · ${hourLabel(hour.hour)}: ${formatValue(hour.avg_busy_minutes, "minutes")} rodando, ${formatValue(hour.avg_tasks_per_day, "tasks")} tasks por dia`}
+                      key={hour.key || hour.hour}
+                      title={`${runner.label || runner.name} · ${hour.title || hourLabel(hour.hour)}: ${formatValue(hour.avg_busy_minutes, "minutes")} rodando, ${formatValue(hour.avg_tasks_per_day, "tasks")} ${tasksUnit(data.days)}`}
                       className="h-7 rounded text-center align-middle"
                       style={{
                         backgroundColor: value > 0 ? `rgba(37, 99, 235, ${0.1 + intensity * 0.8})` : "#f1f5f9",
