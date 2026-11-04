@@ -215,3 +215,34 @@ export async function getDashboardBots(
 
   return response.data;
 }
+
+/** Carga por hora do dia (horário de Brasília), geral e por máquina. */
+export type DashboardHourlyLoadHour = {
+  hour: number;
+  tasks: number;
+  avg_tasks_per_day: number;
+  /** Minutos com task rodando na hora, em média por dia (passa de 60 com tasks simultâneas). */
+  avg_busy_minutes: number;
+};
+
+export type DashboardHourlyLoadRunner = {
+  runner_id: number;
+  name: string;
+  label: string | null;
+  total_tasks: number;
+  hours: DashboardHourlyLoadHour[];
+};
+
+export type DashboardHourlyLoadResponse = {
+  period: DashboardPeriod;
+  days: number;
+  date_from: string;
+  date_to: string;
+  hours: DashboardHourlyLoadHour[];
+  runners: DashboardHourlyLoadRunner[];
+};
+
+export async function getDashboardHourlyLoad(params: DashboardQueryParams = {}) {
+  const response = await api.get<DashboardHourlyLoadResponse>("/api/v1/dashboard/hourly-load", { params });
+  return response.data;
+}

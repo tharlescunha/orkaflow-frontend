@@ -22,6 +22,7 @@ import {
   type DashboardRunnerMetrics,
   type DashboardTaskStatus,
 } from "@/services/api/dashboard";
+import { HourlyLoadCard } from "./hourly-load-card";
 import { EMPTY, formatDuration, formatPercent, formatRelative, formatTimeSmart } from "@/lib/format";
 import { badge, card, cardHeader, cardTitle, table, tone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -259,6 +260,9 @@ export function DashboardPage() {
 
           {/* 3. Como foi o período */}
           <PeriodChart overview={overview} period={period} />
+
+          {/* 3b. Em que horas roda mais: onde ainda cabe execução */}
+          <HourlyLoadCard />
 
           {/* 4. Máquinas e bots */}
           <div className="grid gap-5 xl:grid-cols-2">
