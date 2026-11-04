@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listRunners, type RunnerRead } from "@/services/api/runners";
 import { listTasks, type TaskListItem } from "@/services/api/tasks";
 import { listTaskErrors } from "@/services/api/task-errors";
+import { getDatabaseAlerts, type DatabaseAlert } from "@/services/api/dbstatus";
 import {
   STUCK_TASK_MINUTES,
   describeRunnerProblem,
@@ -12,6 +13,10 @@ import {
 } from "@/lib/health";
 
 export const HEALTH_POLL_MS = 20_000;
+// Bancos: a leitura é mais pesada (conecta em cada banco), então confere a cada minuto.
+const DB_ALERT_POLL_MS = 60_000;
+// Respostas que significam "este usuário/servidor não tem Database Status": para de perguntar.
+const DB_ALERT_STOP_STATUSES = [401, 403, 404, 503];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const pollOptions = {
@@ -31,6 +36,7 @@ export type StuckTask = {
 
 export type SystemHealth = {
   failedTasks: TaskListItem[];
+  problemDatabases: DatabaseAlert[];
   problemRunners: ProblemRunner[];
   stuckTasks: StuckTask[];
   errors24h: number;
@@ -72,7 +78,20 @@ export function useSystemHealth(): SystemHealth {
     ...pollOptions,
   });
 
+  const dbAlertsQuery = useQuery({
+    queryKey: ["health", "db-alerts"],
+    queryFn: getDatabaseAlerts,
+    retry: false,
+    staleTime: 30_000,
+    refetchIntervalInBackground: false,
+    refetchInterval: (query) => {
+      const status = (query.state.error as { response?: { status?: number } } | null)?.response?.status;
+      return status && DB_ALERT_STOP_STATUSES.includes(status) ? false : DB_ALERT_POLL_MS;
+    },
+  });
+
   const runners = runnersQuery.data;
+  const problemDatabases = dbAlertsQuery.data?.items;
   const failedItems = failedQuery.data?.items;
   const pendingItems = pendingQuery.data?.items;
   const dataUpdatedAt = Math.max(
@@ -105,12 +124,15 @@ export function useSystemHealth(): SystemHealth {
       if (minutes >= STUCK_TASK_MINUTES) stuckTasks.push({ task, minutes });
     }
 
+    const databases = problemDatabases ?? [];
+
     return {
       failedTasks,
+      problemDatabases: databases,
       problemRunners,
       stuckTasks,
       errors24h: errorsQuery.data?.total ?? 0,
-      total: failedTasks.length + problemRunners.length + stuckTasks.length,
+      total: failedTasks.length + problemRunners.length + stuckTasks.length + databases.length,
       isLoading:
         runnersQuery.isLoading || failedQuery.isLoading || pendingQuery.isLoading,
     };
@@ -118,6 +140,7 @@ export function useSystemHealth(): SystemHealth {
     runners,
     failedItems,
     pendingItems,
+    problemDatabases,
     dataUpdatedAt,
     errorsQuery.data?.total,
     runnersQuery.isLoading,

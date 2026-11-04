@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertOctagon, ChevronDown, ChevronUp, Clock, ServerOff, X } from "lucide-react";
+import { AlertOctagon, ChevronDown, ChevronUp, Clock, Database, ServerOff, X } from "lucide-react";
 import { useSystemHealth } from "@/hooks/use-system-health";
 import { formatMinutes } from "@/lib/health";
 
@@ -29,7 +29,7 @@ function runnerLabel(runner: { name: string; label?: string | null }) {
 }
 
 export function SystemHealthBanner() {
-  const { failedTasks, problemRunners, stuckTasks, total } = useSystemHealth();
+  const { failedTasks, problemRunners, problemDatabases, stuckTasks, total } = useSystemHealth();
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
 
@@ -37,9 +37,10 @@ export function SystemHealthBanner() {
     () => [
       ...failedTasks.map((task) => `erro:${task.id}`),
       ...problemRunners.map(({ runner, reason }) => `runner:${runner.id}:${reason}`),
+      ...problemDatabases.map((db) => `banco:${db.server}/${db.name}:${db.reasons.join("|")}`),
       ...stuckTasks.map(({ task }) => `parada:${task.id}`),
     ],
-    [failedTasks, problemRunners, stuckTasks],
+    [failedTasks, problemRunners, problemDatabases, stuckTasks],
   );
 
   const hasNew = currentKeys.some((key) => !dismissed.has(key));
@@ -70,6 +71,12 @@ export function SystemHealthBanner() {
             {problemRunners.length} runner{problemRunners.length > 1 ? "s" : ""} com problema
           </Link>
         )}
+        {problemDatabases.length > 0 && (
+          <Link to="/status/database" className={`inline-flex items-center gap-1.5 font-semibold ${linkClass}`}>
+            <Database className="h-4 w-4 shrink-0" />
+            {problemDatabases.length} banco{problemDatabases.length > 1 ? "s" : ""} com problema
+          </Link>
+        )}
         {stuckTasks.length > 0 && (
           <Link to="/tasks" className={`inline-flex items-center gap-1.5 font-semibold ${linkClass}`}>
             <Clock className="h-4 w-4 shrink-0" />
@@ -90,7 +97,7 @@ export function SystemHealthBanner() {
         <button
           type="button"
           onClick={dismiss}
-          title="Esconder este aviso até aparecer um erro, runner ou task parada novos"
+          title="Esconder este aviso até aparecer um erro, runner, banco ou task parada novos"
           className="inline-flex items-center gap-1 border-l border-red-200 pl-3 text-xs text-red-800/80 hover:text-red-900"
         >
           <X className="h-3.5 w-3.5" />
@@ -128,6 +135,23 @@ export function SystemHealthBanner() {
                       {runnerLabel(runner)}
                     </Link>{" "}
                     ({reason})
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+
+          {problemDatabases.length > 0 && (
+            <div>
+              <span className="font-semibold">Bancos: </span>
+              <span className="text-red-800/90">
+                {problemDatabases.map((db, index) => (
+                  <span key={`${db.server}/${db.name}`}>
+                    {index > 0 && "; "}
+                    <Link to={`/status/database#db=${encodeURIComponent(`${db.server}/${db.name}`)}`} className={linkClass}>
+                      {db.name}
+                    </Link>{" "}
+                    ({db.reasons.join(", ")})
                   </span>
                 ))}
               </span>

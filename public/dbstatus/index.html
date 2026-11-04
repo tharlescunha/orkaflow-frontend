@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Database Status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  /* Paleta do Regente (tema claro). Os dados, gráficos e telas são os mesmos do DatabaseStatus original. */
+  --bg:#F8F7F4;--panel:#FFFFFF;--panel2:#F1EFEA;--line:#E2E8F0;--txt:#1E293B;--mut:#64748B;--dim:#94A3B8;
+  --ok:#059669;--warn:#D97706;--bad:#DC2626;--blue:#2563EB;--violet:#7C3AED;--gray:#94A3B8;
+  --okbg:rgba(5,150,105,.10);--warnbg:rgba(217,119,6,.12);--badbg:rgba(220,38,38,.10);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 Inter,"Segoe UI",system-ui,sans-serif}
+button,select,input{font:inherit;color:inherit}
+a{color:var(--blue)}
+.top{position:sticky;top:0;z-index:20;background:rgba(248,247,244,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
+.brand i{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:pulse 2s infinite}
+.brand i.err{background:var(--bad);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,184,107,.6)}70%{box-shadow:0 0 0 8px rgba(47,184,107,0)}100%{box-shadow:0 0 0 0 rgba(47,184,107,0)}}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:none;border:0;padding:6px 12px;cursor:pointer;color:var(--mut)}
+.seg button.on{background:var(--blue);color:#fff;font-weight:600}
+.seg button:hover:not(.on){background:var(--panel2);color:var(--txt)}
+.ctl{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:13px}
+select,input[type=search]{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;outline:none}
+select:focus,input:focus{border-color:var(--blue)}
+.sp{flex:1}
+.upd{color:var(--mut);font-size:12px;text-align:right}
+main{padding:18px 20px 60px;max-width:1700px;margin:0 auto}
+.sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;display:flex;gap:10px;align-items:baseline;user-select:none}
+.chip b{font-size:22px}
+.chip span{color:var(--mut);font-size:12px}
+.chip.on{border-color:var(--blue)}
+.chip.red b{color:var(--bad)}.chip.yellow b{color:var(--warn)}.chip.green b{color:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--gray);border-radius:12px;padding:11px 13px;cursor:pointer;transition:transform .12s,border-color .12s;position:relative}
+.card:hover{transform:translateY(-2px);border-color:#CBD5E1}
+.card.green{border-left-color:var(--ok)}
+.card.yellow{border-left-color:var(--warn);background:linear-gradient(180deg,var(--warnbg),var(--panel) 60%)}
+.card.red{border-left-color:var(--bad);background:linear-gradient(180deg,var(--badbg),var(--panel) 70%)}
+.card.red{animation:redglow 2.4s infinite}
+@keyframes redglow{50%{box-shadow:0 0 18px rgba(240,72,62,.25)}}
+.ch{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--gray);flex:none}
+.dot.green{background:var(--ok)}.dot.yellow{background:var(--warn)}.dot.red{background:var(--bad)}
+.nm{font-weight:650;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.tier{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.rec{font-size:11px;border-radius:6px;padding:1px 7px;font-weight:600;white-space:nowrap}
+.rec.subir{background:var(--badbg);color:var(--bad)}.rec.atencao{background:var(--warnbg);color:var(--warn)}.rec.reduzir{background:var(--okbg);color:var(--ok)}
+.big{display:flex;align-items:flex-end;gap:12px;margin:0 0 6px}
+.big .n{font-size:34px;font-weight:700;line-height:1}
+.big .l{color:var(--mut);font-size:12px;padding-bottom:4px}
+.g{display:grid;grid-template-columns:max-content minmax(24px,1fr) 30px max-content minmax(24px,1fr) 30px;gap:5px 7px;align-items:center;font-size:12px;margin-bottom:6px}
+.g .lab:nth-child(6n+4){margin-left:10px}
+.g .lab{white-space:nowrap}
+.g .bar{height:6px}
+.card .g .v{font-size:11.5px}
+.g .lab{color:var(--mut)}
+.bar{height:7px;background:#E2E8F0;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px;background:var(--ok);transition:width .4s}
+.bar i.yellow{background:var(--warn)}.bar i.red{background:var(--bad)}
+.g .v{text-align:right;font-variant-numeric:tabular-nums}
+.badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;min-height:0}
+.bd{font-size:11px;border-radius:6px;padding:2px 8px;background:var(--panel2);color:var(--mut)}
+.bd.yellow{background:var(--warnbg);color:var(--warn)}.bd.red{background:var(--badbg);color:var(--bad)}
+.spark{display:block;width:100%;height:38px}
+.live-tag{font-size:10px;color:var(--dim);margin-left:auto}
+.err-msg{color:var(--bad);font-size:12px}
+/* detail */
+.back{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.dh{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.dh h2{margin:0;font-size:22px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+.tabs button{background:none;border:0;padding:9px 16px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent}
+.tabs button.on{color:var(--txt);border-bottom-color:var(--blue)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi .t{color:var(--mut);font-size:12px}
+.kpi .v{font-size:26px;font-weight:700;line-height:1.2}
+.kpi .s{color:var(--mut);font-size:11px}
+.v.green{color:var(--ok)}.v.yellow{color:var(--warn)}.v.red{color:var(--bad)}
+.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:14px}
+.cc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;position:relative}
+.cc h4{margin:0 0 2px;font-size:13px;display:flex;gap:8px;align-items:baseline}
+.cc h4 small{color:var(--mut);font-weight:400}
+.cc svg{display:block;width:100%}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--mut);margin:2px 0 4px}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.tip{position:fixed;pointer-events:none;background:#1E293B;color:#E2E8F0;border:1px solid #334155;border-radius:8px;padding:6px 10px;font-size:12px;z-index:50;display:none;box-shadow:0 6px 20px rgba(15,23,42,.25)}
+.tip b{display:block;margin-bottom:2px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.panel h3{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:10px}
+.panel h3 small{color:var(--mut);font-weight:400}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{color:var(--mut);font-weight:500;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--panel)}
+td{padding:6px 8px;border-bottom:1px solid #EEF2F6;vertical-align:top}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.red td{background:var(--badbg)}tr.yellow td{background:var(--warnbg)}
+.sql{font:12px/1.4 Consolas,monospace;color:#334155;white-space:pre-wrap;word-break:break-word;max-height:64px;overflow:hidden;cursor:pointer}
+.sql.open{max-height:none}
+.scroll{max-height:460px;overflow:auto}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:1100px){.two{grid-template-columns:1fr}.charts{grid-template-columns:1fr}}
+.vd{border-radius:12px;padding:16px 18px;margin-bottom:14px;border:1px solid var(--line);display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.vd.subir{background:var(--badbg);border-color:rgba(240,72,62,.4)}.vd.atencao{background:var(--warnbg);border-color:rgba(230,180,34,.4)}
+.vd.reduzir,.vd.ok{background:var(--okbg);border-color:rgba(47,184,107,.35)}.vd.na{background:var(--panel)}
+.vd h3{margin:0 0 6px;font-size:18px}
+.vd ul{margin:6px 0 0;padding-left:18px;color:var(--txt)}
+code,.cmd{font:12px Consolas,monospace;background:#F1F5F9;border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.cmd{display:block;padding:8px 10px;margin-top:8px;user-select:all;overflow:auto;white-space:nowrap}
+.tl{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tl .tr{padding:4px 10px;border-radius:8px;border:1px solid var(--line);font-size:12px;color:var(--mut)}
+.tl .tr.cur{border-color:var(--blue);color:var(--txt)}.tl .tr.tgt{border-color:var(--warn);color:var(--txt);background:var(--warnbg)}
+.empty{color:var(--mut);padding:20px;text-align:center}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+.note{color:var(--mut);font-size:12px;margin-top:6px}
+.hbar{display:flex;gap:2px;align-items:flex-end;height:120px}
+.hbar div{flex:1;position:relative;background:var(--blue);border-radius:2px 2px 0 0;min-height:2px}
+.hbar div.mx{background:rgba(240,72,62,.55);position:absolute;bottom:0;left:0;right:0}
+.hl{display:flex;gap:2px;font-size:10px;color:var(--mut)}.hl span{flex:1;text-align:center}
+
+.ib{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid #6b7888;color:#9aa7b6;font:italic 700 9px Georgia,serif;margin-left:5px;cursor:help;vertical-align:middle;flex:none;line-height:1;user-select:none}
+.ib:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+.tip{max-width:370px}
+.tip .tt{display:block;font-weight:700;font-size:13px;margin-bottom:4px}
+.tip p{margin:5px 0;color:#c9d6e3;line-height:1.45;font-size:12px}.tip p.w{color:#f2cc5a}.tip p.a{color:#7ee0a3}
+.why{margin:0 0 8px;padding:7px 9px;border-radius:8px;background:rgba(15,23,42,.05);font-size:12px}
+.why>div{padding:1px 0}.why .wh{font-weight:600;margin-bottom:2px}
+.why .red{color:#DC2626}.why .yellow{color:#B45309}.why .green{color:#047857}.why .gray{color:var(--mut)}
+.why div.red:before,.why div.yellow:before{content:"● ";font-size:9px}
+.why.diag{font-size:13px;padding:10px 12px}.why.diag>div{padding:3px 0}
+.chip span .ib{margin-left:4px}
+.tip p b{display:inline;margin:0}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><i id="pulse"></i>Database Status</div>
+  <div class="seg" id="rangeSeg"></div>
+  <div class="ctl">Atualizar a cada
+    <select id="refSel">
+      <option value="5">5 s</option><option value="10">10 s</option><option value="15">15 s</option>
+      <option value="30" selected>30 s</option><option value="60">1 min</option><option value="300">5 min</option><option value="0">pausado</option>
+    </select>
+  </div>
+  <button class="back" id="btnNow" title="Atualizar agora">↻ Agora</button>
+  <div class="sp"></div>
+  <div class="upd" id="upd">carregando…</div>
+</div>
+<main id="app"></main>
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+/* ================= util ================= */
+const $=(s,r=document)=>r.querySelector(s);
+const el=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=(v,d=0)=>v==null||isNaN(v)?'–':Number(v).toLocaleString('pt-BR',{maximumFractionDigits:d,minimumFractionDigits:d});
+const pc=(v,d=0)=>v==null||isNaN(v)?'–':fmt(v,d)+'%';
+const RANGES=[['live','Ao vivo (1h)'],['24h','24 horas'],['7d','7 dias'],['15d','15 dias'],['30d','30 dias']];
+const S={range:localStorage.dbs_range||'24h',refresh:+(localStorage.dbs_ref||30),view:'overview',db:null,tab:'resumo',filter:'all',sort:'sev',q:'',
+  overview:null,snap:{},detail:null,live:null,qs:null,extra:null,events:null,qsOpts:{hours:24,sort:'cpu'}};
+const lvl=(v,w=70,c=90)=>v==null?'gray':v>=c?'red':v>=w?'yellow':'green';
+const rank={red:3,yellow:2,green:1,gray:0};
+function fmtDur(ms){if(ms==null)return'–';if(ms<1000)return fmt(ms)+' ms';const s=ms/1000;if(s<60)return fmt(s,1)+' s';if(s<3600)return fmt(s/60,1)+' min';return fmt(s/3600,1)+' h'}
+function fmtBytes(b){if(b==null)return'–';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<4){b/=1024;i++}return fmt(b,i>1?2:0)+' '+u[i]}
+function fmtNum(n){if(n==null)return'–';if(n>=1e9)return fmt(n/1e9,2)+' bi';if(n>=1e6)return fmt(n/1e6,2)+' mi';if(n>=1e3)return fmt(n/1e3,1)+' mil';return fmt(n,0)}
+function tfmt(t,range){const d=new Date(t);const hm=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return (range==='live'||range==='24h')?(range==='24h'?d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' ':'')+hm:d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+hm}
+// Regente: a página roda dentro do painel (mesma origem). Os dados vêm da API do Regente (?api=...) com o login do painel.
+const API_BASE=(new URLSearchParams(location.search).get('api')||'').replace(/\/$/,'');
+function authToken(){try{return localStorage.getItem('access_token')||''}catch(e){return ''}}
+async function api(path){
+  const url=API_BASE+'/api/v1/dbstatus'+path.replace(/^\/api/,'');
+  const call=()=>fetch(url,{headers:{Authorization:'Bearer '+authToken()}});
+  let r=await call();
+  if(r.status===401){ // token vencido: o painel renova (parent) e a gente tenta de novo com o token novo
+    try{parent.postMessage({type:'dbstatus-auth-expired'},location.origin)}catch(e){}
+    await new Promise(ok=>setTimeout(ok,2000));
+    r=await call();
+  }
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||j.detail||r.statusText);
+  return j}
+
+/* ================= glossário (ícones "i") ================= */
+const RL={live:'1 hora','24h':'24 horas','7d':'7 dias','15d':'15 dias','30d':'30 dias'};
+const GL={
+dtu:{t:'DTU: a "força" do banco',d:'DTU é a unidade de capacidade que o Azure vende para este banco. Ela mistura três coisas: <b>CPU</b> (processar), <b>IO de dados</b> (ler/gravar no disco) e <b>IO de log</b> (gravar o diário de transações). O % mostrado é o <b>maior</b> dos três.',w:'perto de 100% o Azure começa a segurar as consultas: ficam lentas, dão timeout e o sistema parece travado. É o "travamento em 100%".',a:'veja qual dos três está no teto (barras do card) e, na aba Queries, quais consultas mais consomem.'},
+cpu:{t:'CPU',d:'Quanto do processador do banco está em uso agora.',w:'CPU alta costuma vir de consultas que fazem muito cálculo, de falta de índice ou de execuções demais da mesma consulta. Se a CPU chega a 100%, o DTU também chega.',a:'abra Queries e ordene por "CPU total".'},
+io:{t:'IO de dados',d:'Leitura e gravação de dados no disco do banco.',w:'É o gargalo mais comum em bancos de relatório/DW: consultas lendo tabelas inteiras (falta de índice) ou cargas grandes. IO de dados no teto = DTU no teto.',a:'em Queries ordene por "Leituras (IO)" e veja os índices sugeridos na aba Capacidade.'},
+log:{t:'IO de log',d:'Gravação no log de transações (o "diário" de tudo que foi alterado no banco).',w:'Fica alto com muitos INSERT/UPDATE/DELETE, cargas em massa ou transações enormes.',a:'quebre cargas grandes em lotes menores; em Queries ordene por "Escritas".'},
+workers:{t:'Workers (consultas simultâneas)',d:'Cada consulta em execução usa um "trabalhador". Cada camada tem um limite desses trabalhadores.',w:'Em 100% as novas consultas ficam na fila ou são recusadas (erros de conexão). Normalmente acontece quando há bloqueio (várias consultas empilhadas esperando) ou concorrência demais.',a:'veja a aba Agora: bloqueios e consultas longas.'},
+sess:{t:'Sessões (% do limite)',d:'Conexões abertas em relação ao máximo permitido pela camada.',w:'Em 100% ninguém mais consegue conectar. Costuma ser aplicação que abre conexões e não fecha (vazamento).',a:'em Agora > "Quem está conectado" veja qual programa/máquina tem mais conexões.'},
+stor:{t:'Armazenamento',d:'Espaço usado em relação ao limite da camada.',w:'Chegando em 100% o banco deixa de aceitar gravações. Alerta a partir de 80%.',a:'limpe dados antigos ou suba a camada (limite maior).'},
+blocked:{t:'Consultas bloqueadas',d:'Uma consulta está esperando outra liberar uma linha ou tabela (lock). Enquanto espera, ocupa um worker e parece "travada".',w:'Quase sempre a causa é uma transação aberta e esquecida, ou um UPDATE/DELETE grande segurando muitas linhas. Uma fila de bloqueios pode derrubar o banco (workers a 100%).',a:'a aba Agora mostra quem bloqueia quem. A solução é a aplicação finalizar a transação (commit/rollback).'},
+longq:{t:'Consulta mais longa agora',d:'Há quanto tempo está rodando a requisição mais antiga neste momento.',w:'Consultas de minutos podem estar presas esperando (lock) ou fazendo uma varredura enorme.',a:'veja na aba Agora o texto da consulta e o tipo de espera.'},
+idle:{t:'Transações abertas ociosas',d:'A aplicação deu BEGIN (iniciou uma transação) e ainda não deu COMMIT/ROLLBACK. A conexão está parada, mas continua <b>segurando locks</b> e impede a limpeza do log.',w:'Poucas (1 a 3) são normais em apps com pool de conexão. Muitas, ou muito antigas, causam bloqueios em cadeia e deadlocks. Cada uma é um app/robô que não finalizou a transação.',a:'na aba Agora veja quem são (login, máquina, programa e última SQL) e peça ao time do sistema para dar commit/rollback ao terminar o trabalho.'},
+failConn:{t:'Conexões recusadas',d:'Tentativas de conexão que o banco não aceitou: limite de sessões/workers atingido, throttling ou erro transitório do Azure.',w:'A aplicação recebe erro ou timeout ao tentar conectar.',a:'veja Workers/Sessões no card e a aba Falhas e eventos.'},
+deadlock:{t:'Deadlock (impasse)',d:'Duas sessões ficam esperando uma pela outra para sempre: A segura o que B quer, e B segura o que A quer. O SQL Server cancela uma delas (a "vítima") com o erro 1205.',w:'A operação cancelada falha e precisa ser repetida. Muitos deadlocks = falhas intermitentes e lentidão. Costuma indicar transações longas, falta de índice ou acesso às tabelas em ordens diferentes.',a:'veja os horários na aba Falhas e eventos e as consultas com falhas na aba Queries. Reduza o tamanho das transações e crie índices.'},
+fw:{t:'Bloqueio de firewall',d:'Alguém tentou conectar de um IP que não está liberado no firewall do servidor.',w:'Se for um sistema seu, ele não consegue acessar o banco. Se for IP desconhecido, pode ser tentativa indevida.',a:'confira o IP de origem e libere (ou ignore) no servidor.'},
+sat:{t:'Tempo saturado (travamento)',d:'Quanto tempo o banco ficou no limite: DTU médio ≥ 90% (em períodos longos, quando o pico encostou em 100%).',w:'É a medida direta do "travar em 100%". Quanto mais tempo e mais episódios, maior o risco de timeout e de queda.',a:'veja a tabela de episódios na aba Resumo e clique em "O que rodou aí?" para ver as consultas daquele horário.'},
+spark:{t:'Gráfico do período',d:'Linha azul = DTU médio. Linha vermelha fina = pico dentro de cada intervalo. Tracejados: amarelo 70% (atenção) e vermelho 90% (crítico).'},
+status:{t:'Como o status é definido',d:'<b>Verde</b>: tudo abaixo de 70%. <b>Amarelo</b>: algum indicador ≥ 70%, ou algum bloqueio, deadlock ou falha de conexão. <b>Vermelho</b>: algum indicador ≥ 90% (storage ≥ 92%), 3 ou mais bloqueios, 3 ou mais deadlocks ou 10 ou mais conexões recusadas nos últimos 15 min.',a:'os motivos exatos de cada banco aparecem no próprio card.'},
+iochart:{t:'IO de dados e IO de log',d:'Verde = leitura/gravação de dados no disco. Amarelo = gravação no log de transações. Cada um pode, sozinho, levar o DTU a 100%.'},
+wkchart:{t:'Workers e sessões',d:'Picos de consultas simultâneas (workers) e de conexões abertas (sessões), em % do limite da camada.',w:'Perto de 100% novas consultas/conexões são recusadas.'},
+sessCount:{t:'Sessões abertas',d:'Quantidade de conexões abertas ao longo do tempo (média e pico). Cada aplicação, robô ou pessoa conectada conta como uma ou mais sessões.',w:'Subida contínua sem voltar é sinal de vazamento de conexões.'},
+connOk:{t:'Conexões com sucesso',d:'Volume de conexões bem-sucedidas. Serve de referência de uso: se cair a zero de repente, ninguém está conseguindo conectar.'},
+avail:{t:'Disponibilidade',d:'% do tempo em que o Azure considerou o banco acessível. Abaixo de 100% = houve indisponibilidade registrada.'},
+diag:{t:'Diagnóstico automático',d:'Regras simples lendo o que está acontecendo agora no banco (recursos, bloqueios, transações paradas, consultas longas, conexões e esperas) e traduzindo em frases.',w:'Aponta o provável motivo sem você precisar interpretar as tabelas.',a:'é um ponto de partida; confirme nas tabelas abaixo.'},
+waits:{t:'Esperas (waits)',d:'Em que o banco gasta tempo esperando. É a melhor pista para entender lentidão.<br>• <b>PAGEIOLATCH</b>: esperando disco (leitura).<br>• <b>WRITELOG</b>: esperando gravar no log.<br>• <b>LCK_*</b>: esperando liberar bloqueio (lock).<br>• <b>SOS_SCHEDULER_YIELD</b>: CPU ocupada.<br>• <b>RESOURCE_SEMAPHORE</b>: falta de memória.<br>• <b>ASYNC_NETWORK_IO</b>: cliente lento para receber dados.',w:'os números são acumulados desde o último restart do banco: o que está no topo é o que mais pesou ao longo do tempo.'},
+reqs:{t:'Consultas em execução',d:'O que está rodando exatamente agora: tempo, CPU, leituras, o que está esperando e se está bloqueada por outra sessão. Vermelho = bloqueada; amarelo = rodando há mais de 1 min.'},
+idleSess:{t:'Sessões ociosas com transação aberta',d:'Conexões paradas que ainda têm uma transação aberta. Elas podem estar segurando locks de linhas/tabelas e travando outras consultas.',a:'identifique pelo login, máquina e programa quem é o dono e peça para finalizar a transação.'},
+conn:{t:'Quem está conectado',d:'Conexões agrupadas por login, máquina e programa. Ajuda a ver qual sistema/robô está usando o banco e se algum tem conexões demais.'},
+resChart:{t:'Últimos ~64 minutos',d:'Uso de CPU, IO de dados, IO de log e workers com um ponto a cada 15 segundos, direto do banco. Mostra picos curtos que o Azure Monitor (1 min) suaviza.'},
+qs_execs:{t:'Execuções',d:'Quantas vezes essa consulta rodou na janela escolhida. Consulta leve que roda milhões de vezes também pode pesar.'},
+qs_avg:{t:'Duração (tempo de relógio)',d:'Quanto tempo a consulta levou do início ao fim, como o usuário sente. <b>Média</b> = execução típica; <b>máxima</b> = a pior execução. Máxima muito acima da média = às vezes trava (bloqueio, plano ruim ou carga alta na hora).'},
+qs_cpu:{t:'CPU (tempo de processador)',d:'Tempo de processador realmente gasto, não é o tempo total. <b>Médio</b> = por execução; <b>total</b> = soma de todas as execuções (mostra quem mais pesa no processador).'},
+qs_wait:{t:'Esperando = duração − CPU',d:'Parte do tempo em que a consulta não estava processando: ficou esperando disco, bloqueio (lock), log ou rede. Ex.: duração de 26 s com 4,5 s de CPU = cerca de 21 s esperando.',w:'espera alta com CPU baixa aponta para IO de disco (falta de índice, leitura grande) ou bloqueios, e não para falta de processador. Em consultas paralelas a CPU pode passar da duração (aparece 0).',a:'veja o quadro "O que as consultas ficaram esperando" logo abaixo para saber o tipo.'},
+qs_reads:{t:'Leituras médias',d:'Páginas de 8 KB lidas por execução (IO lógico). Números enormes = varredura de muita tabela, geralmente falta de índice.'},
+qs_failed:{t:'Falhas / abortadas',d:'Execuções que não terminaram com sucesso: erro, cancelamento, timeout do cliente ou vítima de deadlock.'},
+qs_plans:{t:'Planos',d:'Quantos planos de execução diferentes essa consulta já teve. Muitos planos e tempos muito diferentes podem indicar regressão de plano.'},
+cap_ladder:{t:'Camadas',d:'Degraus de capacidade do modelo DTU com preço de tabela aproximado em dólar por mês. Azul = onde você está; amarelo = sugerida.'},
+cap_bott:{t:'O que está apertando',d:'p95 de cada recurso: 95% do tempo o uso ficou abaixo desse valor. O maior é o gargalo.',a:'gargalo de IO de dados costuma ceder com índice/consulta melhor; CPU e log respondem direto a uma camada maior.'},
+cap_hod:{t:'Perfil por hora do dia',d:'DTU médio de cada hora do dia, somando todos os dias do período. Mostra a rotina de picos (cargas noturnas, fechamento, relatórios).',a:'se o pico é sempre no mesmo horário, dá para reagendar a carga ou subir a camada só nesse horário.'},
+cap_idx:{t:'Índices sugeridos',d:'O próprio SQL Server aponta índices que teriam acelerado consultas reais. "Impacto" é a melhoria estimada.',w:'índice certo reduz IO e CPU sem pagar mais.',a:'avalie antes de criar: cada índice ocupa espaço e deixa gravações um pouco mais lentas.'},
+cap_tables:{t:'Maiores tabelas',d:'Tabelas que mais ocupam espaço. Ajuda a entender o crescimento do armazenamento.'},
+ev:{t:'Eventos do servidor',d:'Registro oficial do Azure (sys.event_log): deadlocks, throttling (banco limitando por falta de capacidade), falhas de conexão. Mostra o horário exato.'},
+inc:{t:'Episódios de travamento',d:'Cada linha é um período seguido em que o banco ficou saturado, com o recurso que estava no limite.',a:'"O que rodou aí?" abre o Query Store filtrado naquele horário para ver os culpados.'},
+uso_cov:{t:'Coletor de uso',d:'A cada 30 segundos o painel olha quem está conectado em cada banco e quanto cada usuário gastou de CPU, leituras e escritas desde a coleta anterior, e quais esquemas estão sendo executados. Grava tudo em um arquivo local (data/usage.db) e guarda 31 dias.',w:'o Azure não guarda "quem executou" no histórico, então é essa coleta que permite saber qual usuário causou um pico.',a:'deixe o painel rodando (iniciar.bat) para a coleta não ter buracos. O que aconteceu antes de ele ser ligado não dá para recuperar por usuário.'},
+uso_user:{t:'Consumo por usuário',d:'CPU, leituras e escritas gastas por cada login no período, somando todas as conexões dele. "De onde vem" mostra a máquina e o programa (ex.: um robô, o app, o Power BI).',w:'um mesmo usuário pode ser compartilhado por vários sistemas: a coluna de origem ajuda a separar.',a:'compare o horário do pico (gráfico) com o consumo de cada usuário.'},
+uso_ativo:{t:'Tempo ativo (estimado)',d:'Quantas vezes o usuário/esquema foi visto executando consulta nas amostras, convertido em minutos (cada amostra representa 30 s). É uma estimativa por amostragem, não uma medida exata.'},
+uso_schema_live:{t:'Esquemas em uso nas amostras',d:'Em cada coleta, o painel vê as consultas em execução e descobre em quais esquemas elas mexem. Aqui é a soma disso por esquema, com os usuários responsáveis.',w:'liga esquema a usuário, o que o Query Store sozinho não faz.'},
+uso_schema_qs:{t:'Esquemas que mais pesaram (Query Store)',d:'Histórico de consumo de CPU, leituras e execuções agrupado por esquema, valendo para qualquer período (inclusive um travamento passado). O esquema é descoberto pelo nome das tabelas/procedures no texto de cada consulta.',w:'mostra qual parte do banco (qual sistema) pesa mais, mesmo de horários em que o coletor ainda não existia.',a:'se um esquema domina o CPU, olhe a "consulta que mais pesa" dele.'},
+conn_acc:{t:'Consumo acumulado',d:'CPU, leituras e escritas gastas por essas conexões desde que elas conectaram (não só agora). Conexões antigas de um app com pool acumulam bastante.'}
+};
+const info=k=>GL[k]?`<span class="ib" data-k="${k}">i</span>`:'';
+const infoH=h=>`<span class="ib" data-h="${esc(h)}">i</span>`;
+function tipHtml(g){return `<span class="tt">${g.t}</span><p>${g.d}</p>${g.w?`<p class="w">Por que importa: ${g.w}</p>`:''}${g.a?`<p class="a">O que fazer: ${g.a}</p>`:''}`}
+document.addEventListener('mouseover',e=>{const b=e.target.closest&&e.target.closest('.ib');if(!b)return;
+  tip.innerHTML=b.dataset.h||tipHtml(GL[b.dataset.k]);tip.style.display='block';const r=b.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
+  let x=r.left,y=r.bottom+6;if(x+w>innerWidth-8)x=innerWidth-w-8;if(y+h>innerHeight-8)y=Math.max(8,r.top-h-6);tip.style.left=Math.max(8,x)+'px';tip.style.top=y+'px'});
+document.addEventListener('mouseout',e=>{if(e.target.closest&&e.target.closest('.ib'))hideTip()});
+
+/* ================= charts (SVG) ================= */
+const tip=$('#tip');
+function showTip(e,html){tip.innerHTML=html;tip.style.display='block';const w=tip.offsetWidth;let x=e.clientX+14;if(x+w>innerWidth-8)x=e.clientX-w-14;tip.style.left=x+'px';tip.style.top=(e.clientY+14)+'px'}
+function hideTip(){tip.style.display='none'}
+/* series: [{name,vals,color,fill?,dash?}], opts: {t,range,yMax,unit,bands:[[v,color]],bars,w,h,dec} */
+function chart(host,series,o){
+  const W=o.w||640,H=o.h||190,L=38,R=8,T=8,B=22,iw=W-L-R,ih=H-T-B,t=o.t,n=t.length;
+  host.innerHTML='';
+  if(!n){host.innerHTML='<div class="empty">sem dados</div>';return}
+  let ymax=o.yMax;
+  if(ymax==null){ymax=0;series.forEach(s=>s.vals.forEach(v=>{if(v!=null&&v>ymax)ymax=v}));ymax=ymax<=0?1:niceMax(ymax)}
+  const x=i=>L+(n===1?iw/2:i*iw/(n-1)),y=v=>T+ih-(Math.min(v,ymax)/ymax)*ih;
+  let g='';
+  const ticks=4;
+  for(let i=0;i<=ticks;i++){const v=ymax*i/ticks,yy=y(v);g+=`<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#E2E8F0"/><text x="${L-5}" y="${yy+4}" text-anchor="end" fill="#6b7888" font-size="10">${fmt(v,ymax<10?1:0)}${o.unit==='%'?'':''}</text>`}
+  (o.bands||[]).forEach(([v,c])=>{if(v<=ymax)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-dasharray="4 4" opacity=".55"/>`});
+  const nx=6;for(let i=0;i<=nx;i++){const k=Math.round(i*(n-1)/nx);g+=`<text x="${x(k)}" y="${H-6}" text-anchor="${i===0?'start':i===nx?'end':'middle'}" fill="#6b7888" font-size="10">${tfmt(t[k],o.range)}</text>`}
+  const bw=Math.max(1,iw/n*0.8);
+  series.forEach(s=>{
+    if(s.bars){let d='';s.vals.forEach((v,i)=>{if(v)d+=`<rect x="${x(i)-bw/2}" y="${y(v)}" width="${bw}" height="${T+ih-y(v)}" fill="${s.color}" opacity=".9"/>`});g+=d;return}
+    let d='',a='',open=false,first=null,last=null;
+    s.vals.forEach((v,i)=>{if(v==null){open=false;return}d+=(open?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1);if(!open){if(a)a+=`L${last} ${T+ih}Z`;a+=`M${x(i).toFixed(1)} ${T+ih}L${x(i).toFixed(1)} ${y(v).toFixed(1)}`}else a+=`L${x(i).toFixed(1)} ${y(v).toFixed(1)}`;open=true;last=x(i).toFixed(1)});
+    if(a)a+=`L${last} ${T+ih}Z`;
+    if(s.fill)g+=`<path d="${a}" fill="${s.color}" opacity=".16"/>`;
+    g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w||1.6}" ${s.dash?'stroke-dasharray="3 3"':''} opacity="${s.op||1}" stroke-linejoin="round"/>`;
+  });
+  g+=`<line class="cx" x1="0" x2="0" y1="${T}" y2="${T+ih}" stroke="#8b98a8" stroke-dasharray="2 3" style="display:none"/><rect class="ov" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H*(host.clientWidth||W)/W}px">${g}</svg>`;
+  const svg=host.firstChild,ov=$('.ov',svg),cx=$('.cx',svg);
+  const svgh=()=>{svg.style.height=(H*svg.clientWidth/W)+'px'};
+  ov.addEventListener('mousemove',e=>{const r=svg.getBoundingClientRect();const px=(e.clientX-r.left)/r.width*W;let i=Math.round((px-L)/iw*(n-1));i=Math.max(0,Math.min(n-1,i));
+    cx.setAttribute('x1',x(i));cx.setAttribute('x2',x(i));cx.style.display='';
+    showTip(e,`<b>${new Date(t[i]).toLocaleString('pt-BR')}</b>`+series.map(s=>`<div><i style="display:inline-block;width:9px;height:3px;background:${s.color};margin-right:6px"></i>${esc(s.name)}: <b style="display:inline">${s.vals[i]==null?'–':fmt(s.vals[i],o.dec??1)+(o.unit||'')}</b></div>`).join(''))});
+  ov.addEventListener('mouseleave',()=>{cx.style.display='none';hideTip()});
+}
+function niceMax(v){const p=Math.pow(10,Math.floor(Math.log10(v)));const m=v/p;return (m<=1?1:m<=2?2:m<=5?5:10)*p}
+function spark(series,range){ // series {t,avg,max}
+  const t=series.t;if(!t||!t.length)return'<svg class="spark"></svg>';
+  const W=300,H=44,n=t.length,x=i=>i*W/(n-1||1),y=v=>H-2-Math.min(v,100)/100*(H-4);
+  let d='',a='',mx='';
+  series.avg.forEach((v,i)=>{if(v==null)return;d+=(d?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)});
+  series.max.forEach((v,i)=>{if(v==null)return;mx+=(mx?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)});
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" x2="${W}" y1="${y(90)}" y2="${y(90)}" stroke="#f0483e" stroke-opacity=".35" stroke-dasharray="3 3"/><line x1="0" x2="${W}" y1="${y(70)}" y2="${y(70)}" stroke="#e6b422" stroke-opacity=".3" stroke-dasharray="3 3"/><path d="${mx}" fill="none" stroke="#f0483e" stroke-opacity=".5" stroke-width="1"/><path d="${d}" fill="none" stroke="#4da3ff" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+
+/* ================= status ================= */
+function view(item){ // valores "agora" combinando snapshot SQL (15s) e métricas Azure
+  const sn=S.snap[item.id],ok=sn&&sn.ok,n=item.now||{};
+  const v={src:ok?'sql':'azure'};
+  v.cpu=ok?sn.cpu:n.cpu_percent;v.io=ok?sn.io:n.physical_data_read_percent;v.log=ok?sn.log:n.log_write_percent;
+  v.dtu=ok?sn.dtu:n.dtu_consumption_percent??n.cpu_percent;v.workers=ok?sn.workers:n.workers_percent;v.sess=ok?sn.sessionsPct:n.sessions_percent;
+  v.stor=n.storage_percent;v.mem=ok?sn.mem:null;
+  v.blocked=ok?sn.blocked:null;v.running=ok?sn.running:null;v.maxMs=ok?sn.maxMs:null;v.idleTran=ok?sn.idleTran:null;v.sessions=ok?sn.sessions:null;
+  const r=item.recent||{};v.failConn=r.connection_failed||0;v.deadlock=r.deadlock||0;v.fw=r.blocked_by_firewall||0;
+  const R=[],add=(l,t)=>R.push({l,t});
+  const chk=(val,name,w=70,c=90)=>{const l=lvl(val,w,c);if(l==='red')add('red',`${name} em ${pc(val)} (crítico a partir de ${c}%)`);else if(l==='yellow')add('yellow',`${name} em ${pc(val)} (atenção a partir de ${w}%)`)};
+  chk(v.dtu,item.dtuModel?'DTU':'CPU');if(item.dtuModel){chk(v.cpu,'CPU');}chk(v.io,'IO de dados');chk(v.log,'IO de log');chk(v.workers,'Workers');chk(v.sess,'Sessões (limite)');chk(v.stor,'Armazenamento',80,92);
+  if(v.blocked>=3)add('red',`${v.blocked} consultas bloqueadas agora (crítico a partir de 3)`);else if(v.blocked>0)add('yellow',`${v.blocked} consulta bloqueada agora`);
+  if(v.deadlock>=3)add('red',`${fmt(v.deadlock)} deadlocks nos últimos 15 min (crítico a partir de 3)`);else if(v.deadlock>0)add('yellow',`${v.deadlock} deadlock nos últimos 15 min`);
+  if(v.failConn>=10)add('red',`${fmt(v.failConn)} conexões recusadas em 15 min (crítico a partir de 10)`);else if(v.failConn>0)add('yellow',`${v.failConn} conexão(ões) recusada(s) em 15 min`);
+  if(item.error)add('gray','Não consegui ler as métricas: '+item.error);
+  v.reasons=R;v.status=item.error?'gray':R.reduce((a,x)=>rank[x.l]>rank[a]?x.l:a,'green');
+  v.err=sn&&!sn.ok?sn.error:null;return v;
+}
+/* ================= overview ================= */
+function renderOverview(){
+  const app=$('#app');
+  if(!S.overview){app.innerHTML='<div class="empty"><span class="spin"></span> Descobrindo bancos e lendo métricas…</div>';return}
+  const items=S.overview.items.map(i=>({i,v:view(i)}));
+  const cnt={red:0,yellow:0,green:0,gray:0};items.forEach(x=>cnt[x.v.status]++);
+  let list=items.filter(x=>(S.filter==='all'||x.v.status===S.filter)&&(!S.q||(x.i.name+x.i.server).toLowerCase().includes(S.q)));
+  list.sort((a,b)=>S.sort==='name'?a.i.name.localeCompare(b.i.name):S.sort==='dtu'?(b.v.dtu||0)-(a.v.dtu||0):(rank[b.v.status]-rank[a.v.status])||((b.v.dtu||0)-(a.v.dtu||0)));
+  document.title=(cnt.red?'\u25CF '+cnt.red+' crítico'+(cnt.red>1?'s':'')+' · ':cnt.yellow?'\u25CF '+cnt.yellow+' atenção · ':'')+'Database Status';
+  const ready=items.some(x=>x.v.src==='sql');
+  const tot=f=>items.reduce((s,x)=>s+(f(x)||0),0);
+  const sessTip=`<span class="tt">Sessões abertas agora</span><p>Soma das conexões abertas em <b>todos</b> os bancos: cada aplicação, robô ou pessoa conectada conta 1 (uma mesma aplicação costuma abrir várias).</p><p>`+[...items].sort((a,b)=>(b.v.sessions||0)-(a.v.sessions||0)).map(x=>`${esc(x.i.name)}: <b>${x.v.sessions==null?'–':x.v.sessions}</b>`).join('<br>')+`</p>`;
+  const satN=items.filter(x=>x.i.sat&&x.i.sat.count>0).length;
+  const head=`<div class="sum">
+   <div class="chip ${S.filter==='all'?'on':''}" data-f="all"><b>${items.length}</b><span>bancos</span></div>
+   <div class="chip red ${S.filter==='red'?'on':''}" data-f="red"><b>${cnt.red}</b><span>críticos${info('status')}</span></div>
+   <div class="chip yellow ${S.filter==='yellow'?'on':''}" data-f="yellow"><b>${cnt.yellow}</b><span>atenção</span></div>
+   <div class="chip green ${S.filter==='green'?'on':''}" data-f="green"><b>${cnt.green}</b><span>saudáveis</span></div>
+   <div class="chip" style="cursor:default"><b>${ready?tot(x=>x.v.blocked):'…'}</b><span>bloqueios agora${info('blocked')}</span></div>
+   <div class="chip" style="cursor:default"><b>${ready?fmt(tot(x=>x.v.sessions)):'…'}</b><span>sessões abertas${infoH(sessTip)}</span></div>
+   <div class="chip" style="cursor:default"><b>${satN}</b><span>com travamento em ${RL[S.range==='live'?'24h':S.range]}${info('sat')}</span></div>
+   <div class="sp"></div>
+   <input type="search" id="q" placeholder="Filtrar banco…" value="${esc(S.q)}">
+   <select id="sortSel"><option value="sev">Mais críticos primeiro</option><option value="dtu">Maior DTU</option><option value="name">Nome</option></select>
+  </div>`;
+  app.innerHTML=head+'<div class="grid" id="grid"></div>';
+  $('#sortSel').value=S.sort;
+  const grid=$('#grid');
+  list.forEach(({i,v})=>grid.appendChild(card(i,v)));
+  if(!list.length)grid.innerHTML='<div class="empty">Nenhum banco nesse filtro.</div>';
+  app.querySelectorAll('.chip[data-f]').forEach(c=>c.onclick=()=>{S.filter=c.dataset.f;renderOverview()});
+  $('#q').oninput=e=>{S.q=e.target.value.toLowerCase();const p=e.target.selectionStart;renderOverview();const q=$('#q');q.focus();q.setSelectionRange(p,p)};
+  $('#sortSel').onchange=e=>{S.sort=e.target.value;renderOverview()};
+}
+function gauge(label,val,w=70,c=90,k){const l=lvl(val,w,c);return `<div class="lab">${label}${k?info(k):''}</div><div class="bar"><i class="${l}" style="width:${Math.min(val||0,100)}%"></i></div><div class="v">${pc(val)}</div>`}
+function recTip(c){return `<span class="tt">${esc(c.title||'')}</span>`+(c.reasons||[]).map(r=>`<p>${esc(r)}</p>`).join('')+`<p class="a">Calculado automaticamente para este banco, com as métricas do período escolhido. Detalhes e a regra completa na aba Capacidade.</p>`}
+function card(i,v){
+  const c=i.rec||{},b=[];
+  if(c.verdict&&c.verdict!=='ok'&&c.verdict!=='na'){const t={subir:'↑ subir camada',atencao:'perto do limite',reduzir:'↓ pode reduzir'}[c.verdict];b.push(`<span class="rec ${c.verdict}">${t}${infoH(recTip(c))}</span>`)}
+  const sat=i.sat;if(sat&&sat.count)b.push(`<span class="bd ${sat.pct>=5||sat.longestMin>=15?'red':'yellow'}">saturado ${fmtDur(sat.totalMin*60000)} em ${S.range==='live'?'24h':S.range} (${sat.count}x)${info('sat')}</span>`);
+  if(v.blocked>0)b.push(`<span class="bd ${v.blocked>=3?'red':'yellow'}">${v.blocked} bloqueada${v.blocked>1?'s':''} agora${info('blocked')}</span>`);
+  if(v.maxMs>30000)b.push(`<span class="bd ${v.maxMs>300000?'red':'yellow'}">consulta rodando há ${fmtDur(v.maxMs)}${info('longq')}</span>`);
+  if(v.idleTran>0)b.push(`<span class="bd ${v.idleTran>=10?'yellow':''}">${v.idleTran} transação(ões) aberta(s) ociosa(s)${info('idle')}</span>`);
+  if(v.failConn>0)b.push(`<span class="bd ${v.failConn>=10?'red':'yellow'}">${fmt(v.failConn)} conexões recusadas (15 min)${info('failConn')}</span>`);
+  if(v.deadlock>0)b.push(`<span class="bd ${v.deadlock>=3?'red':'yellow'}">${fmt(v.deadlock)} deadlock(s) em 15 min${info('deadlock')}</span>`);
+  if(v.fw>0)b.push(`<span class="bd yellow">${fmt(v.fw)} bloq. firewall (15 min)${info('fw')}</span>`);
+  if(v.err)b.push(`<span class="bd" title="${esc(v.err)}">SQL direto indisponível</span>`);
+  if(i.error)b.push(`<span class="bd red" title="${esc(i.error)}">erro nas métricas</span>`);
+  const tier=i.dtuModel?`${i.sku==='Basic'?'Basic':i.sku} · ${i.capacity} DTU`:`${i.sku||''} ${i.capacity||''}`;
+  const st=i.stats?.dtu_consumption_percent||i.stats?.cpu_percent||{};
+  const rs=v.reasons.filter(r=>r.l!=='green');
+  const ttl=v.status==='red'?'Por que está crítico':v.status==='yellow'?'Por que está em atenção':v.status==='gray'?'Sem dados':'Tudo dentro do normal';
+  const why=`<div class="why"><div class="wh ${v.status}">${ttl}${info('status')}</div>${rs.map(r=>`<div class="${r.l}">${esc(r.t)}</div>`).join('')}</div>`;
+  const e=el(`<div class="card ${v.status}">
+    <div class="ch"><span class="dot ${v.status}"></span><div class="nm" title="${esc(i.server+'/'+i.name)}">${esc(i.name)}</div><span class="tier">${esc(tier)}</span></div>
+    <div class="big"><div class="n" style="color:var(--${v.status==='gray'?'mut':v.status==='green'?'ok':v.status==='yellow'?'warn':'bad'})">${pc(v.dtu)}</div><div class="l">${i.dtuModel?'DTU agora':'CPU agora'}${info('dtu')} <span class="live-tag" style="margin:0">${v.src==='sql'?'● tempo real':'Azure ~1 min'}</span><br>${S.range==='live'?'':`p95 ${pc(st.p95)} · pico ${pc(st.max)}`}</div></div>
+    ${why}
+    <div class="g">${gauge('CPU',v.cpu,70,90,'cpu')}${gauge('Workers',v.workers,70,90,'workers')}${gauge('IO dados',v.io,70,90,'io')}${gauge('Sessões',v.sess,70,90,'sess')}${gauge('IO log',v.log,70,90,'log')}${gauge('Storage',v.stor,80,92,'stor')}</div>
+    <div style="position:relative">${spark(i.series||{},S.range)}<span style="position:absolute;right:0;top:-2px">${info('spark')}</span></div>
+    <div class="badges">${b.join('')}</div></div>`);
+  e.onclick=ev=>{if(ev.target.closest('.ib'))return;openDb(i)};
+  return e;
+}
+/* ================= detail ================= */
+function openDb(i){S.view='db';S.db=i;S.tab='resumo';S.detail=S.live=S.qs=S.extra=S.events=null;location.hash='db='+encodeURIComponent(i.server+'/'+i.name);loadTab()}
+function closeDb(){S.view='overview';S.db=null;location.hash='';renderOverview();refresh()}
+const TABS=[['resumo','Resumo'],['agora','Agora (ao vivo)'],['queries','Queries'],['uso','Usuários e esquemas'],['capacidade','Capacidade'],['falhas','Falhas e eventos']];
+function qsDb(){return `s=${encodeURIComponent(S.db.server)}&d=${encodeURIComponent(S.db.name)}`}
+async function loadTab(){
+  const i=S.db,app=$('#app');
+  const it=S.overview?.items.find(x=>x.id===i.id)||i;const v=view(it);
+  app.innerHTML=`<div class="dh"><button class="back" id="bk">← Todos os bancos</button><span class="dot ${v.status}" id="dd"></span><h2>${esc(i.name)}</h2><span class="tier">${esc(i.server)} · ${esc(i.sku||i.tier)}${i.dtuModel?' · '+i.capacity+' DTU':''}</span></div>
+  <div class="tabs">${TABS.map(([k,l])=>`<button data-t="${k}" class="${S.tab===k?'on':''}">${l}</button>`).join('')}</div><div id="tabc"><div class="empty"><span class="spin"></span></div></div>`;
+  $('#bk').onclick=closeDb;
+  app.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{S.tab=b.dataset.t;loadTab()});
+  try{
+    if(S.tab==='resumo'||S.tab==='capacidade'||S.tab==='falhas'){const d=await api(`/api/db?${qsDb()}&range=${S.range}`);S.detail=d}
+    if(S.tab==='resumo')tabResumo();
+    else if(S.tab==='agora'){await loadLive();}
+    else if(S.tab==='queries')tabQueries();
+    else if(S.tab==='capacidade')await tabCapacidade();
+    else if(S.tab==='falhas')await tabFalhas();
+    else if(S.tab==='uso')await tabUso();
+  }catch(e){$('#tabc').innerHTML=`<div class="panel err-msg">${esc(e.message)}</div>`}
+}
+const COL={dtu:'#4da3ff',cpu:'#a78bfa',io:'#2fb86b',log:'#e6b422',mx:'#f0483e',w:'#22c3c3'};
+function cdiv(title,sub,id,k){return `<div class="cc"><h4>${title}${k?info(k):''}<small>${sub||''}</small></h4><div class="legend" id="${id}l"></div><div id="${id}"></div></div>`}
+function satPanel(sat){
+  if(!sat)return'';
+  const lab=RL[S.range==='live'?'24h':S.range];
+  if(!sat.count)return `<div class="vd ok" style="margin-bottom:14px"><div><h3 style="font-size:15px;margin:0">Sem travamento nas últimas ${lab}${info('sat')}</h3><div class="note" style="margin:2px 0 0">Nenhum momento com ${sat.rule}.</div></div></div>`;
+  const sev=sat.pct>=5||sat.longestMin>=15?'subir':'atencao';
+  const hint={'CPU':'consultas pesadas de processamento ou execuções demais','IO de dados':'leitura grande de disco, provável falta de índice','IO de log':'muita escrita em massa (cargas, updates grandes)'};
+  return `<div class="vd ${sev}" style="display:block;margin-bottom:14px"><h3 style="font-size:16px">Travamentos em ${lab}: ${fmtDur(sat.totalMin*60000)} saturado (${fmt(sat.pct,1)}% do tempo) em ${sat.count} episódio(s)${info('sat')}</h3>
+   <div class="note" style="margin:0 0 8px">Critério: ${sat.rule}. Maior episódio: ${fmtDur(sat.longestMin*60000)}. Episódios${info('inc')}</div>
+   <div class="scroll" style="max-height:260px"><table><tr><th>Início</th><th>Duração</th><th class="num">DTU médio</th><th class="num">Pico</th><th>Recurso no limite</th><th></th></tr>`+
+   sat.episodes.map(e=>`<tr><td>${new Date(e.start).toLocaleString('pt-BR')}</td><td>${fmtDur(e.minutes*60000)}</td><td class="num">${pc(e.avg)}</td><td class="num">${pc(e.peak)}</td><td>${esc(e.culprit||'–')} <small>${hint[e.culprit]?'('+hint[e.culprit]+')':''}</small></td><td style="white-space:nowrap"><button class="back" data-go="queries" data-f="${e.start}" data-t="${e.end}">O que rodou aí?</button> <button class="back" data-go="uso" data-f="${e.start}" data-t="${e.end}">Quem usou?</button></td></tr>`).join('')+'</table></div></div>';
+}
+function legend(id,items){$('#'+id+'l').innerHTML=items.map(([n,c])=>`<span><i style="background:${c}"></i>${n}</span>`).join('')}
+function tabResumo(){
+  const d=S.detail,m=d.series.m,t=d.series.t,st=d.stats,rg=S.range,tc=$('#tabc');
+  const KM={dtu_consumption_percent:'dtu',cpu_percent:'cpu',physical_data_read_percent:'io',log_write_percent:'log',workers_percent:'workers',sessions_percent:'sess',storage_percent:'stor'};
+  const K=(k,label,w=70,c=90)=>{const s=st[k];if(!s)return'';const n=m[k].avg.filter(x=>x!=null).slice(-5);const cur=n.length?n.reduce((a,b)=>a+b,0)/n.length:null;
+    return `<div class="kpi"><div class="t">${label}${info(KM[k])}</div><div class="v ${lvl(cur,w,c)}">${pc(cur)}</div><div class="s">méd ${pc(s.avg)} · p95 ${pc(s.p95)} · pico ${pc(s.max)}</div></div>`};
+  const sum=k=>st[k]?st[k].sum:0;
+  tc.innerHTML=satPanel(d.sat)+`<div class="kpis">${K('dtu_consumption_percent','DTU')}${K('cpu_percent','CPU')}${K('physical_data_read_percent','IO de dados')}${K('log_write_percent','IO de log')}${K('workers_percent','Workers')}${K('sessions_percent','Sessões (% limite)')}${K('storage_percent','Armazenamento',80,92)}
+   <div class="kpi"><div class="t">Conexões com falha${info('failConn')}</div><div class="v ${sum('connection_failed')>0?'yellow':'green'}">${fmt(sum('connection_failed'))}</div><div class="s">${fmt(sum('connection_successful'))} com sucesso no período</div></div>
+   <div class="kpi"><div class="t">Deadlocks${info('deadlock')}</div><div class="v ${sum('deadlock')>0?'red':'green'}">${fmt(sum('deadlock'))}</div><div class="s">no período</div></div>
+   <div class="kpi"><div class="t">Bloqueio firewall${info('fw')}</div><div class="v ${sum('blocked_by_firewall')>0?'yellow':'green'}">${fmt(sum('blocked_by_firewall'))}</div><div class="s">no período</div></div></div>
+   <div class="charts">
+    ${cdiv('DTU','% do limite','c1','dtu')}${cdiv('CPU','%','c2','cpu')}${cdiv('IO de dados / IO de log','%','c3','iochart')}${cdiv('Workers e sessões','% do limite','c4','wkchart')}
+    ${cdiv('Sessões abertas','quantidade','c5','sessCount')}${cdiv('Armazenamento','% usado','c6','stor')}${cdiv('Conexões com falha','por intervalo','c7','failConn')}${cdiv('Deadlocks','por intervalo','c8','deadlock')}</div>`;
+  tc.querySelectorAll('button[data-f]').forEach(b=>b.onclick=()=>{S.qsWin={from:new Date(+b.dataset.f-300000).toISOString(),to:new Date(+b.dataset.t+300000).toISOString()};S.tab=b.dataset.go||'queries';loadTab()});
+  const B=[[70,'#e6b422'],[90,'#f0483e']],o={t,range:rg,yMax:100,unit:'%',bands:B};
+  const pair=(k,c1,c2)=>m[k]?[{name:'média',vals:m[k].avg,color:c1,fill:1},{name:'pico',vals:m[k].max,color:c2||COL.mx,w:1,op:.8}]:[];
+  chart($('#c1'),pair('dtu_consumption_percent',COL.dtu),o);legend('c1',[['média',COL.dtu],['pico',COL.mx]]);
+  chart($('#c2'),pair('cpu_percent',COL.cpu),o);legend('c2',[['média',COL.cpu],['pico',COL.mx]]);
+  chart($('#c3'),[...(m.physical_data_read_percent?[{name:'IO dados (méd)',vals:m.physical_data_read_percent.avg,color:COL.io}]:[]),...(m.log_write_percent?[{name:'IO log (méd)',vals:m.log_write_percent.avg,color:COL.log}]:[])],o);legend('c3',[['IO dados',COL.io],['IO log',COL.log]]);
+  chart($('#c4'),[...(m.workers_percent?[{name:'Workers (pico)',vals:m.workers_percent.max,color:COL.w}]:[]),...(m.sessions_percent?[{name:'Sessões (pico)',vals:m.sessions_percent.max,color:COL.dtu}]:[])],{...o,yMax:null,bands:[]});legend('c4',[['Workers',COL.w],['Sessões',COL.dtu]]);
+  if(m.sessions_count)chart($('#c5'),[{name:'média',vals:m.sessions_count.avg,color:COL.dtu,fill:1},{name:'pico',vals:m.sessions_count.max,color:COL.mx,w:1}],{t,range:rg});legend('c5',[['média',COL.dtu],['pico',COL.mx]]);
+  if(m.storage_percent)chart($('#c6'),[{name:'usado',vals:m.storage_percent.max,color:COL.log,fill:1}],{...o,bands:[[80,'#e6b422'],[92,'#f0483e']]});legend('c6',[['% do limite',COL.log]]);
+  if(m.connection_failed)chart($('#c7'),[{name:'falhas',vals:m.connection_failed.tot,color:COL.mx,bars:1},...(m.connection_failed_user_error?[{name:'erro de usuário',vals:m.connection_failed_user_error.tot,color:COL.log,bars:1}]:[])],{t,range:rg,dec:0});legend('c7',[['falhas',COL.mx],['erro de usuário',COL.log]]);
+  if(m.deadlock)chart($('#c8'),[{name:'deadlocks',vals:m.deadlock.tot,color:COL.mx,bars:1}],{t,range:rg,dec:0});legend('c8',[['deadlocks',COL.mx]]);
+}
+function diagLive(d){
+  const out=[],last=d.resource[d.resource.length-1]||{};
+  const res=[['CPU',last.cpu,'consultas pesadas de processamento (veja Queries > CPU total)'],['IO de dados',last.io,'muita leitura de disco, geralmente falta de índice ou varredura de tabelas grandes (veja Queries > Leituras)'],['IO de log',last.logw,'muita gravação em massa (veja Queries > Escritas)']].sort((a,b)=>(b[1]||0)-(a[1]||0));
+  const top=res[0];
+  if(top[1]>=90)out.push(['red',`${top[0]} está em ${pc(top[1])} agora: é o recurso no limite. Provável causa: ${top[2]}.`]);
+  else if(top[1]>=70)out.push(['yellow',`${top[0]} está em ${pc(top[1])}, chegando perto do limite. Provável causa: ${top[2]}.`]);
+  const rq=d.requests,bl=rq.filter(r=>r.blocking_session_id>0);
+  if(bl.length){const ids=[...new Set(bl.map(r=>r.blocking_session_id))];out.push(['red',`${bl.length} consulta(s) esperando por bloqueio. Quem está segurando: sessão(ões) ${ids.join(', ')}. O bloqueio só some quando essa sessão terminar (commit/rollback) ou for encerrada.`])}
+  const old=d.idleTran.filter(x=>x.idle_s>300);
+  if(old.length){const o=old[0];out.push([bl.length?'red':'yellow',`${old.length} sessão(ões) com transação aberta e parada há mais de 5 min. A mais antiga: sessão ${o.session_id} (${o.login_name} em ${o.host_name||'?'}, programa ${o.program_name||'?'}) há ${fmtDur(o.idle_s*1000)}. Pode estar segurando locks.`])}
+  else if(d.idleTran.length>=10)out.push(['yellow',`${d.idleTran.length} transações abertas ociosas. Poucas são normais, muitas indicam apps que não finalizam a transação.`]);
+  const long=rq.filter(r=>!(r.blocking_session_id>0)&&r.total_elapsed_time>60000);
+  if(long.length)out.push(['yellow',`${long.length} consulta(s) rodando há mais de 1 min (a maior: ${fmtDur(long[0].total_elapsed_time)}, sessão ${long[0].session_id}, ${long[0].login_name}).`]);
+  d.sessions.filter(s=>s.n>=20).forEach(s=>out.push(['yellow',`${s.n} conexões do programa "${s.program_name}" na máquina ${s.host_name} (${s.login_name}). Se não for esperado, pode ser vazamento de conexões.`]));
+  const w=d.waits&&d.waits[0];
+  const wm=[[/^PAGEIOLATCH/,'leitura de disco (IO de dados)'],[/^WRITELOG|^LOGBUFFER/,'gravação de log'],[/^LCK_/,'bloqueio entre consultas (locks)'],[/^SOS_SCHEDULER_YIELD|^CX/,'CPU / paralelismo'],[/^RESOURCE_SEMAPHORE/,'falta de memória para executar consultas'],[/^ASYNC_NETWORK_IO/,'cliente lento para receber os resultados']];
+  if(w){const m=wm.find(x=>x[0].test(w.wait_type));out.push(['gray',`Maior espera acumulada desde o último restart: ${w.wait_type}${m?' = '+m[1]:''}.`])}
+  if(!out.some(o=>o[0]==='red'||o[0]==='yellow'))out.unshift(['green','Nada anormal agora: sem bloqueios, sem consultas longas e recursos abaixo de 70%.']);
+  return out;
+}
+async function loadLive(){
+  const d=await api(`/api/db/live?${qsDb()}`);S.live=d;if(S.tab!=='agora')return;
+  const tc=$('#tabc');if(!tc)return;
+  const rq=d.requests,bl=rq.filter(r=>r.blocking_session_id>0),blockers=new Set(bl.map(r=>r.blocking_session_id));
+  const heads=[...blockers].filter(b=>!bl.find(r=>r.session_id===b));
+  const rs=d.resource,last=rs[rs.length-1]||{};
+  tc.innerHTML=`<div class="kpis">
+    <div class="kpi"><div class="t">CPU (15 s)${info('cpu')}</div><div class="v ${lvl(last.cpu)}">${pc(last.cpu)}</div></div>
+    <div class="kpi"><div class="t">IO de dados${info('io')}</div><div class="v ${lvl(last.io)}">${pc(last.io)}</div></div>
+    <div class="kpi"><div class="t">IO de log${info('log')}</div><div class="v ${lvl(last.logw)}">${pc(last.logw)}</div></div>
+    <div class="kpi"><div class="t">Workers${info('workers')}</div><div class="v ${lvl(last.workers)}">${pc(last.workers)}</div></div>
+    <div class="kpi"><div class="t">Memória</div><div class="v ${lvl(last.mem,85,97)}">${pc(last.mem)}</div><div class="s">uso alto é normal (cache)</div></div>
+    <div class="kpi"><div class="t">Requisições ativas${info('reqs')}</div><div class="v">${rq.length}</div><div class="s">${bl.length} bloqueada(s)</div></div>
+    <div class="kpi"><div class="t">Transações ociosas abertas${info('idle')}</div><div class="v ${d.idleTran.length?'yellow':'green'}">${d.idleTran.length}</div></div></div>
+   <div class="panel"><h3>Diagnóstico agora${info('diag')}</h3><div class="why diag">${diagLive(d).map(([l,t])=>`<div class="${l}">${esc(t)}</div>`).join('')}</div></div>
+   <div class="panel"><h3>Últimos ~64 min <small>um ponto a cada 15 s, direto do banco</small>${info('resChart')}</h3><div class="legend" id="lvl"></div><div id="lvc"></div></div>
+   <div class="panel"><h3>Consultas em execução agora${info('reqs')} ${bl.length?`<span class="rec subir">${bl.length} bloqueada(s)</span>`:''}</h3>${tblReq(rq,heads)}</div>
+   ${d.idleTran.length?`<div class="panel"><h3>Sessões ociosas com transação aberta${info('idleSess')}</h3>${tblIdle(d.idleTran)}</div>`:''}
+   <div class="two"><div class="panel"><h3>Quem está conectado${info('conn')}</h3>${tblSess(d.sessions)}</div>
+   <div class="panel"><h3>Principais esperas${info('waits')} <small>acumulado desde o último restart</small></h3>${tblWaits(d.waits)}</div></div>
+   <div class="note">Atualizado em ${new Date(d.asOf).toLocaleTimeString('pt-BR')}</div>`;
+  const t=rs.map(r=>new Date(r.end_time).getTime());
+  chart($('#lvc'),[{name:'CPU',vals:rs.map(r=>r.cpu),color:COL.cpu},{name:'IO dados',vals:rs.map(r=>r.io),color:COL.io},{name:'IO log',vals:rs.map(r=>r.logw),color:COL.log},{name:'Workers',vals:rs.map(r=>r.workers),color:COL.w,w:1,dash:1}],{t,range:'live',yMax:100,unit:'%',bands:[[70,'#e6b422'],[90,'#f0483e']]});
+  legend('lv',[['CPU',COL.cpu],['IO dados',COL.io],['IO log',COL.log],['Workers',COL.w]]);
+  tc.querySelectorAll('.sql').forEach(s=>s.onclick=()=>s.classList.toggle('open'));
+}
+function tblReq(rq,heads){
+  if(!rq.length&&!heads.length)return'<div class="empty">Nenhuma consulta rodando neste instante.</div>';
+  return `<div class="scroll"><table><tr><th>Sessão</th><th>Status</th><th class="num">Tempo</th><th class="num">CPU</th><th class="num">Leituras</th><th>Espera</th><th>Bloqueada por</th><th>Origem</th><th>Comando / SQL</th></tr>`+
+   rq.map(r=>{const c=r.blocking_session_id>0?'red':r.total_elapsed_time>60000?'yellow':'';return `<tr class="${c}"><td>${r.session_id}</td><td>${esc(r.status)}</td><td class="num">${fmtDur(r.total_elapsed_time)}</td><td class="num">${fmtDur(r.cpu_time)}</td><td class="num">${fmtNum(r.logical_reads)}</td><td>${esc(r.wait_type||'')} ${r.wait_time?`<small>(${fmtDur(r.wait_time)})</small>`:''}</td><td>${r.blocking_session_id>0?'<b>'+r.blocking_session_id+'</b>':''}</td><td>${esc(r.login_name)}<br><small>${esc(r.host_name||'')} · ${esc(r.program_name||'')}</small></td><td><div class="sql">${esc((r.stmt||r.command||'').trim())}</div></td></tr>`}).join('')+
+   heads.map(h=>`<tr class="yellow"><td>${h}</td><td colspan="8">Sessão que está <b>bloqueando</b> as outras (parada com transação aberta). Veja a lista de transações ociosas.</td></tr>`).join('')+'</table></div>';
+}
+function tblIdle(r){return `<div class="scroll"><table><tr><th>Sessão</th><th>Origem</th><th class="num">Ociosa há</th><th>Última SQL</th></tr>`+r.map(x=>`<tr class="${x.idle_s>600?'yellow':''}"><td>${x.session_id}</td><td>${esc(x.login_name)}<br><small>${esc(x.host_name||'')} · ${esc(x.program_name||'')}</small></td><td class="num">${fmtDur(x.idle_s*1000)}</td><td><div class="sql">${esc(x.last_sql||'')}</div></td></tr>`).join('')+'</table></div>'}
+function tblSess(r){if(!r.length)return'<div class="empty">–</div>';return `<div class="scroll"><table><tr><th>Login</th><th>Host</th><th>Programa</th><th class="num">Sessões</th><th class="num">CPU gasta${info('conn_acc')}</th><th class="num">Leituras</th><th class="num">Escritas</th></tr>`+r.map(x=>`<tr><td>${esc(x.login_name)}</td><td>${esc(x.host_name)}</td><td>${esc(x.program_name)}</td><td class="num">${x.n}${x.running?` <small>(${x.running} ativa)</small>`:''}</td><td class="num">${fmtDur(x.cpu_ms)}</td><td class="num">${fmtNum(x.reads)}</td><td class="num">${fmtNum(x.writes)}</td></tr>`).join('')+'</table></div>'}
+function tblWaits(r){if(!r||!r.length)return'<div class="empty">Sem dados de esperas.</div>';const mx=Math.max(...r.map(x=>x.wait_time_ms));return `<table><tr><th>Tipo</th><th class="num">Tempo total</th><th class="num">Ocorrências</th><th></th></tr>`+r.map(x=>`<tr><td>${esc(x.wait_type)}</td><td class="num">${fmtDur(x.wait_time_ms)}</td><td class="num">${fmtNum(x.waiting_tasks_count)}</td><td style="width:90px"><div class="bar"><i style="width:${x.wait_time_ms/mx*100}%;background:var(--blue)"></i></div></td></tr>`).join('')+'</table><div class="note">PAGEIOLATCH = leitura de disco · WRITELOG = gravação de log · LCK_* = bloqueio · SOS_SCHEDULER_YIELD = CPU ocupada.</div>'}
+
+/* ---- queries ---- */
+function tabQueries(){
+  const o=S.qsOpts,tc=$('#tabc'),w=S.qsWin;
+  tc.innerHTML=`<div class="panel"><h3>Query Store <small>consultas que mais consomem</small></h3>
+  ${w?`<div class="vd atencao" style="display:block;padding:10px 14px;margin-bottom:10px"><b>Período filtrado:</b> ${new Date(w.from).toLocaleString('pt-BR')} até ${new Date(w.to).toLocaleString('pt-BR')} <button class="back" id="qclr" style="margin-left:10px">Voltar para a janela normal</button><div class="note" style="margin:4px 0 0">O Query Store agrupa em intervalos fixos, então podem entrar alguns minutos além do período.</div></div>`:''}
+  <div class="sum" style="margin:0 0 12px">${w?'':`<div class="ctl">Janela <select id="qh"><option value="1">1 hora</option><option value="6">6 horas</option><option value="24">24 horas</option><option value="168">7 dias</option><option value="360">15 dias</option></select></div>`}
+  <div class="ctl">Ordenar por <select id="qsort"><option value="cpu">CPU total</option><option value="dur">Duração total</option><option value="avg">Mais lentas (média)</option><option value="reads">Leituras (IO)</option><option value="execs">Execuções</option><option value="writes">Escritas</option><option value="failed">Falhas/abortadas</option></select></div>
+  <button class="back" id="qgo">Recarregar</button></div><div id="qres"><div class="empty">…</div></div></div><div id="qwaits"></div>`;
+  if($('#qh')){$('#qh').value=o.hours;$('#qh').onchange=e=>{o.hours=+e.target.value;loadQs()}}
+  $('#qsort').value=o.sort;$('#qsort').onchange=e=>{o.sort=e.target.value;loadQs()};$('#qgo').onclick=loadQs;
+  if($('#qclr'))$('#qclr').onclick=()=>{S.qsWin=null;tabQueries()};
+  loadQs();
+}
+async function loadQs(){
+  const o=S.qsOpts,box=$('#qres');if(!box)return;box.innerHTML='<div class="empty"><span class="spin"></span> Lendo Query Store (pode levar alguns segundos)…</div>';
+  try{
+    const win=S.qsWin?`&from=${encodeURIComponent(S.qsWin.from)}&to=${encodeURIComponent(S.qsWin.to)}`:`&hours=${o.hours}`;
+    const d=await api(`/api/db/queries?${qsDb()}${win}&sort=${o.sort}`);if(S.tab!=='queries')return;
+    if(!d.enabled){box.innerHTML='<div class="empty">Query Store está desligado neste banco.</div>';return}
+    const key={cpu:'total_cpu_ms',dur:'total_dur_ms',avg:'avg_ms',reads:'total_reads',execs:'execs',writes:'total_writes',failed:'failed'}[o.sort];
+    const mx=Math.max(1,...d.rows.map(r=>r[key]||0));
+    box.innerHTML=`<div class="scroll" style="max-height:640px"><table><tr><th>#</th><th>Consulta</th><th class="num">Execuções${info('qs_execs')}</th><th class="num">Duração<br>média${info('qs_avg')}</th><th class="num">Duração<br>máxima</th><th class="num">CPU<br>médio${info('qs_cpu')}</th><th class="num">CPU<br>total</th><th class="num">Esperando<br>(média)${info('qs_wait')}</th><th class="num">Leituras méd${info('qs_reads')}</th><th class="num">Falhas${info('qs_failed')}</th><th class="num">Planos${info('qs_plans')}</th><th>Última</th></tr>`+
+     d.rows.map((r,n)=>`<tr class="${r.failed>0?'yellow':''}"><td>${n+1}</td><td style="min-width:360px"><div class="sql">${esc(r.text.trim())}</div><div class="bar" style="margin-top:4px;height:4px"><i style="width:${(r[key]||0)/mx*100}%;background:var(--blue)"></i></div><small style="color:var(--dim)">query_id ${r.query_id}</small></td><td class="num">${fmtNum(r.execs)}</td><td class="num">${fmtDur(r.avg_ms)}</td><td class="num">${fmtDur(r.max_ms)}</td><td class="num">${fmtDur(r.avg_cpu_ms)}</td><td class="num">${fmtDur(r.total_cpu_ms)}</td><td class="num" style="color:${(r.avg_ms-r.avg_cpu_ms)>r.avg_cpu_ms*2&&r.avg_ms>2000?'var(--warn)':'inherit'}">${fmtDur(Math.max(0,r.avg_ms-r.avg_cpu_ms))}</td><td class="num">${fmtNum(r.avg_reads)}</td><td class="num">${r.failed?'<b style="color:var(--bad)">'+fmtNum(r.failed)+'</b>':'0'}</td><td class="num">${r.plans}</td><td>${r.last_exec?new Date(r.last_exec).toLocaleString('pt-BR'):''}</td></tr>`).join('')+`</table></div><div class="note">Clique no texto para expandir. Barra azul = peso da consulta no critério escolhido. Intervalo do Query Store: ${d.state&&d.state.iv?d.state.iv+' min':'–'}.</div>`;
+    box.querySelectorAll('.sql').forEach(s=>s.onclick=()=>s.classList.toggle('open'));
+    const WP={'CPU':'CPU (esperando processador)','Buffer IO':'Leitura de disco','Lock':'Bloqueio (lock)','Tran Log IO':'Gravação de log','Network IO':'Rede / cliente lento','Latch':'Latch (memória interna)','Buffer Latch':'Latch de buffer','Parallelism':'Paralelismo','Memory':'Memória','Worker Thread':'Falta de workers','Other Disk IO':'Outro IO de disco','Unknown':'Desconhecido'};
+    const wt=d.waits||[],wmx=Math.max(1,...wt.map(x=>x.ms));
+    $('#qwaits').innerHTML=wt.length?`<div class="panel"><h3>O que as consultas ficaram esperando neste período${info('waits')}</h3><table><tr><th>Tipo de espera</th><th class="num">Tempo total</th><th></th></tr>`+wt.map(x=>`<tr><td>${esc(WP[x.cat]||x.cat)} <small style="color:var(--dim)">${esc(x.cat)}</small></td><td class="num">${fmtDur(x.ms)}</td><td style="width:40%"><div class="bar"><i style="width:${x.ms/wmx*100}%;background:var(--violet)"></i></div></td></tr>`).join('')+'</table></div>':'';
+  }catch(e){box.innerHTML=`<div class="err-msg">${esc(e.message)}</div>`}
+}
+/* ---- usuários e esquemas ---- */
+const UCOL=['#4da3ff','#a78bfa','#2fb86b','#e6b422','#f0483e','#22c3c3','#8b98a8'];
+async function tabUso(){
+  const tc=$('#tabc'),w=S.qsWin,o=S.usoOpts||(S.usoOpts={hours:24});
+  const win=w?`&from=${encodeURIComponent(w.from)}&to=${encodeURIComponent(w.to)}`:`&hours=${o.hours}`;
+  tc.innerHTML=`<div class="panel"><h3>Usuários e esquemas <small>quem e o quê está por trás do consumo</small></h3>
+   ${w?`<div class="vd atencao" style="display:block;padding:10px 14px;margin-bottom:10px"><b>Período filtrado:</b> ${new Date(w.from).toLocaleString('pt-BR')} até ${new Date(w.to).toLocaleString('pt-BR')} <button class="back" id="uclr" style="margin-left:10px">Voltar para a janela normal</button></div>`:''}
+   <div class="sum" style="margin:0 0 6px">${w?'':`<div class="ctl">Janela <select id="uh"><option value="1">1 hora</option><option value="6">6 horas</option><option value="24">24 horas</option><option value="168">7 dias</option><option value="360">15 dias</option></select></div>`}<button class="back" id="ugo">Recarregar</button></div>
+   <div id="ucov"></div></div>
+   <div id="uusers"><div class="empty"><span class="spin"></span> Lendo o coletor…</div></div>
+   <div id="ulive"></div>
+   <div id="uschemas"><div class="empty"><span class="spin"></span> Analisando o Query Store por esquema (pode levar alguns segundos)…</div></div>`;
+  if($('#uh')){$('#uh').value=o.hours;$('#uh').onchange=e=>{o.hours=+e.target.value;tabUso()}}
+  if($('#uclr'))$('#uclr').onclick=()=>{S.qsWin=null;tabUso()};
+  $('#ugo').onclick=tabUso;
+  const fail=(id)=>e=>{if($(id))$(id).innerHTML=`<div class="panel err-msg">${esc(e.message)}</div>`};
+  api(`/api/db/usage?${qsDb()}${win}`).then(d=>{if(S.tab==='uso')renderUsuarios(d)}).catch(fail('#uusers'));
+  api(`/api/db/schemas?${qsDb()}${win}`).then(d=>{if(S.tab==='uso')renderEsquemasQS(d)}).catch(fail('#uschemas'));
+}
+function renderUsuarios(d){
+  const since=d.since?new Date(d.since):null,ok=d.sampler&&d.sampler.ok;
+  const partial=since&&d.from<d.since-60000;
+  $('#ucov').innerHTML=`<div class="note" style="margin-top:6px">Coletor${info('uso_cov')}: ${!d.enabled?'<b style="color:var(--warn)">desligado</b>':since?`registrando a cada ${d.interval} s desde <b>${since.toLocaleString('pt-BR')}</b>${ok?'':' (<span style="color:var(--bad)">última coleta falhou</span>)'}`:'aguardando a primeira coleta…'}${partial?' · <span style="color:var(--warn)">o período pedido começa antes da coleta, então os números são parciais</span>':''}.</div>`;
+  const tot=d.totals,box=$('#uusers');
+  if(!d.users.length){box.innerHTML=`<div class="panel"><h3>Quem consumiu (por usuário)${info('uso_user')}</h3><div class="empty">Ainda sem amostras neste período. O coletor registra a cada ${d.interval} s e só vê o que acontece enquanto o painel está rodando.</div></div>`;return}
+  const mx=Math.max(1,...d.users.map(u=>u.cpuMs));
+  box.innerHTML=`<div class="panel"><h3>Quem consumiu (por usuário)${info('uso_user')} <small>CPU total no período: ${fmtDur(tot.cpuMs)} · ${fmtNum(tot.reads)} leituras</small></h3>
+   <div class="legend" id="ucl"></div><div id="ucc"></div>
+   <div class="scroll" style="max-height:420px;margin-top:10px"><table><tr><th>Usuário</th><th class="num">CPU gasta</th><th style="width:150px">% do CPU</th><th class="num">Leituras${info('qs_reads')}</th><th class="num">Escritas</th><th class="num">Tempo ativo${info('uso_ativo')}</th><th>Esquemas mais usados</th><th>De onde vem (máquina · programa)</th></tr>`+
+   d.users.map((u,i)=>`<tr><td><b>${esc(u.login)}</b></td><td class="num">${fmtDur(u.cpuMs)}</td><td><div class="bar"><i style="width:${u.cpuMs/mx*100}%;background:${UCOL[Math.min(i,6)]}"></i></div><small>${fmt(u.cpuPct,1)}%</small></td><td class="num">${fmtNum(u.reads)}<br><small>${fmt(u.readsPct,1)}%</small></td><td class="num">${fmtNum(u.writes)}</td><td class="num">${fmt(u.activeMin,1)} min</td><td>${u.schemas.length?u.schemas.map(s=>`${esc(s.schema)} <small>(${fmt(s.activeMin,1)} min)</small>`).join('<br>'):'<small>–</small>'}</td><td>${u.origins.length?u.origins.slice(0,4).map(o=>`${esc(o.host)} · ${esc(o.program)} <small>(${fmtDur(o.cpuMs)})</small>`).join('<br>'):'<small>–</small>'}</td></tr>`).join('')+
+   `</table></div><div class="note">O Azure não guarda quem executou cada consulta do histórico, por isso o consumo por usuário vem do coletor deste painel. Para ter esse histórico mesmo com o painel desligado seria preciso ativar a Auditoria do SQL ou Extended Events no banco (mudança no banco, que o painel não faz).</div></div>`;
+  const tl=d.timeline,names=Object.keys(tl.series);
+  chart($('#ucc'),names.map((n,i)=>({name:n,vals:tl.series[n],color:n==='outros'?'#59636f':UCOL[Math.min(i,5)],w:1.6})),{t:tl.t,range:(d.to-d.from)>2*86400000?'7d':'24h',unit:' s',dec:1,h:170});
+  legend('uc',names.map((n,i)=>[n,n==='outros'?'#59636f':UCOL[Math.min(i,5)]]));
+  const sl=d.schemas;
+  $('#ulive').innerHTML=`<div class="panel"><h3>Esquemas em uso nas amostras${info('uso_schema_live')} <small>quem estava executando o quê a cada ${d.interval} s</small></h3>${sl.length?`<div class="scroll" style="max-height:300px"><table><tr><th>Esquema</th><th class="num">Tempo ativo${info('uso_ativo')}</th><th style="width:150px">%</th><th>Usuários</th></tr>`+sl.map(s=>`<tr><td><b>${esc(s.schema)}</b></td><td class="num">${fmt(s.activeMin,1)} min</td><td><div class="bar"><i style="width:${s.activePct}%;background:var(--violet)"></i></div><small>${fmt(s.activePct,1)}%</small></td><td>${s.users.map(u=>`${esc(u.login)} <small>(${fmt(u.activeMin,1)} min)</small>`).join('<br>')}</td></tr>`).join('')+'</table></div>':'<div class="empty">Nenhuma consulta foi pega em execução neste período (o banco estava ocioso nas amostras).</div>'}</div>`;
+}
+function renderEsquemasQS(d){
+  const box=$('#uschemas');
+  if(!d.enabled){box.innerHTML='<div class="panel"><div class="empty">Query Store está desligado neste banco.</div></div>';return}
+  const mx=Math.max(1,...d.rows.map(r=>r.cpuMs));
+  box.innerHTML=`<div class="panel"><h3>Esquemas que mais pesaram (histórico)${info('uso_schema_qs')} <small>${d.analyzed} consultas analisadas do Query Store · ${d.known.length} esquemas no banco</small></h3>
+   <div class="scroll" style="max-height:520px"><table><tr><th>Esquema</th><th class="num">CPU total</th><th style="width:150px">% do CPU</th><th class="num">Leituras${info('qs_reads')}</th><th class="num">Duração total</th><th class="num">Execuções</th><th class="num">Falhas${info('qs_failed')}</th><th class="num">Consultas</th><th>Consulta que mais pesa</th></tr>`+
+   d.rows.map(r=>`<tr class="${r.failed>0?'yellow':''}"><td><b>${esc(r.schema)}</b></td><td class="num">${fmtDur(r.cpuMs)}</td><td><div class="bar"><i style="width:${r.cpuMs/mx*100}%;background:var(--blue)"></i></div><small>${fmt(r.cpuPct,1)}%</small></td><td class="num">${fmtNum(r.reads)}<br><small>${fmt(r.readsPct,1)}%</small></td><td class="num">${fmtDur(r.durMs)}</td><td class="num">${fmtNum(r.execs)}</td><td class="num">${r.failed?'<b style="color:var(--bad)">'+fmtNum(r.failed)+'</b>':'0'}</td><td class="num">${fmt(r.queries,0)}</td><td style="min-width:300px"><div class="sql">${esc(((r.top&&r.top.text)||'').trim())}</div></td></tr>`).join('')+
+   `</table></div><div class="note">Estimativa: o esquema é identificado pelo nome da tabela/procedure no texto da consulta (inclusive quando vem sem esquema, resolvido pelo catálogo do banco). Se uma consulta usa mais de um esquema, o custo é dividido entre eles. Clique no texto da consulta para ver ela inteira (dá para selecionar e copiar).</div></div>`;
+  box.querySelectorAll('.sql').forEach(s=>s.onclick=()=>s.classList.toggle('open'));
+}
+async function tabCapacidade(){
+  const d=S.detail,c=d.capacity,tc=$('#tabc');
+  const ex=api(`/api/db/extra?${qsDb()}`).catch(e=>({error:e.message}));
+  const base=RL[S.range==='live'?'24h':S.range];
+  let h=`<div class="vd ${c.verdict}"><div style="flex:1;min-width:280px"><h3>${esc(c.title)}</h3><div class="note" style="margin:0">Base: ${base} de métricas${S.range==='live'?' (ao vivo usa 24 h)':''}. Meta: p95 de DTU ≤ 70%.</div><ul>${c.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></div>`;
+  if(c.target){const t=c.target;h+=`<div style="min-width:300px"><div class="tl"><span class="tr cur">Hoje: ${esc(c.tier)} (${c.dtu} DTU${c.price?` · ~US$ ${fmt(c.price,0)}/mês`:''})</span> → <span class="tr tgt">${esc(t.tier)} (${t.dtu} DTU${t.price?` · ~US$ ${fmt(t.price,0)}/mês`:''})</span></div>
+   <div class="note">Com ${esc(t.tier)}, o p95 cairia para ~${fmt(t.projectedP95)}% e o pico para ~${fmt(t.projectedMax)}% (estimativa linear). Preços de tabela aproximados em USD, confira no Azure.</div>
+   <div class="note" style="margin-top:8px">Comando (só execute quando decidir; o painel não altera nada):</div><span class="cmd">${esc(t.cmd)}</span></div>`}
+  h+='</div>';
+  h+=`<details class="panel" open><summary style="cursor:pointer;font-weight:600">Como esta recomendação é montada</summary>
+   <div style="margin-top:10px;font-size:13px;line-height:1.6">
+   <p style="margin:0 0 6px"><b>É automática e vale para todos os bancos.</b> O painel descobre os bancos sozinho, recalcula a cada atualização e a sugestão muda quando a carga muda. Nada é alterado no Azure.</p>
+   <ol style="margin:0;padding-left:20px">
+    <li><b>Dados:</b> pega o DTU do Azure Monitor no período escolhido (ao vivo usa 24 h) e calcula a média, o <b>p95</b> (em 95% do tempo o uso ficou abaixo disso), o pico e o % do tempo acima de 80% e 90%.</li>
+    <li><b>Subir de camada</b> quando: p95 ≥ 80%, ou ≥ 90% em 5% do tempo ou mais, ou o pico tocou 100% com pelo menos 2% do tempo acima de 80%.</li>
+    <li><b>Atenção</b> quando: p95 ≥ 65% ou houve qualquer momento com média ≥ 90%.</li>
+    <li><b>Pode reduzir</b> quando: p95 abaixo de 25%, pico abaixo de 60% e existe uma camada menor que aguentaria (p95 ≤ 70% e pico ≤ 100% lá) e o armazenamento cabe.</li>
+    <li><b>Camada sugerida:</b> a menor com DTU ≥ (DTU atual × p95 ÷ 70%) e espaço de armazenamento suficiente (com 15% de folga).</li>
+    <li><b>Gargalo:</b> compara o p95 de CPU, IO de dados e IO de log para dizer qual recurso aperta.</li></ol>
+   <p style="margin:8px 0 0;color:var(--mut)">Limites: a projeção é linear (simplificação, a vida real varia um pouco) e ela não enxerga consultas mal escritas. Muitas vezes um índice ou ajuste de consulta resolve sem pagar mais, por isso confira também os índices sugeridos abaixo e as consultas na aba Queries. Preços são de tabela, aproximados.</p></div></details>`;
+  if(c.ladder){const cur=c.dtu;h+=`<div class="panel"><h3>Camadas disponíveis${info('cap_ladder')}</h3><div class="tl">${c.ladder.map(r=>`<span class="tr ${r.dtu===cur?'cur':''} ${c.target&&c.target.dtu===r.dtu?'tgt':''}">${r.tier} · ${r.dtu} DTU${r.price?' · ~$'+fmt(r.price,0):''}</span>`).join('')}</div></div>`}
+  if(c.bottlenecks&&Object.keys(c.bottlenecks).length){h+=`<div class="panel"><h3>O que está apertando${info('cap_bott')} <small>p95 por recurso</small></h3>`+Object.entries(c.bottlenecks).map(([k,v])=>`<div class="g" style="grid-template-columns:90px 1fr 46px;max-width:560px">${gauge(k,v)}</div>`).join('')+'</div>'}
+  h+=`<div class="panel"><h3>Perfil por hora do dia${info('cap_hod')} <small>quando o banco mais trabalha (horário local)</small></h3><div id="hod"></div></div><div id="extra"><div class="empty"><span class="spin"></span> Lendo índices sugeridos e tamanho das tabelas…</div></div>`;
+  tc.innerHTML=h;
+  const dtu=d.series.m.dtu_consumption_percent||d.series.m.cpu_percent;
+  if(dtu){const hs=Array.from({length:24},()=>({a:[],m:0}));d.series.t.forEach((t,k)=>{const hr=new Date(t).getHours();if(dtu.avg[k]!=null)hs[hr].a.push(dtu.avg[k]);hs[hr].m=Math.max(hs[hr].m,dtu.max[k]||0)});
+    $('#hod').innerHTML=`<div class="hbar">${hs.map((x,k)=>{const a=x.a.length?x.a.reduce((p,q)=>p+q,0)/x.a.length:0;return `<div style="height:${Math.max(a,1)}%;background:${x.m>=100?'var(--bad)':a>=70?'var(--warn)':'var(--blue)'}" title="${k}h · média ${fmt(a)}% · pico ${fmt(x.m)}%"></div>`}).join('')}</div><div class="hl">${hs.map((_,k)=>`<span>${k}</span>`).join('')}</div><div class="note">Altura = DTU médio da hora. Vermelho = nessa hora o banco já encostou em 100%. Passe o mouse para ver o pico.</div>`}
+  const e=await ex;if(S.tab!=='capacidade')return;const box=$('#extra');if(!box)return;
+  if(e.error){box.innerHTML=`<div class="panel err-msg">${esc(e.error)}</div>`;return}
+  box.innerHTML=`<div class="panel"><h3>Índices que o SQL Server sugere${info('cap_idx')}</h3>${e.missingIndexes.length?`<div class="scroll"><table><tr><th>Tabela</th><th>Colunas (=)</th><th>Colunas (&lt;&gt;)</th><th>Include</th><th class="num">Seeks</th><th class="num">Impacto</th></tr>`+e.missingIndexes.map(r=>`<tr><td>${esc(r.table_name)}</td><td>${esc(r.equality_columns||'')}</td><td>${esc(r.inequality_columns||'')}</td><td>${esc(r.included_columns||'')}</td><td class="num">${fmtNum(r.user_seeks+r.user_scans)}</td><td class="num">${fmt(r.impact)}%</td></tr>`).join('')+'</table></div>':'<div class="empty">Nenhuma sugestão no momento.</div>'}</div>
+   <div class="panel"><h3>Maiores tabelas${info('cap_tables')}</h3>${e.tables.length?`<table><tr><th>Tabela</th><th class="num">Linhas</th><th class="num">Tamanho</th></tr>`+e.tables.map(r=>`<tr><td>${esc(r.tbl)}</td><td class="num">${fmtNum(r.row_count)}</td><td class="num">${fmt(r.mb,1)} MB</td></tr>`).join('')+'</table>':'<div class="empty">–</div>'}</div>`;
+}
+async function tabFalhas(){
+  const d=S.detail,m=d.series.m,t=d.series.t,tc=$('#tabc'),sm=d.stats;
+  const sum=k=>sm[k]?sm[k].sum:0;
+  tc.innerHTML=`<div class="kpis"><div class="kpi"><div class="t">Conexões com falha</div><div class="v ${sum('connection_failed')?'yellow':'green'}">${fmt(sum('connection_failed'))}</div></div><div class="kpi"><div class="t">Erro de usuário</div><div class="v">${fmt(sum('connection_failed_user_error'))}</div></div><div class="kpi"><div class="t">Bloqueio firewall</div><div class="v ${sum('blocked_by_firewall')?'yellow':'green'}">${fmt(sum('blocked_by_firewall'))}</div></div><div class="kpi"><div class="t">Deadlocks</div><div class="v ${sum('deadlock')?'red':'green'}">${fmt(sum('deadlock'))}</div></div>
+   <div class="kpi"><div class="t">Disponibilidade${info('avail')}</div><div class="v ${sm.availability&&sm.availability.avg<100?'yellow':'green'}">${sm.availability?pc(sm.availability.avg,2):'–'}</div></div></div>
+   <div class="charts">${cdiv('Conexões com falha','','f1','failConn')}${cdiv('Bloqueios de firewall','','f2','fw')}${cdiv('Deadlocks','','f3','deadlock')}${cdiv('Conexões com sucesso','','f4','connOk')}</div>
+   <div class="panel" style="margin-top:14px"><h3>Eventos do servidor${info('ev')} <small>sys.event_log (throttling, falhas de conexão, deadlocks…)</small></h3><div id="ev"><div class="empty"><span class="spin"></span></div></div></div>`;
+  const O={t,range:S.range,dec:0};
+  if(m.connection_failed)chart($('#f1'),[{name:'falhas',vals:m.connection_failed.tot,color:COL.mx,bars:1}],O);
+  if(m.blocked_by_firewall)chart($('#f2'),[{name:'firewall',vals:m.blocked_by_firewall.tot,color:COL.log,bars:1}],O);
+  if(m.deadlock)chart($('#f3'),[{name:'deadlocks',vals:m.deadlock.tot,color:COL.mx,bars:1}],O);
+  if(m.connection_successful)chart($('#f4'),[{name:'sucesso',vals:m.connection_successful.tot,color:COL.io,fill:1}],O);
+  const days={live:1,'24h':1,'7d':7,'15d':15,'30d':30}[S.range];
+  try{const e=await api(`/api/db/events?${qsDb()}&days=${days}`);if(S.tab!=='falhas')return;
+    $('#ev').innerHTML=e.error?`<div class="note">Sem acesso ao sys.event_log (${esc(e.error.slice(0,140))}).</div>`:e.rows.length?`<div class="scroll"><table><tr><th>Quando</th><th>Evento</th><th>Detalhe</th><th class="num">Qtd</th></tr>`+e.rows.map(r=>`<tr class="${/throttl|deadlock/.test(r.event_type)?'red':/failed|firewall/.test(r.event_type)?'yellow':''}"><td>${new Date(r.start_time).toLocaleString('pt-BR')}</td><td>${esc(r.event_type)}</td><td>${esc(r.event_subtype_desc||'')} <small>${esc((r.description||'').slice(0,180))}</small></td><td class="num">${r.event_count}</td></tr>`).join('')+'</table></div>':'<div class="empty">Nenhum evento de falha no período. 👍</div>'}catch(x){$('#ev').innerHTML=`<div class="err-msg">${esc(x.message)}</div>`}
+}
+
+/* ================= refresh loop ================= */
+let timer=null,busy=false;
+async function refresh(){
+  if(busy)return;busy=true;const pulse=$('#pulse');
+  try{
+    if(S.view==='overview'){
+      const ov=api(`/api/overview?range=${S.range}`).then(d=>{S.overview=d;if(S.view==='overview')renderOverview()});
+      const sn=api('/api/snapshot').then(d=>{S.snap=d;S.snapReady=true;if(S.view==='overview'&&S.overview)renderOverview()}).catch(()=>{});
+      await ov;await sn;
+    }else if(S.tab==='agora'){await loadLive();}
+    else if(S.tab==='resumo'){const d=await api(`/api/db?${qsDb()}&range=${S.range}`);S.detail=d;if(S.tab==='resumo'&&S.view==='db')tabResumo()}
+    pulse.className='';$('#upd').textContent='Atualizado às '+new Date().toLocaleTimeString('pt-BR')+(S.refresh?` · a cada ${S.refresh>=60?S.refresh/60+' min':S.refresh+' s'}`:' · pausado');
+  }catch(e){pulse.className='err';$('#upd').textContent='Erro: '+e.message}
+  busy=false;
+}
+function schedule(){clearInterval(timer);if(S.refresh)timer=setInterval(refresh,S.refresh*1000)}
+function drawRange(){const seg=$('#rangeSeg');seg.innerHTML=RANGES.map(([k,l])=>`<button data-r="${k}" class="${S.range===k?'on':''}">${l}</button>`).join('');
+  seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.range=b.dataset.r;localStorage.dbs_range=S.range;drawRange();S.overview=S.view==='overview'?null:S.overview;if(S.view==='overview')renderOverview();if(S.view==='db')loadTab();else refresh()})}
+$('#refSel').value=String(S.refresh);
+$('#refSel').onchange=e=>{S.refresh=+e.target.value;localStorage.dbs_ref=S.refresh;schedule()};
+$('#btnNow').onclick=refresh;
+window.onhashchange=()=>{if(!location.hash&&S.view==='db'){S.view='overview';renderOverview()}};
+drawRange();renderOverview();schedule();
+(async()=>{await refresh();const m=location.hash.match(/db=(.+)/);if(m&&S.overview){const [s,n]=decodeURIComponent(m[1]).split('/');const it=S.overview.items.find(x=>x.server===s&&x.name===n);if(it)openDb(it)}})();
+</script>
+</body>
+</html>

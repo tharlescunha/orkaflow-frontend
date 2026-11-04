@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bot,
   Boxes,
+  Database,
   CalendarClock,
   CalendarDays,
   ClipboardList,
@@ -44,15 +45,21 @@ export type NavGroup = { title: string; items: NavItem[] };
 // Menu do painel: usado pela sidebar, pelo caminho no topo e pela busca global (Ctrl+K).
 export const NAV_GROUPS: NavGroup[] = [
   {
-    title: "Operação",
+    title: "Status",
     items: [
       { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, keywords: "indicadores métricas" },
       { label: "Health", to: "/automations/health", icon: Activity, keywords: "saúde automações atrasado" },
       { label: "Tasks", to: "/tasks", icon: ClipboardList, keywords: "execuções fila" },
-      { label: "Nova Task", to: "/tasks/new", icon: PlusSquare, keywords: "executar rodar" },
-      { label: "Logs", to: "/logs", icon: ScrollText, keywords: "máquina ao vivo" },
-      { label: "Erros", to: "/errors", icon: Siren, badgeKey: "errors", keywords: "falhas" },
+      { label: "Database Status", to: "/status/database", icon: Database, keywords: "banco de dados sql azure dtu travamento consultas lentas capacidade" },
       { label: "Sync", to: "/sync", icon: RefreshCw, requires: "sync", keywords: "painel pessoal sistemas externos ping" },
+    ],
+  },
+  {
+    title: "Operation",
+    items: [
+      { label: "New Task", to: "/tasks/new", icon: PlusSquare, keywords: "nova task executar rodar" },
+      { label: "Logs", to: "/logs", icon: ScrollText, keywords: "máquina ao vivo" },
+      { label: "Errors", to: "/errors", icon: Siren, badgeKey: "errors", keywords: "erros falhas" },
     ],
   },
   {

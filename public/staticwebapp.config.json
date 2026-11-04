@@ -9,6 +9,10 @@
       "headers": { "cache-control": "no-cache, no-store, must-revalidate" }
     },
     {
+      "route": "/dbstatus/index.html",
+      "headers": { "cache-control": "no-cache, no-store, must-revalidate" }
+    },
+    {
       "route": "/version.json",
       "headers": { "cache-control": "no-cache, no-store, must-revalidate" }
     },
