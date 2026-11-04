@@ -33,9 +33,10 @@ function valueOf(hour: DashboardHourlyLoadHour, metric: Metric) {
   return metric === "minutes" ? hour.avg_busy_minutes : hour.avg_tasks_per_day;
 }
 
-function formatValue(value: number, metric: Metric) {
+function formatValue(value: number, metric: Metric, days = 2) {
   if (metric === "minutes") return `${value.toFixed(1).replace(".", ",")} min`;
-  return value.toFixed(1).replace(".", ",");
+  // Na janela de 24 h é a contagem de tasks da hora (inteira); nos demais períodos, a média por dia.
+  return days === 1 ? String(Math.round(value)) : value.toFixed(1).replace(".", ",");
 }
 
 /** "tasks" na janela de 24 h (contagem da hora); "tasks por dia" nos demais períodos (média). */
@@ -70,7 +71,8 @@ export function HourlyLoadCard({
 
   const runner = data?.runners.find((r) => r.runner_id === runnerId) ?? null;
   const series = runner ? runner.hours : (data?.hours ?? []);
-  const scopeLabel = runner ? runner.label || runner.name : "Todas as máquinas";
+  const scopeTasks = runner ? runner.total_tasks : (data?.hours ?? []).reduce((sum, h) => sum + h.tasks, 0);
+  const scopeLabel = `${runner ? runner.label || runner.name : "Todas as máquinas"} · ${scopeTasks} tasks iniciadas no período`;
 
   return (
     <section className={card}>
@@ -118,6 +120,7 @@ export function HourlyLoadCard({
               Horário de Brasília. {data.days === 1 ? "Últimas 24 horas" : `Média por dia nos ${data.days} dias`}, contando as tasks pela hora em que começaram.
               {metric === "minutes" ? " No geral, passa de 60 min na hora quando há tasks ao mesmo tempo." : ""}
               {data.days === 1 ? " As pontas (ontem e hoje) são horas parciais." : ""}
+              {" "}Aqui contam as tasks que começaram a rodar; o gráfico de execuções acima conta as criadas, então pode ter poucas a mais (as que ainda esperam na fila ou foram canceladas sem rodar).
             </p>
           </>
         )}
@@ -200,7 +203,7 @@ function HourlyChart({
               separator=""
               formatter={(_value, _name, item) => {
                 const row = item.payload as (typeof rows)[number];
-                return [`${formatValue(row.minutes, "minutes")} rodando · ${formatValue(row.tasks, "tasks")} ${tasksUnit(days)}`, ""];
+                return [`${formatValue(row.minutes, "minutes")} rodando · ${formatValue(row.tasks, "tasks", days)} ${tasksUnit(days)}`, ""];
               }}
               labelFormatter={(key) => {
                 const row = rows.find((r) => r.key === key);
@@ -253,7 +256,13 @@ function Heatmap({
 
   return (
     <div className="px-2">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Por máquina e hora</p>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+        Por máquina e hora
+        <span className="ml-2 font-normal normal-case tracking-normal text-slate-500">
+          {metric === "minutes" ? "cada número = minutos rodando na hora" : "cada número = tasks iniciadas na hora"}
+          {data.days > 1 ? " (média por dia)" : ""}; ao lado do nome, o total do período
+        </span>
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-separate border-spacing-[2px] text-[10px]">
           <thead>
@@ -280,7 +289,11 @@ function Heatmap({
                     )}
                   >
                     {runner.label || runner.name}
-                    <span className="ml-1 font-normal text-slate-400">{runner.total_tasks}</span>
+                    <span className="ml-1 font-normal text-slate-400">
+                      {metric === "minutes"
+                        ? `${Math.round(runner.hours.reduce((sum, h) => sum + h.avg_busy_minutes, 0) * data.days)} min`
+                        : `${runner.total_tasks} tasks`}
+                    </span>
                   </button>
                 </td>
                 {runner.hours.map((hour) => {
@@ -289,14 +302,14 @@ function Heatmap({
                   return (
                     <td
                       key={hour.key || hour.hour}
-                      title={`${runner.label || runner.name} · ${hour.title || hourLabel(hour.hour)}: ${formatValue(hour.avg_busy_minutes, "minutes")} rodando, ${formatValue(hour.avg_tasks_per_day, "tasks")} ${tasksUnit(data.days)}`}
+                      title={`${runner.label || runner.name} · ${hour.title || hourLabel(hour.hour)}: ${formatValue(hour.avg_busy_minutes, "minutes")} rodando, ${formatValue(hour.avg_tasks_per_day, "tasks", data.days)} ${tasksUnit(data.days)}`}
                       className="h-7 rounded text-center align-middle"
                       style={{
                         backgroundColor: value > 0 ? `rgba(37, 99, 235, ${0.1 + intensity * 0.8})` : "#f1f5f9",
                         color: intensity > 0.55 ? "#fff" : "#475569",
                       }}
                     >
-                      {value > 0 ? (metric === "minutes" ? Math.round(value) : value.toFixed(1).replace(".", ",")) : ""}
+                      {value > 0 ? (metric === "minutes" ? Math.round(value) : formatValue(value, "tasks", data.days)) : ""}
                     </td>
                   );
                 })}
