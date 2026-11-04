@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { useSystemHealth } from "@/hooks/use-system-health";
 import {
   getDashboardBots,
+  getDashboardHourlyLoad,
   getDashboardOverview,
   getDashboardRunners,
   type DashboardBotMetrics,
@@ -115,13 +116,23 @@ export function DashboardPage() {
     refetchIntervalInBackground: false,
   });
 
-  const updatedAt = Math.max(overviewQuery.dataUpdatedAt, runnersQuery.dataUpdatedAt, botsQuery.dataUpdatedAt) || undefined;
-  const isFetching = overviewQuery.isFetching || runnersQuery.isFetching || botsQuery.isFetching;
+  // Carga por hora do dia: segue o mesmo período do topo, como os demais gráficos.
+  const hourlyQuery = useQuery({
+    queryKey: ["dashboard-hourly-load", period],
+    queryFn: () => getDashboardHourlyLoad({ period }),
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
+  });
+
+  const updatedAt =
+    Math.max(overviewQuery.dataUpdatedAt, runnersQuery.dataUpdatedAt, botsQuery.dataUpdatedAt, hourlyQuery.dataUpdatedAt) || undefined;
+  const isFetching = overviewQuery.isFetching || runnersQuery.isFetching || botsQuery.isFetching || hourlyQuery.isFetching;
 
   function refetchAll() {
     void overviewQuery.refetch();
     void runnersQuery.refetch();
     void botsQuery.refetch();
+    void hourlyQuery.refetch();
   }
 
   const overview = overviewQuery.data;
@@ -262,7 +273,14 @@ export function DashboardPage() {
           <PeriodChart overview={overview} period={period} />
 
           {/* 3b. Em que horas roda mais: onde ainda cabe execução */}
-          <HourlyLoadCard />
+          <HourlyLoadCard
+            periodLabel={PERIOD_LABEL[period]}
+            data={hourlyQuery.data}
+            loading={hourlyQuery.isLoading}
+            error={hourlyQuery.isError ? hourlyQuery.error : null}
+            onRetry={() => void hourlyQuery.refetch()}
+            retrying={hourlyQuery.isFetching}
+          />
 
           {/* 4. Máquinas e bots */}
           <div className="grid gap-5 xl:grid-cols-2">

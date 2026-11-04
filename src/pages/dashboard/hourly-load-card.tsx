@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Clock3 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -8,21 +7,14 @@ import { QueryError } from "@/components/common/query-error";
 import { Skeleton } from "@/components/common/skeleton";
 import { card, cardHeader, cardTitle, input } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { getDashboardHourlyLoad, type DashboardHourlyLoadHour, type DashboardHourlyLoadResponse } from "@/services/api/dashboard";
+import type { DashboardHourlyLoadHour, DashboardHourlyLoadResponse } from "@/services/api/dashboard";
 
 /**
  * Carga por hora do dia (Brasília), geral e por máquina: onde já está cheio e onde ainda cabe mais execução.
- * Média por dia no período, para um dia atípico não enganar.
+ * O período vem do seletor do topo do Dashboard (como os outros gráficos): média por dia no período.
  */
 
-type LoadPeriod = "7d" | "15d" | "30d";
 type Metric = "minutes" | "tasks";
-
-const PERIODS: Array<{ label: string; value: LoadPeriod }> = [
-  { label: "7 dias", value: "7d" },
-  { label: "15 dias", value: "15d" },
-  { label: "30 dias", value: "30d" },
-];
 
 const METRICS: Array<{ label: string; value: Metric; hint: string }> = [
   { label: "Tempo rodando", value: "minutes", hint: "Minutos com task em execução em cada hora, em média por dia." },
@@ -32,8 +24,6 @@ const METRICS: Array<{ label: string; value: Metric; hint: string }> = [
 const BUSY_COLOR = "#d97706"; // amber-600: entre as horas mais cheias
 const NORMAL_COLOR = "#2563eb"; // blue-600
 const FREE_COLOR = "#10b981"; // emerald-500: sobra espaço
-
-const REFRESH_MS = 60_000;
 
 function hourLabel(hour: number) {
   return `${String(hour).padStart(2, "0")}h`;
@@ -55,19 +45,24 @@ function segmentClass(active: boolean) {
   );
 }
 
-export function HourlyLoadCard() {
-  const [period, setPeriod] = useState<LoadPeriod>("15d");
+export function HourlyLoadCard({
+  periodLabel,
+  data,
+  loading,
+  error,
+  onRetry,
+  retrying,
+}: {
+  periodLabel: string;
+  data?: DashboardHourlyLoadResponse;
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
   const [metric, setMetric] = useState<Metric>("minutes");
   const [runnerId, setRunnerId] = useState<number | "">("");
 
-  const query = useQuery({
-    queryKey: ["dashboard-hourly-load", period],
-    queryFn: () => getDashboardHourlyLoad({ period }),
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: false,
-  });
-
-  const data = query.data;
   const runner = data?.runners.find((r) => r.runner_id === runnerId) ?? null;
   const series = runner ? runner.hours : (data?.hours ?? []);
   const scopeLabel = runner ? runner.label || runner.name : "Todas as máquinas";
@@ -75,7 +70,7 @@ export function HourlyLoadCard() {
   return (
     <section className={card}>
       <div className={cn(cardHeader, "flex-wrap")}>
-        <h2 className={cardTitle}>Carga por hora do dia</h2>
+        <h2 className={cardTitle}>Carga por hora do dia ({periodLabel})</h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="O que medir">
             {METRICS.map((m) => (
@@ -84,21 +79,14 @@ export function HourlyLoadCard() {
               </button>
             ))}
           </div>
-          <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="Período">
-            {PERIODS.map((p) => (
-              <button key={p.value} type="button" onClick={() => setPeriod(p.value)} aria-pressed={period === p.value} className={segmentClass(period === p.value)}>
-                {p.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
       <div className="space-y-5 px-3 pb-4 pt-3">
-        {query.isLoading ? (
+        {loading ? (
           <Skeleton className="h-[260px] w-full" />
-        ) : query.isError ? (
-          <QueryError error={query.error} what="a carga por hora" onRetry={() => void query.refetch()} retrying={query.isFetching} />
+        ) : error ? (
+          <QueryError error={error} what="a carga por hora" onRetry={onRetry} retrying={retrying} />
         ) : !data || data.hours.every((h) => h.tasks === 0 && h.avg_busy_minutes === 0) ? (
           <EmptyState compact icon={Clock3} title="Nenhuma execução no período" description="O gráfico aparece conforme as tasks forem executadas." />
         ) : (
@@ -122,7 +110,7 @@ export function HourlyLoadCard() {
             <Heatmap data={data} metric={metric} selectedId={runnerId} onSelect={setRunnerId} />
 
             <p className="px-2 text-xs text-slate-500">
-              Horário de Brasília. Média por dia nos {data.days} dias, contando as tasks pela hora em que começaram.
+              Horário de Brasília. {data.days === 1 ? "Últimas 24 horas" : `Média por dia nos ${data.days} dias`}, contando as tasks pela hora em que começaram.
               {metric === "minutes" ? " No geral, passa de 60 min na hora quando há tasks ao mesmo tempo." : ""}
             </p>
           </>
