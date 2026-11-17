@@ -14,6 +14,36 @@ const HIGHLIGHTS = [
   { icon: CalendarClock, text: "Agendamentos, versões dos robôs e execução manual com um clique." },
 ];
 
+// Login com a conta Microsoft (SSO). Fica apagado até a TI entregar o cadastro do aplicativo no Microsoft Entra ID
+// (ID do aplicativo e ID do diretório). Quando o fluxo for ligado, é aqui que ele passa a valer.
+const MICROSOFT_LOGIN_ENABLED = false;
+
+function MicrosoftLogo() {
+  return (
+    <svg viewBox="0 0 21 21" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  );
+}
+
+function MicrosoftLoginButton({ enabled }: { enabled: boolean }) {
+  return (
+    <button
+      type="button"
+      disabled={!enabled}
+      aria-disabled={!enabled}
+      title={enabled ? undefined : "Em breve: aguardando a TI liberar o acesso com a conta Microsoft."}
+      className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
+    >
+      <MicrosoftLogo />
+      Entrar com a conta Microsoft
+    </button>
+  );
+}
+
 // Tela de login na marca Regente: painel azul com o logo na versão escura, cartão branco com o formulário.
 // O formulário e o fluxo de autenticação não mudam.
 export function LoginPage() {
@@ -146,6 +176,8 @@ export function LoginPage() {
                   {loading ? "Entrando..." : "Entrar"}
                 </button>
               </form>
+
+              <MicrosoftLoginButton enabled={MICROSOFT_LOGIN_ENABLED} />
 
               <p className="mt-6 text-center text-xs text-slate-500">
                 Esqueceu a senha? Peça a um administrador do painel para redefinir.
