@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 
 import { describeRoute } from "@/lib/navigation";
 import { focusRing } from "@/lib/ui";
+import { ReleaseBadge } from "./release-badge";
 import { UserMenu } from "./user-menu";
 
 type AppHeaderProps = {
@@ -49,6 +50,7 @@ export function AppHeader({ onToggleSidebar, onOpenSearch }: AppHeaderProps) {
           <span className="hidden sm:inline">Ir para...</span>
           <kbd className="hidden rounded-md border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500 sm:inline">Ctrl K</kbd>
         </button>
+        <ReleaseBadge />
         <div className="md:hidden">
           <UserMenu compact />
         </div>

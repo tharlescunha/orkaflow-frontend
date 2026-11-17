@@ -49,6 +49,7 @@ import { ExclusiveGroupFormPage } from "../../pages/exclusive-groups/exclusive-g
 
 import { EnvVariablesPage } from "../../pages/env-variables/env-variables-page";
 import { AccessReleasesPage } from "../../pages/access-releases/access-releases-page";
+import { ReleasesPage } from "../../pages/releases/releases-page";
 import { CredentialsPage } from "../../pages/credentials/credentials-page";
 import { CredentialCreatePage } from "../../pages/credentials/credential-create-page";
 import { CredentialDetailPage } from "../../pages/credentials/credential-detail-page";
@@ -148,6 +149,7 @@ export const router = createBrowserRouter([
 
       { path: "env-variables", element: <EnvVariablesPage /> },
       { path: "access-releases", element: <AccessReleasesPage /> },
+      { path: "releases", element: <ReleasesPage /> },
       { path: "credentials", element: <CredentialsPage /> },
       { path: "credentials/new", element: <CredentialCreatePage /> },
       { path: "credentials/:credentialId", element: <CredentialDetailPage /> },

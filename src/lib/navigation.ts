@@ -11,6 +11,7 @@ import {
   ClipboardList,
   FileText,
   FolderGit2,
+  History,
   KeyRound,
   LayoutDashboard,
   Lock,
@@ -109,6 +110,12 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Administração",
     items: [
       { label: "Calendários", to: "/calendars", icon: CalendarDays, keywords: "feriados dias úteis janela" },
+      {
+        label: "Atualizações",
+        to: "/releases",
+        icon: History,
+        keywords: "versão versões novidades changelog melhorias correções o que mudou",
+      },
       { label: "Usuários", to: "/users", icon: Users },
       { label: "Configurações", to: "/settings", icon: SlidersHorizontal, keywords: "ambientes git token devops github works worker versão atualizar" },
       { label: "Perfil", to: "/profile", icon: UserCircle2, keywords: "minha conta senha" },
@@ -137,8 +144,9 @@ export function describeRoute(pathname: string): { group?: string; label?: strin
   return best ? { group: best.group, label: best.item.label } : {};
 }
 
-// Versão do produto mostrada no selo ao lado do nome (sidebar e login), como no guia da marca.
-export const APP_VERSION = "3.0";
+// Geração do produto mostrada no selo ao lado do nome (sidebar e login): o Regente é o terceiro orquestrador, "v3".
+// A versão completa (3.X.Y.Z) fica na tela Atualizações e vem do ATUALIZACOES.md do backend.
+export const APP_VERSION = "3";
 
 // VITE_ENV_LABEL no build (ex.: "Homologação"); sem ela, pelo modo do Vite.
 export const ENVIRONMENT_LABEL: string =
