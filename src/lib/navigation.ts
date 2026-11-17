@@ -23,6 +23,7 @@ import {
   Settings2,
   Siren,
   SlidersHorizontal,
+  UserCheck,
   UserCircle2,
   Users,
   Variable,
@@ -84,7 +85,15 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "Segurança",
-    items: [{ label: "Credenciais", to: "/credentials", icon: KeyRound, keywords: "senhas cofre" }],
+    items: [
+      { label: "Credenciais", to: "/credentials", icon: KeyRound, keywords: "senhas cofre" },
+      {
+        label: "Liberar acesso",
+        to: "/access-releases",
+        icon: UserCheck,
+        keywords: "desbloquear usuario bloqueado senha sap aprovador liberar",
+      },
+    ],
   },
   {
     title: "Integração",
