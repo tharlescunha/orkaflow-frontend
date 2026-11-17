@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FolderGit2,
   HeartPulse,
+  KeyRound,
   Maximize2,
   Minimize2,
   Monitor,
@@ -88,25 +89,32 @@ const ACTIVE_FILTER_OPTIONS: SearchableOption<ActiveFilter>[] = [
   { value: "all", label: "Todas" },
 ];
 
-/** Como a tela é vista: compacto e normal mudam o tamanho dos cards; foco tira tudo que não é card (telão). */
-type ViewMode = "compact" | "normal" | "focus";
-type CardSize = "compact" | "normal";
+/**
+ * Como a tela é vista: compacto, médio e normal mudam o tamanho dos cards; foco tira tudo que não é card (telão).
+ * Compacto = só nome, status e próxima execução. Médio = o antigo "Compacto". Normal = card completo.
+ */
+type ViewMode = "compact" | "medium" | "normal" | "focus";
+type CardSize = "compact" | "medium" | "normal";
 
 const VIEW_MODES: { value: ViewMode; label: string; description: string }[] = [
-  { value: "compact", label: "Compacto", description: "Cards menores, mais automações por linha." },
+  { value: "compact", label: "Compacto", description: "Só o nome, o status e a próxima execução." },
+  { value: "medium", label: "Médio", description: "Cards menores, mais automações por linha." },
   { value: "normal", label: "Normal", description: "Cards maiores, com mais espaço para ler." },
   { value: "focus", label: "Foco", description: "Só os cards, sem filtros nem botões. Para deixar num telão. Esc sai." },
 ];
 
 const REFRESH_MS = 10_000;
-// Mesma chave de antes; "sm" = compacto, "focus" = foco, qualquer outro = normal (compatível com o valor antigo sm/md/lg).
+// Mesma chave de antes. "xs" = compacto (novo), "sm" = médio (era o antigo compacto, quem tinha escolhido ele continua igual),
+// "focus" = foco, qualquer outro valor = normal (compatível com o valor antigo md/lg).
 const VIEW_STORAGE_KEY = "automation-health-card-scale";
+const STORED_VALUE: Record<ViewMode, string> = { compact: "xs", medium: "sm", normal: "md", focus: "focus" };
 
 function getStoredViewMode(storageKey: string): ViewMode {
   if (typeof window === "undefined") return "normal";
   try {
     const stored = window.localStorage.getItem(storageKey);
-    if (stored === "sm") return "compact";
+    if (stored === "xs") return "compact";
+    if (stored === "sm") return "medium";
     if (stored === "focus") return "focus";
     return "normal";
   } catch {
@@ -194,7 +202,22 @@ const STATUS_ORDER: AutomationHealthStatus[] = ["success", "running", "scheduled
 
 function getSizeClasses(size: CardSize, focus: boolean) {
   if (size === "compact") {
+    // Só nome, status e próxima execução: cards baixos, muitos por linha.
     return {
+      minimal: true,
+      grid: focus
+        ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8"
+        : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6",
+      card: "p-2.5",
+      title: "text-xs",
+      text: "text-[10px]",
+      chip: "text-[10px]",
+      infoGrid: "grid-cols-2 gap-x-3 gap-y-2",
+    };
+  }
+  if (size === "medium") {
+    return {
+      minimal: false,
       grid: focus ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5",
       card: "min-h-[140px] p-3",
       title: "text-xs",
@@ -204,6 +227,7 @@ function getSizeClasses(size: CardSize, focus: boolean) {
     };
   }
   return {
+    minimal: false,
     grid: focus ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
     card: "min-h-[170px] p-4",
     title: "text-sm",
@@ -304,8 +328,11 @@ export function AutomationHealthPage({
   const [statusFilter, setStatusFilter] = useState<AutomationHealthStatus | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>(() => getStoredViewMode(viewStorageKey));
-  // Tamanho dos cards no foco: o último escolhido entre compacto/normal (foco não muda o tamanho).
-  const [cardSize, setCardSize] = useState<CardSize>(() => (getStoredViewMode(viewStorageKey) === "compact" ? "compact" : "normal"));
+  // Tamanho dos cards no foco: o último escolhido entre compacto/médio/normal (foco não muda o tamanho).
+  const [cardSize, setCardSize] = useState<CardSize>(() => {
+    const stored = getStoredViewMode(viewStorageKey);
+    return stored === "focus" ? "normal" : stored;
+  });
   const [selectedItem, setSelectedItem] = useState<AutomationHealthItemRead | null>(null);
   const [runNowItem, setRunNowItem] = useState<AutomationHealthItemRead | null>(null);
 
@@ -364,7 +391,7 @@ export function AutomationHealthPage({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(viewStorageKey, viewMode === "compact" ? "sm" : viewMode === "focus" ? "focus" : "md");
+      window.localStorage.setItem(viewStorageKey, STORED_VALUE[viewMode]);
     } catch {
       // sem localStorage (modo privado): só não persiste
     }
@@ -477,27 +504,25 @@ export function AutomationHealthPage({
     setStatusFilter((prev) => (prev === status ? null : status));
   }
 
+  // O que cada modo faz aparece ao passar o mouse (title), sem texto fixo embaixo dos botões.
   const viewSwitch = (
-    <div className="flex flex-col items-end gap-1">
-      <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="Modo de visualização">
-        {VIEW_MODES.map((mode) => (
-          <button
-            key={mode.value}
-            type="button"
-            onClick={() => chooseView(mode.value)}
-            aria-pressed={viewMode === mode.value}
-            title={mode.description}
-            className={cn(
-              "inline-flex h-10 items-center gap-1.5 px-3 text-sm font-medium transition first:rounded-l-lg last:rounded-r-lg",
-              viewMode === mode.value ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
-            )}
-          >
-            {mode.value === "focus" ? <Maximize2 className="h-3.5 w-3.5" /> : null}
-            {mode.label}
-          </button>
-        ))}
-      </div>
-      <p className="hidden text-[11px] text-slate-500 md:block">{VIEW_MODES.find((m) => m.value === viewMode)?.description}</p>
+    <div className="inline-flex divide-x divide-slate-300 rounded-lg border border-slate-300" role="group" aria-label="Modo de visualização">
+      {VIEW_MODES.map((mode) => (
+        <button
+          key={mode.value}
+          type="button"
+          onClick={() => chooseView(mode.value)}
+          aria-pressed={viewMode === mode.value}
+          title={mode.description}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium transition first:rounded-l-lg last:rounded-r-lg",
+            viewMode === mode.value ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+          )}
+        >
+          {mode.value === "focus" ? <Maximize2 className="h-3.5 w-3.5" /> : null}
+          {mode.label}
+        </button>
+      ))}
     </div>
   );
 
@@ -770,6 +795,51 @@ function HealthCardShell({
 }) {
   const visual = getHealthVisual(status);
   const StatusIcon = visual.icon;
+
+  if (sizeClasses.minimal) {
+    // Compacto: só nome, status e próxima execução (o código do bot fica na dica ao passar o mouse).
+    const hasAlerts = Boolean(alerts && alerts.length > 0);
+    return (
+      <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border shadow-sm transition", visual.cardClass)}>
+        <div className={`absolute left-0 top-0 h-full w-1 ${visual.accentClass}`} />
+
+        <button
+          type="button"
+          onClick={onClick}
+          title={subtitle && subtitle !== EMPTY ? `${title} · ${subtitle}` : title}
+          className={cn("flex w-full flex-1 flex-col gap-1.5 rounded-xl text-left", focusRing, sizeClasses.card)}
+        >
+          <div className="flex items-start justify-between gap-2 pl-1.5">
+            <p className={`line-clamp-2 min-w-0 break-words font-semibold text-slate-950 ${sizeClasses.title}`}>{title}</p>
+            <span className={cn(badge, visual.badgeClass, sizeClasses.chip, "shrink-0 px-2")}>
+              <StatusIcon className={cn("h-3 w-3", visual.iconClass, status === "running" && "animate-spin")} />
+              {statusLabel}
+            </span>
+          </div>
+
+          {timeChip || inactiveReason || hasAlerts ? (
+            <div className="flex flex-wrap items-center gap-1 pl-1.5">
+              {inactiveReason ? <span className={cn(badge, tone.neutral, sizeClasses.chip)}>{inactiveReason}</span> : null}
+              {hasAlerts ? (
+                <span className={cn(badge, tone.danger, sizeClasses.chip)} title="Credencial com problema">
+                  <KeyRound className="h-3 w-3 shrink-0" />
+                  credencial
+                </span>
+              ) : null}
+              {timeChip ? (
+                <span className={cn(badge, timeChip.isOverdue ? tone.warning : visual.badgeClass, sizeClasses.chip)}>
+                  <Timer className="h-3 w-3 shrink-0" />
+                  {timeChip.label}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </button>
+
+        {footer}
+      </div>
+    );
+  }
 
   return (
     <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border shadow-sm transition", visual.cardClass)}>
