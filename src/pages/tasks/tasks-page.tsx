@@ -525,7 +525,6 @@ export function TasksPage() {
                   <th className={table.th}>Última atualização</th>
                   <th className={table.th}>Criada em</th>
                   <th className={table.th}>Duração</th>
-                  <th className={table.th}>Prioridade</th>
                   <th className={table.th}>Mensagem final</th>
                   <th className={table.thRight}>Ações</th>
                 </tr>
@@ -599,7 +598,6 @@ export function TasksPage() {
                       <td className={cn(table.tdMuted, "whitespace-nowrap tabular-nums")}>
                         {formatDuration(task.execution_duration_seconds)}
                       </td>
-                      <td className={cn(table.tdMuted, "tabular-nums")}>{task.priority}</td>
                       <td className={table.tdMuted}>
                         <span className={cn(table.truncate, failed && "text-red-700")} title={task.final_message || undefined}>
                           {task.final_message || EMPTY}
