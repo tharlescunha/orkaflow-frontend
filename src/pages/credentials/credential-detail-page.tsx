@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, Pencil, ShieldCheck } from "lucide-react";
+import { KeyRound, LockOpen, Pencil, ShieldCheck } from "lucide-react";
 
 import { CredentialStatusBadge } from "@/components/common/credential-status";
 import { credentialStatusLabel, isCredentialInvalid } from "@/lib/credential-status";
@@ -16,12 +16,15 @@ import { cn } from "@/lib/utils";
 import { getCredential } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
 
+import { useUnblockCredential } from "./use-unblock-credential";
+
 export function CredentialDetailPage() {
   const navigate = useNavigate();
   const params = useParams<{ credentialId: string }>();
 
   const credentialId = Number(params.credentialId);
   const validId = Number.isFinite(credentialId) && credentialId > 0;
+  const unblock = useUnblockCredential();
 
   const credentialQuery = useQuery({
     queryKey: ["credential-detail", credentialId],
@@ -125,6 +128,7 @@ export function CredentialDetailPage() {
                     <p className="mt-0.5 text-red-800/80">
                       Os agendamentos das automações que usam esta credencial foram pausados e novas tasks estão bloqueadas.
                       Ao salvar um valor novo em Segredos, a credencial volta para "não verificada" e os agendamentos reativam sozinhos.
+                      Se a senha é guardada em outro cofre e já foi corrigida lá, use o botão Desbloquear.
                       {credential.status_task_id ? (
                         <>
                           {" "}
@@ -136,9 +140,18 @@ export function CredentialDetailPage() {
                         </>
                       ) : null}
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => unblock.request({ id: credential.id, label: credential.label })}
+                      className={cn(btn.secondary, "mt-3")}
+                    >
+                      <LockOpen className="h-4 w-4" />
+                      Desbloquear
+                    </button>
                   </div>
                 </div>
               )}
+              {unblock.dialog}
 
               <section className={card}>
                 <div className={cardHeader}>

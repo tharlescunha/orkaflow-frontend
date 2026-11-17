@@ -25,6 +25,27 @@ export type CredentialRead = {
   updated_at?: string | null;
 };
 
+/** Credencial bloqueada (senha errada/expirada, usuário bloqueado) e o que ela está segurando. */
+export type BlockedCredential = {
+  id: number;
+  label: string;
+  repository_id: number;
+  repository_name?: string | null;
+  status: string;
+  status_label: string;
+  status_reason?: string | null;
+  status_updated_at?: string | null;
+  status_task_id?: number | null;
+  automations: { id: number; name?: string | null }[];
+  schedules_paused: number;
+};
+
+export type CredentialUnblockResult = {
+  id: number;
+  status: string;
+  schedules_reactivated: number;
+};
+
 export type CredentialWithItemsRead = CredentialRead & {
   items: CredentialItem[];
 };

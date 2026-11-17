@@ -18,10 +18,12 @@ import { formatDateTime } from "@/lib/format";
 import { normalizeSearch } from "@/lib/search";
 import { badge, btn, card, select, table, tone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { deleteCredential, listCredentials } from "@/services/api/credentials";
+import { deleteCredential, listBlockedCredentials, listCredentials } from "@/services/api/credentials";
 import { listRepositories } from "@/services/api/repositories";
 import { toast } from "@/store/toast-store";
 import type { CredentialRead } from "@/types/credential";
+
+import { BlockedCredentialsCard } from "./blocked-credentials-card";
 
 const PAGE_SIZE = 10;
 
@@ -46,6 +48,12 @@ export function CredentialsPage() {
   const repositoriesQuery = useQuery({
     queryKey: ["repositories-options"],
     queryFn: () => listRepositories({ active: true }),
+  });
+
+  const blockedQuery = useQuery({
+    queryKey: ["credentials-blocked"],
+    queryFn: listBlockedCredentials,
+    refetchInterval: 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -102,6 +110,7 @@ export function CredentialsPage() {
   function handleRefresh() {
     credentialsQuery.refetch();
     repositoriesQuery.refetch();
+    blockedQuery.refetch();
   }
 
   function openDetail(credentialId: number) {
@@ -114,6 +123,8 @@ export function CredentialsPage() {
 
   return (
     <div className="space-y-5">
+      <BlockedCredentialsCard query={blockedQuery} />
+
       <section className={card}>
         <PageHeader
           title="Credenciais"

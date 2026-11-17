@@ -1,5 +1,7 @@
 import { api } from "./client";
 import type {
+  BlockedCredential,
+  CredentialUnblockResult,
   CreateCredentialItemPayload,
   CreateCredentialPayload,
   CredentialFilters,
@@ -16,6 +18,18 @@ export async function listCredentials(params: CredentialFilters = {}) {
     params,
   });
 
+  return response.data;
+}
+
+/** Credenciais bloqueadas por senha errada/expirada ou usuário bloqueado. */
+export async function listBlockedCredentials() {
+  const response = await api.get<BlockedCredential[]>("/api/v1/credentials/blocked");
+  return response.data;
+}
+
+/** Desbloqueio manual: volta a "não verificada" e reativa os agendamentos que a credencial pausou. */
+export async function unblockCredential(credentialId: number) {
+  const response = await api.post<CredentialUnblockResult>(`/api/v1/credentials/${credentialId}/unblock`);
   return response.data;
 }
 
