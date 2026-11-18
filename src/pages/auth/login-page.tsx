@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Activity, CalendarClock, Eye, EyeOff, Loader2, Server } from "lucide-react";
 
 import { getApiErrorMessage } from "@/lib/api-error";
+import { SsoError, startMicrosoftLogin } from "@/lib/microsoft-sso";
 import { APP_VERSION, ENVIRONMENT_LABEL } from "@/lib/navigation";
 import { btn, input, label } from "@/lib/ui";
-import { loginRequest, meRequest } from "@/services/api/auth";
+import { getAuthConfig, loginRequest, meRequest } from "@/services/api/auth";
 import { useAuthStore } from "../../store/auth-store";
 
 const HIGHLIGHTS = [
@@ -14,10 +16,8 @@ const HIGHLIGHTS = [
   { icon: CalendarClock, text: "Agendamentos, versões dos robôs e execução manual com um clique." },
 ];
 
-// Login com a conta Microsoft (SSO). Fica apagado até a TI entregar o cadastro do aplicativo no Microsoft Entra ID
-// (ID do aplicativo e ID do diretório). Quando o fluxo for ligado, é aqui que ele passa a valer.
-const MICROSOFT_LOGIN_ENABLED = false;
-
+// Login com a conta Microsoft (SSO). Fica apagado enquanto o backend não tiver o aplicativo da Microsoft configurado
+// (MS_TENANT_ID e MS_CLIENT_ID): quem decide é GET /auth/config, então ligar não exige novo build do painel.
 function MicrosoftLogo() {
   return (
     <svg viewBox="0 0 21 21" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
@@ -29,17 +29,19 @@ function MicrosoftLogo() {
   );
 }
 
-function MicrosoftLoginButton({ enabled }: { enabled: boolean }) {
+function MicrosoftLoginButton({ enabled, loading, onClick }: { enabled: boolean; loading: boolean; onClick: () => void }) {
+  const disabled = !enabled || loading;
   return (
     <button
       type="button"
-      disabled={!enabled}
-      aria-disabled={!enabled}
-      title={enabled ? undefined : "Em breve: aguardando a TI liberar o acesso com a conta Microsoft."}
+      onClick={onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
+      title={enabled ? undefined : "O login com a conta Microsoft ainda não está disponível."}
       className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
     >
-      <MicrosoftLogo />
-      Entrar com a conta Microsoft
+      {loading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <MicrosoftLogo />}
+      {loading ? "Abrindo a Microsoft..." : "Entrar com a conta Microsoft"}
     </button>
   );
 }
@@ -54,6 +56,24 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
+
+  const authConfig = useQuery({ queryKey: ["auth-config"], queryFn: getAuthConfig, staleTime: 5 * 60_000, retry: 1 });
+  const microsoft = authConfig.data?.microsoft;
+  const microsoftEnabled = Boolean(microsoft?.enabled && microsoft.tenant_id && microsoft.client_id);
+
+  async function handleMicrosoft() {
+    if (!microsoft?.tenant_id || !microsoft.client_id) return;
+    setError(null);
+    setMicrosoftLoading(true);
+    try {
+      // Leva a pessoa à Microsoft; ela volta em /auth/callback.
+      await startMicrosoftLogin({ tenant_id: microsoft.tenant_id, client_id: microsoft.client_id });
+    } catch (err) {
+      setError(err instanceof SsoError ? err.message : "Não foi possível abrir o login da Microsoft.");
+      setMicrosoftLoading(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -177,7 +197,7 @@ export function LoginPage() {
                 </button>
               </form>
 
-              <MicrosoftLoginButton enabled={MICROSOFT_LOGIN_ENABLED} />
+              <MicrosoftLoginButton enabled={microsoftEnabled} loading={microsoftLoading} onClick={handleMicrosoft} />
 
               <p className="mt-6 text-center text-xs text-slate-500">
                 Esqueceu a senha? Peça a um administrador do painel para redefinir.

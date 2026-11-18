@@ -52,14 +52,16 @@ api.interceptors.response.use(
     const originalRequest = error?.config as RetriableConfig | undefined;
     const refreshToken = useAuthStore.getState().refreshToken;
     const requestUrl = String(originalRequest?.url ?? "");
-    const isAuthRoute = requestUrl.includes("/auth/refresh") || requestUrl.includes("/auth/login");
+    // /auth/login e /auth/microsoft devolvem 401 para "credencial recusada": é erro da tela de entrada, não sessão vencida.
+    const isEntryRoute = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/microsoft");
+    const isAuthRoute = requestUrl.includes("/auth/refresh") || isEntryRoute;
 
     // 401 que não tem como ser recuperado (sem refresh token, ou já tentou renovar e
     // continuou 401): a sessão salva está vencida. Desloga em vez de ficar com a tela
     // "logada" e todas as chamadas falhando.
     if (
       error.response?.status === 401 &&
-      !requestUrl.includes("/auth/login") &&
+      !isEntryRoute &&
       (!refreshToken || originalRequest?._retry || requestUrl.includes("/auth/refresh"))
     ) {
       forceLogout();

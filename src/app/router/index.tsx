@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout } from "../../layouts/app-layout";
 import { AuthLayout } from "../../layouts/auth-layout";
 import { LoginPage } from "../../pages/auth/login-page";
+import { MicrosoftCallbackPage } from "../../pages/auth/microsoft-callback-page";
 import { DashboardPage } from "../../pages/dashboard/dashboard-page";
 import { TasksPage } from "../../pages/tasks/tasks-page";
 import { TaskDetailPage } from "../../pages/tasks/task-detail-page";
@@ -80,6 +81,13 @@ export const router = createBrowserRouter([
     element: <AuthLayout />,
     errorElement: <AppErrorPage />,
     children: [{ index: true, element: <LoginPage /> }],
+  },
+  {
+    // Volta do login com a conta Microsoft (endereço cadastrado no aplicativo da Microsoft).
+    path: "/auth/callback",
+    element: <AuthLayout />,
+    errorElement: <AppErrorPage />,
+    children: [{ index: true, element: <MicrosoftCallbackPage /> }],
   },
   {
     path: "/",
