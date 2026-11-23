@@ -150,18 +150,23 @@ export function buildConsoleLines(
     lines.push({ id: `log-${log.id}`, level, source, created_at: log.created_at, message });
   }
 
-  // A mensagem final entra no fim do log só se ainda não estiver nele (evita o mesmo traceback 3 vezes).
+  // A linha de resultado fecha o log. Se a mensagem final ainda não está no log, ela entra inteira (com o traceback, se
+  // houver). Se já está (o log chegou completo), a task terminada ganha mesmo assim a linha de resultado, para a pessoa ver
+  // de relance como acabou: no sucesso com a mensagem final; no erro só com o resumo, para não repetir o traceback.
   const { headline, traceback, errorLine } = splitFinalMessage(finalMessage);
   const allText = lines.map((l) => l.message).join("\n");
   const probe = errorLine || headline;
-  if (probe && !allText.includes(probe)) {
-    lines.push({
-      id: "final-message",
-      level: failed ? "error" : "success",
-      source: "resultado",
-      created_at: finishedAt,
-      message: traceback ? `${headline}\n${traceback}`.trim() : normalizeDisplayText(finalMessage).trim(),
-    });
+  if (probe) {
+    const alreadyInLog = allText.includes(probe);
+    let message: string | null = null;
+    if (!alreadyInLog) {
+      message = traceback ? `${headline}\n${traceback}`.trim() : normalizeDisplayText(finalMessage).trim();
+    } else if (finishedAt) {
+      message = failed ? probe : normalizeDisplayText(finalMessage).trim();
+    }
+    if (message) {
+      lines.push({ id: "final-message", level: failed ? "error" : "success", source: "resultado", created_at: finishedAt, message });
+    }
   }
 
   return lines;
