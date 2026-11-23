@@ -27,14 +27,19 @@ function tryDecodeEscapedUnicode(text: string) {
   }
 }
 
+/**
+ * Conserta UTF-8 lido como Latin-1 ("GravaÃ§Ã£o" -> "Gravação"). Só mexe quando o texto realmente é isso:
+ * a leitura é estrita (fatal), então texto que já está certo, como "PRODUÇÃO" (tem "Ã" mas não é UTF-8 de verdade),
+ * fica como está em vez de virar "�". Texto com caractere acima de 0xFF não é Latin-1 puro e também não é alterado.
+ */
 function tryFixMojibake(text: string) {
-  const suspicious = /Ã|Â|â|ð|�/.test(text);
+  if (!/[ÃÂâð]/.test(text)) return text;
 
-  if (!suspicious) return text;
+  const codes = [...text].map((char) => char.charCodeAt(0));
+  if (codes.some((code) => code > 0xff)) return text;
 
   try {
-    const bytes = Uint8Array.from([...text].map((char) => char.charCodeAt(0) & 0xff));
-    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(codes));
     return decoded && decoded !== text ? decoded : text;
   } catch {
     return text;

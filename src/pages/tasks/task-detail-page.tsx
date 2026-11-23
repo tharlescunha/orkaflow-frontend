@@ -60,6 +60,9 @@ const LIVE_STATUSES = ["running", "waiting", "ready", "stop_requested"];
 const FAILED_STATUSES = ["error", "timeout", "forced_stop", "canceled", "failed"];
 const FINAL_STATUSES = ["finished", "error", "timeout", "canceled", "forced_stop"];
 const DETAIL_REFRESH_MS = 5_000;
+// Quantas linhas de log a tela pede, e por quanto tempo depois do fim da task ela continua buscando as que ainda chegam.
+const LOGS_LIMIT = 500;
+const LOG_TAIL_MS = 10 * 60 * 1000;
 
 // Qual confirmação está aberta.
 type PendingConfirm = "cancel" | "request-stop" | "force-stop" | "rerun" | null;
@@ -416,9 +419,15 @@ export function TaskDetailPage() {
 
   const taskLogsQuery = useQuery({
     queryKey: ["task-logs", taskId],
-    queryFn: () => listTaskLogs(taskId, 500),
+    queryFn: () => listTaskLogs(taskId, LOGS_LIMIT),
     enabled: Number.isFinite(taskId) && taskId > 0,
-    refetchInterval: isLive ? DETAIL_REFRESH_MS : false,
+    // O worker envia as linhas do robô uma a uma (~2 s cada) e muitas chegam DEPOIS do fim da task: depois que ela
+    // termina o log segue atualizando por mais LOG_TAIL_MS, senão a tela fica com o log incompleto.
+    refetchInterval: () => {
+      if (isLive) return DETAIL_REFRESH_MS;
+      const finishedAt = task?.finished_at ? new Date(task.finished_at).getTime() : 0;
+      return finishedAt && Date.now() - finishedAt < LOG_TAIL_MS ? DETAIL_REFRESH_MS : false;
+    },
     refetchIntervalInBackground: false,
   });
 
@@ -882,7 +891,9 @@ export function TaskDetailPage() {
                     loading={taskLogsQuery.isLoading}
                     error={taskLogsQuery.isError}
                     live={isLive}
-                    total={taskLogsQuery.data?.total ?? 0}
+                    // O aviso "últimas X de Y" só vale quando o limite de verdade foi atingido; antes disso a diferença é
+                    // só linha que acabou de chegar entre a lista e a contagem.
+                    total={rawLogs.length >= LOGS_LIMIT ? (taskLogsQuery.data?.total ?? rawLogs.length) : rawLogs.length}
                     loaded={rawLogs.length}
                   />
 
