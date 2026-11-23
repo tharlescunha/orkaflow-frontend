@@ -97,16 +97,30 @@ function isContinuation(message: string) {
   );
 }
 
+function logTime(log: TaskLogItem) {
+  return log.created_at ? new Date(log.created_at).getTime() : 0;
+}
+
+/**
+ * Ordem do log: o que chegou primeiro fica em cima.
+ *
+ * - Linhas sem número de sequência (agenda, fila, abertura do worker...) entram pelo horário.
+ * - As linhas do robô (com sequence_number) ficam juntas e na ordem da sequência: assim um traceback nunca é partido por
+ *   uma linha de outra origem. O bloco do robô vem depois do que aconteceu antes da primeira linha dele.
+ * - O que veio depois do início do robô (e o resultado, que é montado à parte) fecha o log.
+ */
 function sortLogs(logs: TaskLogItem[]) {
-  return [...logs].sort((a, b) => {
-    const seqA = typeof a.sequence_number === "number" ? a.sequence_number : Number.MAX_SAFE_INTEGER;
-    const seqB = typeof b.sequence_number === "number" ? b.sequence_number : Number.MAX_SAFE_INTEGER;
-    if (seqA !== seqB) return seqA - seqB;
-    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    if (timeA !== timeB) return timeA - timeB;
-    return a.id - b.id;
-  });
+  const byTime = (a: TaskLogItem, b: TaskLogItem) => logTime(a) - logTime(b) || a.id - b.id;
+  const hasSequence = (log: TaskLogItem) => typeof log.sequence_number === "number";
+
+  const robot = logs
+    .filter(hasSequence)
+    .sort((a, b) => (a.sequence_number as number) - (b.sequence_number as number) || byTime(a, b));
+  const others = logs.filter((log) => !hasSequence(log)).sort(byTime);
+  if (robot.length === 0) return others;
+
+  const robotStart = logTime(robot[0]);
+  return [...others.filter((log) => logTime(log) <= robotStart), ...robot, ...others.filter((log) => logTime(log) > robotStart)];
 }
 
 export function buildConsoleLines(
